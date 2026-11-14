@@ -239,10 +239,9 @@ Years of history (an Endomondo archive goes back to 2016) make an all-time list 
 
 ## Later
 
-- **Faster CI.** Backend runs take 9–13 minutes on every push: `nix flake check` about 4 (formatting, lint, tests), then a second full build of the binary about 3½, then the image publish about 1; the frontend takes about 2. Ideas, roughly in order of payoff:
-  - Build the binary once and have the checks reuse it, or drop the separate build step when the flake check already compiled the same derivation.
-  - Make sure the Nix cache actually hits for Go modules (a vendored-dependencies derivation that only changes with `go.mod`/`gomod2nix.toml`), so a code change doesn't rebuild dependencies.
+- **Faster CI.** A master run took about 14½ minutes: `nix flake check` about 5 (formatting, lint, tests), then a second full build of the binary about 4, the image publish about 1, and the binary-cache upload about 3½; the frontend takes about 2. The cache step is gone and branches no longer publish the image. Ideas left, roughly in order of payoff:
+  - Add the binary or `docker-image` to the flake's `checks`, so Nix builds it in parallel with tests and lint and the separate build steps find it done.
+  - Keep Go's build cache between runs: `go test` and `golangci-lint` through `nix develop` with the cache saved by `actions/cache`, so a code change only recompiles taiga's own packages. CI would then no longer check exactly what `nix flake check` does.
   - Run formatting, lint and tests as parallel jobs, so a formatting failure reports in seconds.
-  - Skip the image build and publish on PRs, or only on `master` and tags; homelab deploys only use `master-<sha>`.
 - `taco compare` / `taco best <distance>` in the CLI.
 - **Admin panel** in the frontend, for running the deployment rather than looking at runs: the job queue (queued, running, dead jobs with their last error, retry), reprocess one or all workouts, files that failed to parse, and eventually account management in place of `kubectl exec … useradd`. Needs a notion of an admin user first.

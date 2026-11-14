@@ -30,14 +30,16 @@ jobs:
           # so we need the full history available locally.
           fetch-depth: 0
       - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
-      - uses: DeterminateSystems/flakehub-cache-action@main
+      # No binary cache: a code change rebuilds the Go dependencies anyway, and uploading the builds afterwards took about 3½ minutes a run.
       - name: Flake check (formatting, lint, tests)
         run: nix flake check --print-build-logs
       - name: Build taiga binary
         run: nix build --print-build-logs .#default
       - name: Build docker image
         run: nix build --print-build-logs .#docker-image -o result-docker
+      # The homelab deploys only master-<sha> images, so branches build the image but don't publish it.
       - name: Publish image to ghcr.io
+        if: github.ref_type == 'tag' || github.ref_name == 'master'
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USER: ${{ github.actor }}
