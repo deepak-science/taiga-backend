@@ -30,12 +30,11 @@ jobs:
           # so we need the full history available locally.
           fetch-depth: 0
       - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
-      # No binary cache: a code change rebuilds the Go dependencies anyway, and uploading the builds afterwards took about 3½ minutes a run.
-      - name: Flake check (formatting, lint, tests)
+      # No binary cache: uploading the builds afterwards took about 3½ minutes a run, more than it saved.
+      # The checks include the binary (its build runs the tests) and the image, so the next step only links the result.
+      - name: Flake check (formatting, lint, tests, binary, image)
         run: nix flake check --print-build-logs
-      - name: Build taiga binary
-        run: nix build --print-build-logs .#default
-      - name: Build docker image
+      - name: Docker image
         run: nix build --print-build-logs .#docker-image -o result-docker
       # The homelab deploys only master-<sha> images, so branches build the image but don't publish it.
       - name: Publish image to ghcr.io

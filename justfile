@@ -49,7 +49,7 @@ fmt:
 chores:
     #!/usr/bin/env bash
     set -euxo pipefail
-    gomod2nix
+    gomod2nix generate --with-deps
     sqlc generate
 
 # update flake inputs
