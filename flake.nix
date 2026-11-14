@@ -58,13 +58,36 @@
       commonLdflags = hanko.lib.mkGoLdflags { inherit self version; };
 
       taigaOverlay = final: _prev: {
-        taiga = final.buildGoApplication {
-          pname = "taiga";
-          inherit version;
-          src = ./.;
-          modules = ./gomod2nix.toml;
-          ldflags = commonLdflags;
-        };
+        # The dependencies precompiled into a Go build cache (gomod2nix.toml's cachePackages).
+        # Built without the ldflags, which stamp the commit, so it only changes with the dependencies and CI can keep it between runs; linking flags don't affect compiled packages.
+        taiga-go-cache =
+          (final.buildGoApplication {
+            pname = "taiga";
+            inherit version;
+            src = ./.;
+            modules = ./gomod2nix.toml;
+          }).goCacheEnv;
+        taiga =
+          (final.buildGoApplication {
+            pname = "taiga";
+            inherit version;
+            # Unpacks to /build/source, where the cache was built; cgo packages (go-sqlite3) miss the cache from any other directory.
+            src = builtins.path {
+              path = ./.;
+              name = "source";
+            };
+            modules = ./gomod2nix.toml;
+            ldflags = commonLdflags;
+          }).overrideAttrs
+            {
+              goCacheDir = final.taiga-go-cache;
+              # gomod2nix's own check drops -trimpath, so the tests would recompile every dependency, and tests one package at a time; this keeps the cache and runs them in parallel.
+              checkPhase = ''
+                runHook preCheck
+                go test ./...
+                runHook postCheck
+              '';
+            };
       };
 
       dockerImageFor =
@@ -146,6 +169,8 @@
         default = pkgs.taiga;
         taiga = pkgs.taiga;
         docker-image = dockerImageFor pkgs;
+        # CI restores and saves this between runs (ci.yml).
+        go-cache = pkgs.taiga-go-cache;
       });
 
       # default devshell

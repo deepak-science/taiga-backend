@@ -10,7 +10,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
@@ -26,9 +25,23 @@ import (
 	"gitea.deepak.science/deepak/taiga/internal/tokens"
 )
 
-func repoRoot() string {
-	_, file, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(file), "..", "..")
+// RepoRoot is the directory holding go.mod, found by walking up from the working directory (a test's is its package's).
+// runtime.Caller wouldn't do: under -trimpath, which CI's tests build with to share the dependency cache, it gives module paths rather than files.
+func RepoRoot() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			panic("testsupport: no go.mod above the working directory")
+		}
+		dir = parent
+	}
 }
 
 // NewModel returns a model on a fresh file-backed SQLite database with all migrations applied.
@@ -39,7 +52,7 @@ func NewModel(t *testing.T) models.Model {
 		Db: config.DBConfig{
 			Driver:        "sqlite",
 			FilePath:      filepath.Join(t.TempDir(), "test.db"),
-			MigrationPath: filepath.Join(repoRoot(), "migrations-sqlite"),
+			MigrationPath: filepath.Join(RepoRoot(), "migrations-sqlite"),
 			AutoMigrateUp: true,
 		},
 	}

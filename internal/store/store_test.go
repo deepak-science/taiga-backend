@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,15 +12,15 @@ import (
 	"gitea.deepak.science/deepak/taiga/internal/config"
 	"gitea.deepak.science/deepak/taiga/internal/db"
 	"gitea.deepak.science/deepak/taiga/internal/store"
+	"gitea.deepak.science/deepak/taiga/internal/testsupport"
 )
 
 func newSqliteStore(t *testing.T) store.Store {
 	t.Helper()
-	_, file, _, _ := runtime.Caller(0)
 	s, err := store.GetStore(&config.Config{Db: config.DBConfig{
 		Driver:        "sqlite",
 		FilePath:      filepath.Join(t.TempDir(), "test.db"),
-		MigrationPath: filepath.Join(filepath.Dir(file), "..", "..", "migrations-sqlite"),
+		MigrationPath: filepath.Join(testsupport.RepoRoot(), "migrations-sqlite"),
 		AutoMigrateUp: true,
 	}})
 	require.NoError(t, err)

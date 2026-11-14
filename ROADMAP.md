@@ -239,8 +239,8 @@ Years of history (an Endomondo archive goes back to 2016) make an all-time list 
 
 ## Later
 
-- **Faster CI.** A master run took about 14½ minutes: `nix flake check` about 5 (formatting, lint, tests), then a second full build of the binary about 4, the image publish about 1, and the binary-cache upload about 3½; the frontend takes about 2. The cache step is gone, branches no longer publish the image, the binary is the test build, and the dependencies compile once a run into gomod2nix's Go cache, shared by tests and lint. Ideas left, roughly in order of payoff:
-  - Keep that dependency cache (`go-cache-env`) between runs: it only changes with `gomod2nix.toml`, so a binary cache holding just it, or `actions/cache` around it, would skip compiling dependencies entirely without the 3½-minute upload of everything.
+- **Faster CI.** Backend runs took 12–14½ minutes (November 2026): the flake check, a second build of the binary, the image publish and a binary-cache upload of everything. Now a branch run takes about 2 minutes with the dependency cache restored (3¼ when the dependencies changed), plus a minute to publish on master. What's left:
+  - The Determinate installer still lists FlakeHub's cache as a substituter, and every lookup there fails with 401 (some 400 a run). Harmless so far, but one run stalled 2½ minutes during those lookups; dropping it from the substituters would rule that out.
   - Run formatting, lint and tests as parallel jobs, so a formatting failure reports in seconds.
 - `taco compare` / `taco best <distance>` in the CLI.
 - **Admin panel** in the frontend, for running the deployment rather than looking at runs: the job queue (queued, running, dead jobs with their last error, retry), reprocess one or all workouts, files that failed to parse, and eventually account management in place of `kubectl exec … useradd`. Needs a notion of an admin user first.

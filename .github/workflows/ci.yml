@@ -30,10 +30,36 @@ jobs:
           # so we need the full history available locally.
           fetch-depth: 0
       - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
-      # No binary cache: uploading the builds afterwards took about 3½ minutes a run, more than it saved.
+      # No binary cache for everything: uploading the builds afterwards took about 3½ minutes a run, more than it saved.
+      # Only the precompiled dependencies (.#go-cache) are kept between runs; their store path only changes with the dependencies, so it is the cache key.
+      - name: Dependency cache path
+        id: go-cache
+        run: |
+          path=$(nix eval --raw .#go-cache.outPath)
+          echo "path=$path" >> "$GITHUB_OUTPUT"
+          echo "key=go-cache-$(basename "$path")" >> "$GITHUB_OUTPUT"
+      - name: Restore dependency cache
+        id: go-cache-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /tmp/go-cache-store
+          key: ${{ steps.go-cache.outputs.key }}
+      - name: Load dependency cache into the Nix store
+        if: steps.go-cache-restore.outputs.cache-hit == 'true'
+        run: nix copy --no-check-sigs --from file:///tmp/go-cache-store "${{ steps.go-cache.outputs.path }}"
       # The checks include the binary (its build runs the tests) and the image, so the next step only links the result.
       - name: Flake check (formatting, lint, tests, binary, image)
         run: nix flake check --print-build-logs
+      - name: Export dependency cache
+        if: steps.go-cache-restore.outputs.cache-hit != 'true'
+        # Uncompressed: the cache is already a zstd tarball.
+        run: nix copy --to 'file:///tmp/go-cache-store?compression=none' "${{ steps.go-cache.outputs.path }}"
+      - name: Save dependency cache
+        if: steps.go-cache-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /tmp/go-cache-store
+          key: ${{ steps.go-cache.outputs.key }}
       - name: Docker image
         run: nix build --print-build-logs .#docker-image -o result-docker
       # The homelab deploys only master-<sha> images, so branches build the image but don't publish it.
