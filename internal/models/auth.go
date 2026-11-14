@@ -17,6 +17,8 @@ type CreateUserRequest struct {
 	Email       string `json:"email"`
 	DisplayName string `json:"display_name"`
 	Password    string `json:"password"`
+	// Set by an admin creating the account, never by the request body: open registration doesn't prove the email is theirs.
+	EmailVerified bool `json:"-"`
 }
 
 type CreateUserResponse struct {
@@ -37,9 +39,10 @@ func (m *storeModel) CreateUser(ctx context.Context, req *CreateUserRequest) (*C
 	}
 
 	params := &db.CreateUserParams{
-		Email:       req.Email,
-		DisplayName: req.DisplayName,
-		Password:    hashedPw,
+		Email:         req.Email,
+		DisplayName:   req.DisplayName,
+		Password:      hashedPw,
+		EmailVerified: req.EmailVerified,
 	}
 	querier, err := m.store.GetQuerier()
 	if err != nil {
@@ -95,6 +98,11 @@ func (m *storeModel) VerifyUserByEmailPassword(ctx context.Context, email string
 		return nil, fmt.Errorf("couldn't select a user: %w", err)
 	}
 
+	// An account made through a provider has no password to sign in with.
+	if userWithPassword.Password == nil {
+		_, _ = hashPassword(password)
+		return nil, ErrInvalidLogin
+	}
 	err = bcrypt.CompareHashAndPassword(userWithPassword.Password, []byte(password))
 	if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
 		return nil, ErrInvalidLogin

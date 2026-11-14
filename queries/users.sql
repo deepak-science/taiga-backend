@@ -43,9 +43,9 @@ LIMIT
 --
 -- name: CreateUser :one
 INSERT INTO
-  users (email, display_name, password)
+  users (email, display_name, password, email_verified)
 VALUES
-  ($1, $2, $3)
+  ($1, $2, $3, $4)
 RETURNING
   id,
   email,
@@ -66,3 +66,32 @@ RETURNING
 -- DELETE FROM users
 -- WHERE
 --   id = $1;
+-- name: GetUsersByEmail :many
+-- Case-insensitive, so it can find more than one: registration has always kept the case it was given.
+SELECT
+  id,
+  email,
+  display_name,
+  email_verified
+FROM
+  users
+WHERE
+  lower(email) = lower($1)
+ORDER BY
+  id;
+
+-- name: UserHasPassword :one
+SELECT
+  CAST(password IS NOT NULL AS BOOLEAN) AS has_password
+FROM
+  users
+WHERE
+  id = $1;
+
+-- name: LockUser :exec
+-- Takes the user row's write lock for the rest of the transaction, so checks across their rows (e.g. their last way to sign in) can't race; works the same on both databases.
+UPDATE users
+SET
+  updated_at = updated_at
+WHERE
+  id = $1;

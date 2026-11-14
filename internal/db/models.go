@@ -49,12 +49,22 @@ type Route struct {
 }
 
 type User struct {
+	ID            int32              `json:"id"`
+	Email         string             `json:"email"`
+	DisplayName   string             `json:"display_name"`
+	Password      []byte             `json:"password"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	EmailVerified bool               `json:"email_verified"`
+}
+
+type UserIdentity struct {
 	ID          int32              `json:"id"`
-	Email       string             `json:"email"`
-	DisplayName string             `json:"display_name"`
-	Password    []byte             `json:"password"`
+	UserID      int32              `json:"user_id"`
+	Issuer      string             `json:"issuer"`
+	Subject     string             `json:"subject"`
+	EmailAtLink string             `json:"email_at_link"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Workout struct {

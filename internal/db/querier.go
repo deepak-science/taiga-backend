@@ -18,6 +18,7 @@ type Querier interface {
 	ClearRouteRepresentative(ctx context.Context, arg *ClearRouteRepresentativeParams) error
 	CreateActivityFile(ctx context.Context, arg *CreateActivityFileParams) (*ActivityFile, error)
 	CreateHat(ctx context.Context, arg *CreateHatParams) (*Hat, error)
+	CreateIdentity(ctx context.Context, arg *CreateIdentityParams) (*UserIdentity, error)
 	CreateRoute(ctx context.Context, arg *CreateRouteParams) (*Route, error)
 	//
 	// -- name: ListUsers :many
@@ -37,6 +38,7 @@ type Querier interface {
 	CreateWorkoutSegment(ctx context.Context, arg *CreateWorkoutSegmentParams) (*WorkoutSegment, error)
 	DeleteActivityFile(ctx context.Context, arg *DeleteActivityFileParams) error
 	DeleteDoneJobsBefore(ctx context.Context, updatedAt pgtype.Timestamptz) (int64, error)
+	DeleteIdentity(ctx context.Context, arg *DeleteIdentityParams) (int64, error)
 	DeleteJobsByWorkout(ctx context.Context, arg *DeleteJobsByWorkoutParams) error
 	DeleteRoute(ctx context.Context, arg *DeleteRouteParams) error
 	DeleteSegmentsByWorkout(ctx context.Context, arg *DeleteSegmentsByWorkoutParams) error
@@ -56,9 +58,25 @@ type Querier interface {
 	GetActivityFile(ctx context.Context, arg *GetActivityFileParams) (*ActivityFile, error)
 	GetActivityFileByHash(ctx context.Context, arg *GetActivityFileByHashParams) (*ActivityFile, error)
 	GetHat(ctx context.Context, arg *GetHatParams) (*Hat, error)
+	GetIdentityUser(ctx context.Context, arg *GetIdentityUserParams) (*GetIdentityUserRow, error)
 	GetJob(ctx context.Context, arg *GetJobParams) (*Job, error)
 	GetRoute(ctx context.Context, arg *GetRouteParams) (*Route, error)
 	GetUser(ctx context.Context, id int32) (*GetUserRow, error)
+	//
+	// -- name: UpdateUser :exec
+	// UPDATE users
+	// SET
+	//   name = $2,
+	//   updated_at = CURRENT_TIMESTAMP
+	// WHERE
+	//   id = $1;
+	//
+	// -- name: DeleteUser :exec
+	// DELETE FROM users
+	// WHERE
+	//   id = $1;
+	// Case-insensitive, so it can find more than one: registration has always kept the case it was given.
+	GetUsersByEmail(ctx context.Context, lower string) ([]*GetUsersByEmailRow, error)
 	GetWorkout(ctx context.Context, arg *GetWorkoutParams) (*Workout, error)
 	GetWorkoutRouteID(ctx context.Context, arg *GetWorkoutRouteIDParams) (int32, error)
 	GetWorkoutSeries(ctx context.Context, arg *GetWorkoutSeriesParams) ([]byte, error)
@@ -72,6 +90,7 @@ type Querier interface {
 	// What a periodic total needs of each counted workout starting in [window_from, window_to), oldest first; bucketing by local week or month happens in Go, since the two databases share no date functions.
 	ListCountedWorkoutsInWindow(ctx context.Context, arg *ListCountedWorkoutsInWindowParams) ([]*ListCountedWorkoutsInWindowRow, error)
 	ListHatsByUser(ctx context.Context, userID *int32) ([]*Hat, error)
+	ListIdentitiesByUser(ctx context.Context, userID int32) ([]*UserIdentity, error)
 	ListJobsByUser(ctx context.Context, arg *ListJobsByUserParams) ([]*Job, error)
 	ListJobsByUserAndState(ctx context.Context, arg *ListJobsByUserAndStateParams) ([]*Job, error)
 	ListRoutesByUser(ctx context.Context, userID int32) ([]*Route, error)
@@ -85,6 +104,8 @@ type Querier interface {
 	ListWorkoutsByUser(ctx context.Context, userID int32) ([]*Workout, error)
 	// Starting in [window_from, window_to); callers pass far-off bounds for an open end, so the same SQL runs on SQLite.
 	ListWorkoutsByUserInWindow(ctx context.Context, arg *ListWorkoutsByUserInWindowParams) ([]*Workout, error)
+	// Takes the user row's write lock for the rest of the transaction, so checks across their rows (e.g. their last way to sign in) can't race; works the same on both databases.
+	LockUser(ctx context.Context, id int32) error
 	RenameRoute(ctx context.Context, arg *RenameRouteParams) (*Route, error)
 	RequeueDeadJob(ctx context.Context, arg *RequeueDeadJobParams) (*Job, error)
 	RetryJobLater(ctx context.Context, arg *RetryJobLaterParams) error
@@ -99,6 +120,7 @@ type Querier interface {
 	UpdateWorkoutDerived(ctx context.Context, arg *UpdateWorkoutDerivedParams) (*Workout, error)
 	UpsertWorkoutSeries(ctx context.Context, arg *UpsertWorkoutSeriesParams) error
 	UpsertWorkoutTrack(ctx context.Context, arg *UpsertWorkoutTrackParams) error
+	UserHasPassword(ctx context.Context, id int32) (bool, error)
 	// Per sport, for workouts starting in [window_from, window_to) that count; an excluded workout stays out of stats.
 	WorkoutTotalsByUser(ctx context.Context, arg *WorkoutTotalsByUserParams) ([]*WorkoutTotalsByUserRow, error)
 }
