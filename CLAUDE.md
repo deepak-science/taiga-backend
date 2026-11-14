@@ -386,7 +386,7 @@ Switch by updating `config.yaml` or setting `TAIGA_DB_DRIVER` environment variab
 - All dependencies declared in `flake.nix`
 - Supported systems: `x86_64-linux`, `aarch64-linux`, `aarch64-darwin`, `x86_64-darwin`
 - Flake `checks`: `formatting` (treefmt), `golangci-lint`, `go-test` (the `taiga` package itself, whose build runs `go test`) and `docker-image` — all run by `nix flake check`
-- `gomod2nix.toml`'s `cachePackages` (written by `gomod2nix generate --with-deps`, which `just chores` runs) has gomod2nix compile the dependencies once into a Go build cache that the package and lint builds both restore; it only changes with the dependencies
+- `gomod2nix.toml`'s `cachePackages` (written by `gomod2nix generate --with-deps`, which `just chores` runs) lists the dependencies to precompile into a Go build cache, `.#go-cache`. It's built without the ldflags (which stamp the commit), so its store path only changes with the dependencies, and CI keeps it between runs with `actions/cache`. The package and lint builds restore it; the package's checkPhase is plain `go test ./...` (tests in parallel, keeping `-trimpath` so they hit the cache), and its source unpacks to `/build/source` like the cache's, since cgo packages (go-sqlite3) miss from any other directory. Test helpers find the repo with `testsupport.RepoRoot` (walking up to `go.mod`), as `runtime.Caller` gives no file paths under `-trimpath`
 - Consistent formatting and building across machines
 
 ### CI / GitHub Actions
@@ -400,7 +400,7 @@ Switch by updating `config.yaml` or setting `TAIGA_DB_DRIVER` environment variab
   Auth uses the workflow's `GITHUB_TOKEN` with `packages: write`. Images are
   pushed directly from the Nix-built `docker-archive` via `skopeo copy` — no
   Docker daemon needed in CI.
-- There's no Nix binary cache step: uploading the builds cost about 3½ minutes a run, more than it saved.
+- There's no Nix binary cache step: uploading every build cost about 3½ minutes a run, more than it saved. Only `.#go-cache` is kept, through `actions/cache` (`nix copy` to and from a `file://` store), and saved only when the restore missed.
 - `ci.yml` skips pushes that only touch Markdown, `docs/` or `LICENSE*` (tag pushes always run); `[skip ci]` in the head commit skips any push. `gh workflow run ci --ref <branch>` runs it by hand (an empty commit doesn't: it touches no paths, so the docs-only skip drops it).
 - `commits.yml` checks PR commit subjects and titles are conventional commits.
 - `seal.yml` is a manually-triggered hanko release workflow.
