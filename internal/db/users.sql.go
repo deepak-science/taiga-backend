@@ -13,9 +13,9 @@ import (
 
 const createUser = `-- name: CreateUser :one
 INSERT INTO
-  users (email, display_name, password)
+  users (email, display_name, password, email_verified)
 VALUES
-  ($1, $2, $3)
+  ($1, $2, $3, $4)
 RETURNING
   id,
   email,
@@ -25,9 +25,10 @@ RETURNING
 `
 
 type CreateUserParams struct {
-	Email       string `json:"email"`
-	DisplayName string `json:"display_name"`
-	Password    []byte `json:"password"`
+	Email         string `json:"email"`
+	DisplayName   string `json:"display_name"`
+	Password      []byte `json:"password"`
+	EmailVerified bool   `json:"email_verified"`
 }
 
 type CreateUserRow struct {
@@ -55,7 +56,12 @@ type CreateUserRow struct {
 //
 //	name;
 func (q *Queries) CreateUser(ctx context.Context, arg *CreateUserParams) (*CreateUserRow, error) {
-	row := q.db.QueryRow(ctx, createUser, arg.Email, arg.DisplayName, arg.Password)
+	row := q.db.QueryRow(ctx, createUser,
+		arg.Email,
+		arg.DisplayName,
+		arg.Password,
+		arg.EmailVerified,
+	)
 	var i CreateUserRow
 	err := row.Scan(
 		&i.ID,
@@ -103,22 +109,25 @@ func (q *Queries) GetUser(ctx context.Context, id int32) (*GetUserRow, error) {
 	return &i, err
 }
 
-const getUserByEmail = `-- name: GetUserByEmail :one
-
+const getUsersByEmail = `-- name: GetUsersByEmail :many
 SELECT
   id,
   email,
-  display_name
+  display_name,
+  email_verified
 FROM
   users
 WHERE
   lower(email) = lower($1)
+ORDER BY
+  id
 `
 
-type GetUserByEmailRow struct {
-	ID          int32  `json:"id"`
-	Email       string `json:"email"`
-	DisplayName string `json:"display_name"`
+type GetUsersByEmailRow struct {
+	ID            int32  `json:"id"`
+	Email         string `json:"email"`
+	DisplayName   string `json:"display_name"`
+	EmailVerified bool   `json:"email_verified"`
 }
 
 // -- name: UpdateUser :exec
@@ -137,11 +146,45 @@ type GetUserByEmailRow struct {
 // WHERE
 //
 //	id = $1;
-func (q *Queries) GetUserByEmail(ctx context.Context, lower string) (*GetUserByEmailRow, error) {
-	row := q.db.QueryRow(ctx, getUserByEmail, lower)
-	var i GetUserByEmailRow
-	err := row.Scan(&i.ID, &i.Email, &i.DisplayName)
-	return &i, err
+//
+// Case-insensitive, so it can find more than one: registration has always kept the case it was given.
+func (q *Queries) GetUsersByEmail(ctx context.Context, lower string) ([]*GetUsersByEmailRow, error) {
+	rows, err := q.db.Query(ctx, getUsersByEmail, lower)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*GetUsersByEmailRow{}
+	for rows.Next() {
+		var i GetUsersByEmailRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.DisplayName,
+			&i.EmailVerified,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockUser = `-- name: LockUser :exec
+UPDATE users
+SET
+  updated_at = updated_at
+WHERE
+  id = $1
+`
+
+// Takes the user row's write lock for the rest of the transaction, so checks across their rows (e.g. their last way to sign in) can't race; works the same on both databases.
+func (q *Queries) LockUser(ctx context.Context, id int32) error {
+	_, err := q.db.Exec(ctx, lockUser, id)
+	return err
 }
 
 const selectEmailPasswordForAuth = `-- name: SelectEmailPasswordForAuth :one

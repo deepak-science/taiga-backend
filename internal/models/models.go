@@ -46,7 +46,7 @@ type Model interface {
 	SignInWithIdentity(ctx context.Context, id Identity, policy SignInPolicy) (*UserNoPassword, error)
 	LinkIdentity(ctx context.Context, id Identity, userToken *tokens.UserToken) error
 	Identities(ctx context.Context, userToken *tokens.UserToken) (*UserIdentities, error)
-	UnlinkIdentity(ctx context.Context, id int32, passwordLogin bool, userToken *tokens.UserToken) error
+	UnlinkIdentity(ctx context.Context, id int32, passwordLogin bool, issuers []string, userToken *tokens.UserToken) error
 	Hat(ctx context.Context, hatID int32, userToken *tokens.UserToken) (*Hat, error)
 	Hats(ctx context.Context, userToken *tokens.UserToken) ([]*Hat, error)
 	AddHat(ctx context.Context, hat *Hat, userToken *tokens.UserToken) (*Hat, error)

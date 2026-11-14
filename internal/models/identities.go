@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
 	"time"
 
 	"gitea.deepak.science/deepak/taiga/internal/db"
@@ -66,18 +67,16 @@ func (m *storeModel) SignInWithIdentity(ctx context.Context, id Identity, policy
 			return err
 		}
 
-		var existing *db.GetUserByEmailRow
+		// Emails were stored with whatever case they came in, so two accounts can match; then none is a safe guess.
+		var matches []*db.GetUsersByEmailRow
 		if id.Email != "" {
-			found, err := q.GetUserByEmail(ctx, id.Email)
-			switch {
-			case err == nil:
-				existing = found
-			case !IsNotFound(err):
+			if matches, err = q.GetUsersByEmail(ctx, id.Email); err != nil {
 				return err
 			}
 		}
-		// Only a verified email may sign in to an existing account, or anyone who can set an email at some provider could take it over.
-		if existing != nil && policy.LinkByVerifiedEmail && id.EmailVerified {
+		// Both ends must vouch for the email: the provider for the identity, and an admin or another provider for the account. Otherwise someone could create an account with another person's email and be handed theirs when they first sign in.
+		if len(matches) == 1 && matches[0].EmailVerified && policy.LinkByVerifiedEmail && id.EmailVerified {
+			existing := matches[0]
 			user = &UserNoPassword{ID: existing.ID, Email: existing.Email, DisplayName: existing.DisplayName}
 			return link(ctx, q, existing.ID, id)
 		}
@@ -87,7 +86,7 @@ func (m *storeModel) SignInWithIdentity(ctx context.Context, id Identity, policy
 		if id.Email == "" {
 			return ErrNoEmail
 		}
-		if existing != nil {
+		if len(matches) > 0 {
 			return ErrEmailTaken
 		}
 
@@ -95,7 +94,7 @@ func (m *storeModel) SignInWithIdentity(ctx context.Context, id Identity, policy
 		if name == "" {
 			name = id.Email
 		}
-		created, err := q.CreateUser(ctx, &db.CreateUserParams{Email: id.Email, DisplayName: name})
+		created, err := q.CreateUser(ctx, &db.CreateUserParams{Email: id.Email, DisplayName: name, EmailVerified: id.EmailVerified})
 		if err != nil {
 			return err
 		}
@@ -154,22 +153,32 @@ func identities(ctx context.Context, q db.Querier, userID int32) (*UserIdentitie
 	return out, nil
 }
 
-// UnlinkIdentity removes one of the user's identities, unless nothing else would sign them in; a password counts only while password login is on.
-func (m *storeModel) UnlinkIdentity(ctx context.Context, id int32, passwordLogin bool, userToken *tokens.UserToken) error {
+// UnlinkIdentity removes one of the user's identities, unless nothing else would sign them in.
+// A password counts only while password login is on, and another identity only while its issuer is still configured (one of issuers).
+func (m *storeModel) UnlinkIdentity(ctx context.Context, id int32, passwordLogin bool, issuers []string, userToken *tokens.UserToken) error {
 	return m.store.InTx(ctx, func(q db.Querier) error {
+		// Two unlinks at once would each see the other's identity still there.
+		if err := q.LockUser(ctx, userToken.ID); err != nil {
+			return err
+		}
 		ids, err := identities(ctx, q, userToken.ID)
 		if err != nil {
 			return err
 		}
-		mine := false
+		mine, others := false, 0
 		for _, i := range ids.Identities {
-			mine = mine || i.ID == id
+			switch {
+			case i.ID == id:
+				mine = true
+			case slices.Contains(issuers, i.Issuer):
+				others++
+			}
 		}
 		if !mine {
 			return sql.ErrNoRows
 		}
 		passwordSignIn := ids.HasPassword && passwordLogin
-		if len(ids.Identities) == 1 && !passwordSignIn {
+		if others == 0 && !passwordSignIn {
 			return ErrLastSignIn
 		}
 		_, err = q.DeleteIdentity(ctx, &db.DeleteIdentityParams{ID: id, UserID: userToken.ID})

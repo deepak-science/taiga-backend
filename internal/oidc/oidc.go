@@ -29,6 +29,8 @@ const (
 	cookieName = "taiga_oidc"
 	// Long enough to type a password and pass a second factor at the provider.
 	flowTTL = 10 * time.Minute
+	// For every call to a provider, including the signing-key fetches go-oidc makes in the background, which otherwise use a client that never times out.
+	providerTimeout = 30 * time.Second
 )
 
 var validName = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
@@ -46,6 +48,7 @@ type Provider struct {
 
 	oauth    oauth2.Config
 	verifier *gooidc.IDTokenVerifier
+	client   *http.Client
 	// The callback's path, which scopes the flow cookie.
 	callbackPath string
 	secure       bool
@@ -103,7 +106,8 @@ func newProvider(ctx context.Context, pc config.OIDCProvider, api *url.URL) (*Pr
 		}
 		secret = strings.TrimSpace(string(raw))
 	}
-	discovered, err := gooidc.NewProvider(ctx, pc.Issuer)
+	client := &http.Client{Timeout: providerTimeout}
+	discovered, err := gooidc.NewProvider(gooidc.ClientContext(ctx, client), pc.Issuer)
 	if err != nil {
 		return nil, fmt.Errorf("discovery: %w", err)
 	}
@@ -133,6 +137,7 @@ func newProvider(ctx context.Context, pc config.OIDCProvider, api *url.URL) (*Pr
 			Scopes:       scopes,
 		},
 		verifier:     discovered.Verifier(&gooidc.Config{ClientID: pc.ClientID}),
+		client:       client,
 		callbackPath: "/" + strings.TrimPrefix(callback.Path, "/"),
 		secure:       callback.Scheme == "https",
 	}, nil
@@ -237,6 +242,7 @@ func (r *Registry) Finish(ctx context.Context, w http.ResponseWriter, req *http.
 		return nil, &ProviderError{Code: code, Description: q.Get("error_description")}
 	}
 
+	ctx = gooidc.ClientContext(ctx, p.client)
 	token, err := p.oauth.Exchange(ctx, q.Get("code"), oauth2.VerifierOption(f.Verifier))
 	if err != nil {
 		return nil, fmt.Errorf("exchanging the code: %w", err)
@@ -251,6 +257,10 @@ func (r *Registry) Finish(ctx context.Context, w http.ResponseWriter, req *http.
 	}
 	if subtle.ConstantTimeCompare([]byte(idToken.Nonce), []byte(f.Nonce)) != 1 {
 		return nil, errors.New("the ID token's nonce doesn't match")
+	}
+	// The spec requires sub but go-oidc doesn't check it, and every token without one would be the same identity.
+	if idToken.Subject == "" {
+		return nil, errors.New("the ID token has no subject")
 	}
 	var claims struct {
 		Email             string `json:"email"`
@@ -267,7 +277,8 @@ func (r *Registry) Finish(ctx context.Context, w http.ResponseWriter, req *http.
 	}
 	return &Result{
 		Identity: Identity{
-			Issuer:        idToken.Issuer,
+			// The verifier matched the token to the configured issuer; go-oidc lets Google spell it without the scheme, which would make a second identity.
+			Issuer:        p.Issuer,
 			Subject:       idToken.Subject,
 			Email:         claims.Email,
 			EmailVerified: claims.EmailVerified != nil && *claims.EmailVerified,

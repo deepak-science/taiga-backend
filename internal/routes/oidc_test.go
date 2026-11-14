@@ -116,9 +116,14 @@ func (a *oidcAPI) signInError(c testsupport.IDClaims) string {
 	return l.params.Get("error")
 }
 
+// passwordUser makes an account as useradd does, with an email an admin vouched for.
 func (a *oidcAPI) passwordUser(email string) *tokens.UserToken {
+	return a.newUser(email, true)
+}
+
+func (a *oidcAPI) newUser(email string, verified bool) *tokens.UserToken {
 	a.t.Helper()
-	resp, err := a.m.CreateUser(a.t.Context(), &models.CreateUserRequest{Email: email, DisplayName: email, Password: "password123"})
+	resp, err := a.m.CreateUser(a.t.Context(), &models.CreateUserRequest{Email: email, DisplayName: email, Password: "password123", EmailVerified: verified})
 	require.NoError(a.t, err)
 	return &tokens.UserToken{ID: resp.Id, Email: email}
 }
@@ -255,6 +260,7 @@ func TestOIDCRejectsBadCallbacks(t *testing.T) {
 		"a wrong nonce":    {Subject: "s", Email: "s@example.com", Nonce: "replayed"},
 		"a wrong audience": {Subject: "s", Email: "s@example.com", Audience: "another-client"},
 		"an expired token": {Subject: "s", Email: "s@example.com", Expiry: time.Now().Add(-time.Hour)},
+		"no subject":       {Email: "s@example.com"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			assert.Equal(t, failed, a.signInError(c))
@@ -294,6 +300,33 @@ func TestOIDCLinkByEmail(t *testing.T) {
 			_, ids := a.identities(user)
 			require.Len(t, ids, 1)
 			assert.Equal(t, "fake", ids[0].Provider)
+
+			// An account whose email nobody vouched for, as open registration or an unverified provider makes, isn't signed in to by email.
+			a.newUser("mallory-made@example.com", false)
+			assert.Equal(t, models.ErrEmailTaken.Error(), a.signInError(testsupport.IDClaims{Subject: "victim", Email: "mallory-made@example.com", EmailVerified: true}))
+
+			// Open registration proves nothing about the email, and the body can't claim otherwise.
+			for body, want := range map[string]int{
+				`{"email":"reg@example.com","display_name":"R","password":"password123","email_verified":true}`: http.StatusBadRequest,
+				`{"email":"reg@example.com","display_name":"R","password":"password123"}`:                       http.StatusCreated,
+			} {
+				resp, err := http.Post(a.srv.URL+"/auth/register", "application/json", strings.NewReader(body))
+				require.NoError(t, err)
+				_ = resp.Body.Close()
+				require.Equal(t, want, resp.StatusCode, body)
+			}
+			assert.Equal(t, models.ErrEmailTaken.Error(), a.signInError(testsupport.IDClaims{Subject: "reg", Email: "reg@example.com", EmailVerified: true}))
+
+			// Two accounts differing only in case: neither is a safe guess.
+			a.passwordUser("twin@example.com")
+			a.passwordUser("Twin@example.com")
+			assert.Equal(t, models.ErrEmailTaken.Error(), a.signInError(testsupport.IDClaims{Subject: "twin", Email: "TWIN@example.com", EmailVerified: true}))
+
+			// An account a provider made with an unverified email isn't trusted later either; one made with a verified email is.
+			a.signedIn(testsupport.IDClaims{Subject: "first", Email: "carol@example.com"})
+			assert.Equal(t, models.ErrEmailTaken.Error(), a.signInError(testsupport.IDClaims{Subject: "second", Email: "carol@example.com", EmailVerified: true}))
+			dave := a.signedIn(testsupport.IDClaims{Subject: "first-dave", Email: "dave@example.com", EmailVerified: true})
+			assert.Equal(t, dave.ID, a.signedIn(testsupport.IDClaims{Subject: "second-dave", Email: "dave@example.com", EmailVerified: true}).ID)
 		})
 	}
 }
@@ -333,9 +366,12 @@ func TestOIDCLinkAndUnlink(t *testing.T) {
 
 	// An account made through the provider has nothing else to sign in with.
 	alan := a.signedIn(testsupport.IDClaims{Subject: "alan-sub", Email: "alan@example.com"})
+	// An identity from a provider that's no longer configured can't sign in, so it doesn't count as another way in.
+	require.NoError(t, a.m.LinkIdentity(t.Context(), models.Identity{Issuer: "https://gone.example.com", Subject: "alan"}, alan))
 	password, ids = a.identities(alan)
 	assert.False(t, password)
-	require.Len(t, ids, 1)
+	require.Len(t, ids, 2)
+	assert.Equal(t, "", ids[1].Provider, "the unconfigured provider is unnamed")
 	status, body = a.call(http.DefaultClient, alan, http.MethodDelete, fmt.Sprintf("/auth/identities/%d", ids[0].ID))
 	assert.Equal(t, http.StatusConflict, status)
 	assert.Contains(t, string(body), "only way to sign in")

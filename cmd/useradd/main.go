@@ -54,7 +54,7 @@ func main() {
 	}
 	defer func() { _ = m.Close() }()
 
-	user, err := m.CreateUser(context.Background(), &models.CreateUserRequest{Email: *email, DisplayName: *displayName, Password: password})
+	user, err := m.CreateUser(context.Background(), &models.CreateUserRequest{Email: *email, DisplayName: *displayName, Password: password, EmailVerified: true})
 	if err != nil {
 		log.Fatalf("creating user: %v", err)
 	}

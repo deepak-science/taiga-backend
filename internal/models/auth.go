@@ -17,6 +17,8 @@ type CreateUserRequest struct {
 	Email       string `json:"email"`
 	DisplayName string `json:"display_name"`
 	Password    string `json:"password"`
+	// Set by an admin creating the account, never by the request body: open registration doesn't prove the email is theirs.
+	EmailVerified bool `json:"-"`
 }
 
 type CreateUserResponse struct {
@@ -37,9 +39,10 @@ func (m *storeModel) CreateUser(ctx context.Context, req *CreateUserRequest) (*C
 	}
 
 	params := &db.CreateUserParams{
-		Email:       req.Email,
-		DisplayName: req.DisplayName,
-		Password:    hashedPw,
+		Email:         req.Email,
+		DisplayName:   req.DisplayName,
+		Password:      hashedPw,
+		EmailVerified: req.EmailVerified,
 	}
 	querier, err := m.store.GetQuerier()
 	if err != nil {

@@ -221,7 +221,11 @@ func unlinkIdentity(m models.Model, o options) http.HandlerFunc {
 			badRequestError(w, err)
 			return
 		}
-		err = m.UnlinkIdentity(r.Context(), int32(id), o.passwordLogin, userToken)
+		var issuers []string
+		for _, p := range o.oidc.Providers() {
+			issuers = append(issuers, p.Issuer)
+		}
+		err = m.UnlinkIdentity(r.Context(), int32(id), o.passwordLogin, issuers, userToken)
 		switch {
 		case models.IsNotFound(err):
 			notFoundHandler(w, r)

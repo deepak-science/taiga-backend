@@ -50,6 +50,7 @@ Multiple accounts exist only so more than one person can use the same deployment
   - Linking to an existing password account is explicit: from a logged-in session, `POST /auth/identities/{provider}` starts the same flow and attaches the identity to the current user.
   - Auto-linking by matching email is **off by default**.
     A per-provider `link_by_verified_email: true` enables it, and only when the ID token has `email_verified: true` — otherwise anyone who can set an email at some provider could take over an account.
+    The account's own email must be verified too (`users.email_verified`, migration 000013: set by `useradd` or a provider that verified it, not by open registration), so nobody can pre-create an account with someone else's email and inherit their sign-in; and an email matching two accounts in different cases links neither.
   - `GET /auth/identities` and `DELETE /auth/identities/{id}` to see and unlink, refusing to remove a user's last way to sign in.
 - **Password login stays.**
   `auth.password_login: false` disables `/auth/register` and `/auth/tokens` for SSO-only deployments.

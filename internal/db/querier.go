@@ -75,7 +75,8 @@ type Querier interface {
 	// DELETE FROM users
 	// WHERE
 	//   id = $1;
-	GetUserByEmail(ctx context.Context, lower string) (*GetUserByEmailRow, error)
+	// Case-insensitive, so it can find more than one: registration has always kept the case it was given.
+	GetUsersByEmail(ctx context.Context, lower string) ([]*GetUsersByEmailRow, error)
 	GetWorkout(ctx context.Context, arg *GetWorkoutParams) (*Workout, error)
 	GetWorkoutRouteID(ctx context.Context, arg *GetWorkoutRouteIDParams) (int32, error)
 	GetWorkoutSeries(ctx context.Context, arg *GetWorkoutSeriesParams) ([]byte, error)
@@ -103,6 +104,8 @@ type Querier interface {
 	ListWorkoutsByUser(ctx context.Context, userID int32) ([]*Workout, error)
 	// Starting in [window_from, window_to); callers pass far-off bounds for an open end, so the same SQL runs on SQLite.
 	ListWorkoutsByUserInWindow(ctx context.Context, arg *ListWorkoutsByUserInWindowParams) ([]*Workout, error)
+	// Takes the user row's write lock for the rest of the transaction, so checks across their rows (e.g. their last way to sign in) can't race; works the same on both databases.
+	LockUser(ctx context.Context, id int32) error
 	RenameRoute(ctx context.Context, arg *RenameRouteParams) (*Route, error)
 	RequeueDeadJob(ctx context.Context, arg *RequeueDeadJobParams) (*Job, error)
 	RetryJobLater(ctx context.Context, arg *RetryJobLaterParams) error
