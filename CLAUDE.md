@@ -389,12 +389,13 @@ Switch by updating `config.yaml` or setting `TAIGA_DB_DRIVER` environment variab
 - Consistent formatting and building across machines
 
 ### CI / GitHub Actions
-- `ci.yml` runs `nix flake check`, builds the binary and Docker image, and
-  publishes the image to `ghcr.io/<owner>/taiga` on every push. Tag fan-out is
+- `ci.yml` runs `nix flake check`, builds the binary and Docker image on every push, and
+  publishes the image to `ghcr.io/<owner>/taiga` from `master` and tags only (the homelab deploys `master-<sha>`). Tag fan-out is
   delegated to `hanko version docker tags --latest-on-release-tag`:
   - Tagged release (`vX.Y.Z`) → `:X.Y.Z`, `:X.Y`, `:X`, `:latest`, `:master-<sha>`
   - `master` between releases → `:master-<sha>` only: CI passes `--semver-tags=false` there, since hanko versions an untagged master build as the next release and would otherwise move `:X.Y.Z`, `:X.Y`, `:X` and `:latest` onto it
-  - Feature branches → `:<semver-prerelease>` + `:<branch>-<sha>` (prerelease, no moving tags)
+  - Feature branches → nothing published
+- There's no Nix binary cache step: a code change rebuilds the Go dependencies regardless, and the cache upload cost about 3½ minutes a run.
 
   Auth uses the workflow's `GITHUB_TOKEN` with `packages: write`. Images are
   pushed directly from the Nix-built `docker-archive` via `skopeo copy` — no
