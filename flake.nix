@@ -133,11 +133,10 @@
             runHook postCheck
           '';
         });
-        # Run `go test` against the vendored module via the standard checkPhase.
-        go-test = pkgs.taiga.overrideAttrs (_old: {
-          pname = "taiga-go-test";
-          doCheck = true;
-        });
+        # The package itself, whose checkPhase runs `go test`, so CI's tests and binary are one build.
+        go-test = pkgs.taiga;
+        # Built here so CI's image step finds it done.
+        docker-image = dockerImageFor pkgs;
       });
 
       # nix fmt formatter

@@ -72,7 +72,7 @@ This is the taiga API: upload FIT files (or Endomondo export JSON, or TCX such a
 ### Setup and Code Generation
 ```bash
 go mod tidy              # Install dependencies
-just chores              # Run gomod2nix and sqlc generate
+just chores              # Run gomod2nix (with --with-deps) and sqlc generate
 sqlc generate           # Generate database code from SQL queries
 ```
 
@@ -385,21 +385,22 @@ Switch by updating `config.yaml` or setting `TAIGA_DB_DRIVER` environment variab
 - Full Nix flake for reproducible development environment
 - All dependencies declared in `flake.nix`
 - Supported systems: `x86_64-linux`, `aarch64-linux`, `aarch64-darwin`, `x86_64-darwin`
-- Flake `checks`: `formatting` (treefmt), `golangci-lint`, `go-test` — all run by `nix flake check`
+- Flake `checks`: `formatting` (treefmt), `golangci-lint`, `go-test` (the `taiga` package itself, whose build runs `go test`) and `docker-image` — all run by `nix flake check`
+- `gomod2nix.toml`'s `cachePackages` (written by `gomod2nix generate --with-deps`, which `just chores` runs) has gomod2nix compile the dependencies once into a Go build cache that the package and lint builds both restore; it only changes with the dependencies
 - Consistent formatting and building across machines
 
 ### CI / GitHub Actions
-- `ci.yml` runs `nix flake check`, builds the binary and Docker image on every push, and
+- `ci.yml` runs `nix flake check` (which builds the binary and Docker image too) on every push, and
   publishes the image to `ghcr.io/<owner>/taiga` from `master` and tags only (the homelab deploys `master-<sha>`). Tag fan-out is
   delegated to `hanko version docker tags --latest-on-release-tag`:
   - Tagged release (`vX.Y.Z`) → `:X.Y.Z`, `:X.Y`, `:X`, `:latest`, `:master-<sha>`
   - `master` between releases → `:master-<sha>` only: CI passes `--semver-tags=false` there, since hanko versions an untagged master build as the next release and would otherwise move `:X.Y.Z`, `:X.Y`, `:X` and `:latest` onto it
   - Feature branches → nothing published
-- There's no Nix binary cache step: a code change rebuilds the Go dependencies regardless, and the cache upload cost about 3½ minutes a run.
 
   Auth uses the workflow's `GITHUB_TOKEN` with `packages: write`. Images are
   pushed directly from the Nix-built `docker-archive` via `skopeo copy` — no
   Docker daemon needed in CI.
+- There's no Nix binary cache step: uploading the builds cost about 3½ minutes a run, more than it saved.
 - `ci.yml` skips pushes that only touch Markdown, `docs/` or `LICENSE*` (tag pushes always run); `[skip ci]` in the head commit skips any push. `gh workflow run ci --ref <branch>` runs it by hand (an empty commit doesn't: it touches no paths, so the docs-only skip drops it).
 - `commits.yml` checks PR commit subjects and titles are conventional commits.
 - `seal.yml` is a manually-triggered hanko release workflow.
