@@ -19,7 +19,7 @@ An existing password account adds a provider from its account page (`POST /auth/
    - **Name**: `taiga`.
    - **Client type**: Confidential.
    - **Redirect URIs**: `https://taiga.example.com/api/auth/oidc/authentik/callback` (strict), with your frontend's origin and the `name` you give the provider in taiga's config.
-   - **Signing key**: any certificate, so ID tokens are signed with RS256.
+   - **Signing key**: any certificate (the built-in "authentik Self-signed Certificate" does), so ID tokens are signed with RS256. Without one (and a provider made through the API or terraform has none unless you set `signing_key`), authentik signs HS256 with the client secret, which taiga rejects, and every sign-in fails with `unexpected signature algorithm "HS256"` in the backend log.
    - **Scopes**: the defaults include `openid`, `email` and `profile`, which is what taiga asks for.
    - **Subject mode**: the default, "Based on the User's hashed ID", is stable. Don't pick one based on email or username, which can change.
    Note the **Client ID** and **Client Secret**.
