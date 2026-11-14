@@ -88,6 +88,8 @@
           tag = version;
           contents = [
             pkgs.dockerTools.usrBinEnv
+            # /etc/ssl/certs, so outbound TLS (OIDC discovery, S3) can verify servers.
+            pkgs.dockerTools.caCertificates
 
             migrations-postgres
             migrations-sqlite
