@@ -146,14 +146,43 @@ func TestGroupRoutes(t *testing.T) {
 	}
 }
 
+func TestSameRouteLoopStartedFurtherRound(t *testing.T) {
+	// The same 1km square started 100m along its first side, as when the watch is started a little further round the loop.
+	// Every point is on the same path, but the starts are 100m apart, past RouteShapeMeters.
+	later := []xy{{100, 0}, {1000, 0}, {1000, 1000}, {0, 1000}, {0, 0}, {100, 0}}
+	d, ok := SameRoute(BuildTrack(runAlong(square, 1)), BuildTrack(runAlong(later, 1)))
+	if !ok || d > 20 {
+		t.Errorf("SameRoute = %v (Fréchet %.1fm), want a match within 20m", ok, d)
+	}
+	// Trimming the ends mustn't hide a loop run the other way round, started a little further round too.
+	if d, ok := SameRoute(BuildTrack(runAlong(square, 1)), BuildTrack(runAlong(reversed(later), 1))); ok {
+		t.Errorf("the loop the other way round matched (Fréchet %.1fm)", d)
+	}
+	// Missing more than RouteEndpointMeters, as when the watch is started a few minutes in, is a different route.
+	if d, ok := SameRoute(BuildTrack(runAlong(square, 1)), BuildTrack(runAlong([]xy{{350, 0}, {1000, 0}, {1000, 1000}, {0, 1000}, {0, 0}}, 1))); ok {
+		t.Errorf("a loop missing its first 350m matched (Fréchet %.1fm)", d)
+	}
+}
+
 func TestFrechetGivesUpPastLimit(t *testing.T) {
 	a := [][2]float64{{0, 0}, {10, 0}}
 	b := [][2]float64{{0, 100}, {10, 100}}
-	if d := frechet(a, b, 50); !math.IsInf(d, 1) {
+	if d := frechet(a, b, 0, 0, 50); !math.IsInf(d, 1) {
 		t.Errorf("frechet = %v, want +Inf past the limit", d)
 	}
-	if d := frechet(a, b, 200); math.Abs(d-100) > 1e-9 {
+	if d := frechet(a, b, 0, 0, 200); math.Abs(d-100) > 1e-9 {
 		t.Errorf("frechet = %v, want 100", d)
+	}
+}
+
+func TestFrechetSkipsUpToTheWindowAtEachEnd(t *testing.T) {
+	a := [][2]float64{{0, 0}, {10, 0}, {20, 0}, {30, 0}}
+	b := [][2]float64{{-200, 0}, {0, 0}, {10, 0}, {20, 0}, {30, 0}, {200, 0}}
+	if d := frechet(a, b, 0, 0, math.Inf(1)); math.Abs(d-200) > 1e-9 {
+		t.Errorf("frechet with no window = %v, want 200", d)
+	}
+	if d := frechet(a, b, 1, 1, math.Inf(1)); d != 0 {
+		t.Errorf("frechet skipping one point at each end = %v, want 0", d)
 	}
 }
 

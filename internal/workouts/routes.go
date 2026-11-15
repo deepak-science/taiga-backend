@@ -114,22 +114,32 @@ func SameRoute(a, b *Track) (float64, bool) {
 	if dist(pa[0], pb[0]) > RouteEndpointMeters || dist(pa[len(pa)-1], pb[len(pb)-1]) > RouteEndpointMeters {
 		return 0, false
 	}
-	d := frechet(pa, pb, RouteShapeMeters)
+	// The endpoint check already lets the starts and ends sit RouteEndpointMeters apart, so Fréchet may skip that far into either track at each end.
+	// Otherwise a loop started a little further round, or a watch started a few steps from the door, counts the offset as shape.
+	d := frechet(pa, pb, endpointWindow(a), endpointWindow(b), RouteShapeMeters)
 	return d, d <= RouteShapeMeters
 }
 
+// endpointWindow is how many points from either end of the track lie within RouteEndpointMeters, kept short enough that the start and end windows never overlap.
+func endpointWindow(t *Track) int {
+	spacing := t.Meters / float64(len(t.Points)-1)
+	return min(int(RouteEndpointMeters/spacing), (len(t.Points)-2)/2)
+}
+
 // frechet is the discrete Fréchet distance between two point sequences, or +Inf once it must exceed limit.
+// The coupling may start anywhere in the first ka+1 points of a or kb+1 points of b, and end anywhere in the last ones, so up to that many points at either end go unmatched.
 // Following the points in order is what tells a loop run clockwise from the same loop run anticlockwise.
-func frechet(a, b [][2]float64, limit float64) float64 {
+func frechet(a, b [][2]float64, ka, kb int, limit float64) float64 {
 	prev := make([]float64, len(b))
 	cur := make([]float64, len(b))
+	best := math.Inf(1)
 	for i := range a {
 		rowMin := math.Inf(1)
 		for j := range b {
 			d := dist(a[i], b[j])
 			var reach float64
 			switch {
-			case i == 0 && j == 0:
+			case (i == 0 && j <= kb) || (j == 0 && i <= ka):
 				reach = d
 			case i == 0:
 				reach = math.Max(cur[j-1], d)
@@ -140,14 +150,17 @@ func frechet(a, b [][2]float64, limit float64) float64 {
 			}
 			cur[j] = reach
 			rowMin = math.Min(rowMin, reach)
+			if (j == len(b)-1 && i >= len(a)-1-ka) || (i == len(a)-1 && j >= len(b)-1-kb) {
+				best = math.Min(best, reach)
+			}
 		}
-		// Every coupling passes through this row, so none can come in under the limit.
-		if rowMin > limit {
+		// Past the last place a coupling can start, every unfinished coupling passes through this row, so none can come in under the limit.
+		if i >= ka && rowMin > limit && best > limit {
 			return math.Inf(1)
 		}
 		prev, cur = cur, prev
 	}
-	return prev[len(b)-1]
+	return best
 }
 
 // RouteGroup is a set of runs on the same route, as indices into the tracks passed to GroupRoutes.
