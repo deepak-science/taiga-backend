@@ -126,6 +126,17 @@ func (m *storeModel) rebuild(ctx context.Context, workout *Workout, corrections 
 		return nil, err
 	}
 	corrections.apply(&run.Summary)
+	// Being a copy outranks any other reason: it says why there are two, and that the other one counts.
+	if workout.DuplicateOf != nil {
+		original, err := m.Workout(ctx, *workout.DuplicateOf, userToken)
+		switch {
+		case err == nil:
+			run.Summary.ExcludedReason = duplicateReason(original.Source)
+		case !IsNotFound(err):
+			return nil, err
+		}
+		// A deleted original counts this one again; duplicate detection clears the mark.
+	}
 
 	var updated *Workout
 	err = m.store.InTx(ctx, func(q db.Querier) error {

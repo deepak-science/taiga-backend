@@ -187,3 +187,12 @@ WHERE
 ORDER BY
   start_time,
   id;
+
+-- name: SetWorkoutDuplicateOf :exec
+UPDATE workouts
+SET
+  duplicate_of = $3,
+  updated_at = CURRENT_TIMESTAMP
+WHERE
+  id = $1
+  AND user_id = $2;

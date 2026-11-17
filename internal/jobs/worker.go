@@ -120,6 +120,9 @@ func (w *Worker) run(ctx context.Context, job *models.Job) error {
 		// Queued behind any reprocessing still due, so a bulk reprocess regroups routes once at the end.
 		return w.m.EnqueueDetectRoutes(ctx, w.Now(), user)
 	case models.JobDetectRoutes:
+		if err := w.m.DetectDuplicates(ctx, w.Now(), user); err != nil {
+			return err
+		}
 		return w.m.DetectRoutes(ctx, user)
 	default:
 		return fmt.Errorf("%w: %q", errUnknownKind, job.Kind)

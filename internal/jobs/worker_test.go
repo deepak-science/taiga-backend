@@ -250,3 +250,59 @@ func TestRunStopsWithContext(t *testing.T) {
 		t.Fatal("Run didn't return after cancel")
 	}
 }
+
+// drain runs jobs until none is due.
+func drain(t *testing.T, w *jobs.Worker) {
+	t.Helper()
+	for {
+		found, err := w.RunOnce(t.Context())
+		require.NoError(t, err)
+		if !found {
+			return
+		}
+	}
+}
+
+func upload(t *testing.T, m models.Model, repo filerepo.FileRepo, user *tokens.UserToken, content []byte) *models.Workout {
+	t.Helper()
+	af, _, err := m.AddActivityFile(t.Context(), bytes.NewReader(content), start, user, repo)
+	require.NoError(t, err)
+	wo, _, err := m.CreateWorkoutFromActivityFile(t.Context(), af.ID, user, repo)
+	require.NoError(t, err)
+	return wo
+}
+
+func TestCopiesFromAnotherSourceStopCounting(t *testing.T) {
+	ctx := context.Background()
+	m, repo := testsupport.NewModel(t), testsupport.NewFileRepo(t)
+	alice := createUser(t, m, "alice@example.com")
+	watch := upload(t, m, repo, alice, testsupport.EncodeFITDevice(t, start, fourK, 0, 0, "COROS PACE 3"))
+	phone := upload(t, m, repo, alice, testsupport.NewTCX(start.Add(time.Minute), fourK, "Running").Encode(t))
+	require.Empty(t, phone.ExcludedReason)
+	w, c := newWorker(m, repo)
+
+	require.NoError(t, m.EnqueueDetectRoutes(ctx, c.now(), alice))
+	drain(t, w)
+	got, err := m.Workout(ctx, phone.ID, alice)
+	require.NoError(t, err)
+	require.NotNil(t, got.DuplicateOf)
+	assert.Equal(t, watch.ID, *got.DuplicateOf)
+	assert.Equal(t, "duplicate of the COROS PACE 3 recording", got.ExcludedReason)
+	efforts, err := m.BestSegments(ctx, "1k", workouts.SportRunning, 10, models.Window{}, alice)
+	require.NoError(t, err)
+	require.Len(t, efforts, 1)
+	assert.Equal(t, watch.ID, efforts[0].WorkoutID)
+
+	// Without the watch's recording, the phone's counts again.
+	require.NoError(t, m.DeleteWorkout(ctx, watch.ID, alice))
+	require.NoError(t, m.EnqueueDetectRoutes(ctx, c.now(), alice))
+	drain(t, w)
+	got, err = m.Workout(ctx, phone.ID, alice)
+	require.NoError(t, err)
+	assert.Nil(t, got.DuplicateOf)
+	assert.Empty(t, got.ExcludedReason)
+	efforts, err = m.BestSegments(ctx, "1k", workouts.SportRunning, 10, models.Window{}, alice)
+	require.NoError(t, err)
+	require.Len(t, efforts, 1)
+	assert.Equal(t, phone.ID, efforts[0].WorkoutID)
+}

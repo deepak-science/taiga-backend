@@ -15,6 +15,7 @@ WHERE
 
 -- name: ListWorkoutTracksByUser :many
 -- Oldest first, the order route detection assigns runs in; routes only group runs of one sport.
+-- A duplicate is left out even before reprocessing drops its track, since the same job marks it.
 SELECT
   workout_tracks.workout_id,
   workout_tracks.track,
@@ -24,6 +25,7 @@ FROM
   JOIN workouts ON workouts.id = workout_tracks.workout_id
 WHERE
   workout_tracks.user_id = $1
+  AND workouts.duplicate_of IS NULL
 ORDER BY
   workouts.start_time,
   workouts.id;
