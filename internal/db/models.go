@@ -86,6 +86,7 @@ type Workout struct {
 	Source             string             `json:"source"`
 	SportOverride      string             `json:"sport_override"`
 	UserExcludedReason string             `json:"user_excluded_reason"`
+	DuplicateOf        *int32             `json:"duplicate_of"`
 }
 
 type WorkoutRoute struct {

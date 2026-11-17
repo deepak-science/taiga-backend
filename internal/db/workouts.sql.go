@@ -45,7 +45,7 @@ VALUES
     $13
   )
 RETURNING
-  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason
+  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of
 `
 
 type CreateWorkoutParams struct {
@@ -100,6 +100,7 @@ func (q *Queries) CreateWorkout(ctx context.Context, arg *CreateWorkoutParams) (
 		&i.Source,
 		&i.SportOverride,
 		&i.UserExcludedReason,
+		&i.DuplicateOf,
 	)
 	return &i, err
 }
@@ -152,7 +153,7 @@ func (q *Queries) FirstWorkoutStartInWindow(ctx context.Context, arg *FirstWorko
 
 const getWorkout = `-- name: GetWorkout :one
 SELECT
-  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason
+  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of
 FROM
   workouts
 WHERE
@@ -189,13 +190,14 @@ func (q *Queries) GetWorkout(ctx context.Context, arg *GetWorkoutParams) (*Worko
 		&i.Source,
 		&i.SportOverride,
 		&i.UserExcludedReason,
+		&i.DuplicateOf,
 	)
 	return &i, err
 }
 
 const getWorkoutsByActivityFile = `-- name: GetWorkoutsByActivityFile :many
 SELECT
-  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason
+  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of
 FROM
   workouts
 WHERE
@@ -238,6 +240,7 @@ func (q *Queries) GetWorkoutsByActivityFile(ctx context.Context, arg *GetWorkout
 			&i.Source,
 			&i.SportOverride,
 			&i.UserExcludedReason,
+			&i.DuplicateOf,
 		); err != nil {
 			return nil, err
 		}
@@ -308,7 +311,7 @@ func (q *Queries) ListCountedWorkoutsInWindow(ctx context.Context, arg *ListCoun
 
 const listWorkoutsByUser = `-- name: ListWorkoutsByUser :many
 SELECT
-  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason
+  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of
 FROM
   workouts
 WHERE
@@ -345,6 +348,7 @@ func (q *Queries) ListWorkoutsByUser(ctx context.Context, userID int32) ([]*Work
 			&i.Source,
 			&i.SportOverride,
 			&i.UserExcludedReason,
+			&i.DuplicateOf,
 		); err != nil {
 			return nil, err
 		}
@@ -358,7 +362,7 @@ func (q *Queries) ListWorkoutsByUser(ctx context.Context, userID int32) ([]*Work
 
 const listWorkoutsByUserInWindow = `-- name: ListWorkoutsByUserInWindow :many
 SELECT
-  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason
+  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of
 FROM
   workouts
 WHERE
@@ -417,6 +421,7 @@ func (q *Queries) ListWorkoutsByUserInWindow(ctx context.Context, arg *ListWorko
 			&i.Source,
 			&i.SportOverride,
 			&i.UserExcludedReason,
+			&i.DuplicateOf,
 		); err != nil {
 			return nil, err
 		}
@@ -426,6 +431,27 @@ func (q *Queries) ListWorkoutsByUserInWindow(ctx context.Context, arg *ListWorko
 		return nil, err
 	}
 	return items, nil
+}
+
+const setWorkoutDuplicateOf = `-- name: SetWorkoutDuplicateOf :exec
+UPDATE workouts
+SET
+  duplicate_of = $3,
+  updated_at = CURRENT_TIMESTAMP
+WHERE
+  id = $1
+  AND user_id = $2
+`
+
+type SetWorkoutDuplicateOfParams struct {
+	ID          int32  `json:"id"`
+	UserID      int32  `json:"user_id"`
+	DuplicateOf *int32 `json:"duplicate_of"`
+}
+
+func (q *Queries) SetWorkoutDuplicateOf(ctx context.Context, arg *SetWorkoutDuplicateOfParams) error {
+	_, err := q.db.Exec(ctx, setWorkoutDuplicateOf, arg.ID, arg.UserID, arg.DuplicateOf)
+	return err
 }
 
 const updateWorkout = `-- name: UpdateWorkout :one
@@ -443,7 +469,7 @@ WHERE
   id = $1
   AND user_id = $2
 RETURNING
-  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason
+  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of
 `
 
 type UpdateWorkoutParams struct {
@@ -490,6 +516,7 @@ func (q *Queries) UpdateWorkout(ctx context.Context, arg *UpdateWorkoutParams) (
 		&i.Source,
 		&i.SportOverride,
 		&i.UserExcludedReason,
+		&i.DuplicateOf,
 	)
 	return &i, err
 }
@@ -515,7 +542,7 @@ WHERE
   id = $1
   AND user_id = $2
 RETURNING
-  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason
+  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of
 `
 
 type UpdateWorkoutDerivedParams struct {
@@ -575,6 +602,7 @@ func (q *Queries) UpdateWorkoutDerived(ctx context.Context, arg *UpdateWorkoutDe
 		&i.Source,
 		&i.SportOverride,
 		&i.UserExcludedReason,
+		&i.DuplicateOf,
 	)
 	return &i, err
 }

@@ -49,6 +49,7 @@ type Querier interface {
 	DeleteWorkoutTrack(ctx context.Context, arg *DeleteWorkoutTrackParams) error
 	// One pending detection per user (idx_jobs_pending), however many workouts change before it runs.
 	EnqueueDetectRoutes(ctx context.Context, arg *EnqueueDetectRoutesParams) error
+	EnqueueProcessWorkout(ctx context.Context, arg *EnqueueProcessWorkoutParams) error
 	// Every user's file-backed workouts not built by the current processor; one already queued is skipped by idx_jobs_pending.
 	EnqueueStaleWorkouts(ctx context.Context, arg *EnqueueStaleWorkoutsParams) (int64, error)
 	EnqueueUserWorkouts(ctx context.Context, arg *EnqueueUserWorkoutsParams) (int64, error)
@@ -100,6 +101,7 @@ type Querier interface {
 	ListSegmentsByWorkout(ctx context.Context, arg *ListSegmentsByWorkoutParams) ([]*WorkoutSegment, error)
 	ListWorkoutRoutesByUser(ctx context.Context, userID int32) ([]*WorkoutRoute, error)
 	// Oldest first, the order route detection assigns runs in; routes only group runs of one sport.
+	// A duplicate is left out even before reprocessing drops its track, since the same job marks it.
 	ListWorkoutTracksByUser(ctx context.Context, userID int32) ([]*ListWorkoutTracksByUserRow, error)
 	ListWorkoutsByUser(ctx context.Context, userID int32) ([]*Workout, error)
 	// Starting in [window_from, window_to); callers pass far-off bounds for an open end, so the same SQL runs on SQLite.
@@ -114,6 +116,7 @@ type Querier interface {
 	// This query is useful for auth only and for nothing else, which should discourage misuse
 	SelectEmailPasswordForAuth(ctx context.Context, email string) (*SelectEmailPasswordForAuthRow, error)
 	SetRouteRepresentative(ctx context.Context, arg *SetRouteRepresentativeParams) error
+	SetWorkoutDuplicateOf(ctx context.Context, arg *SetWorkoutDuplicateOfParams) error
 	UpdateActivityFile(ctx context.Context, arg *UpdateActivityFileParams) (*ActivityFile, error)
 	UpdateWorkout(ctx context.Context, arg *UpdateWorkoutParams) (*Workout, error)
 	// Everything reprocessing rebuilds from the activity file, and the corrections it applied over it.

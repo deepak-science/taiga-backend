@@ -305,6 +305,7 @@ FROM
   JOIN workouts ON workouts.id = workout_tracks.workout_id
 WHERE
   workout_tracks.user_id = $1
+  AND workouts.duplicate_of IS NULL
 ORDER BY
   workouts.start_time,
   workouts.id
@@ -317,6 +318,7 @@ type ListWorkoutTracksByUserRow struct {
 }
 
 // Oldest first, the order route detection assigns runs in; routes only group runs of one sport.
+// A duplicate is left out even before reprocessing drops its track, since the same job marks it.
 func (q *Queries) ListWorkoutTracksByUser(ctx context.Context, userID int32) ([]*ListWorkoutTracksByUserRow, error) {
 	rows, err := q.db.Query(ctx, listWorkoutTracksByUser, userID)
 	if err != nil {

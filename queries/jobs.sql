@@ -155,3 +155,10 @@ DELETE FROM jobs
 WHERE
   state = 'done'
   AND updated_at < $1;
+
+-- name: EnqueueProcessWorkout :exec
+INSERT INTO
+  jobs (user_id, kind, workout_id, run_at)
+VALUES
+  ($1, 'process_workout', $2, $3)
+ON CONFLICT DO NOTHING;

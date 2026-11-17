@@ -104,6 +104,25 @@ func (q *Queries) DeleteJobsByWorkout(ctx context.Context, arg *DeleteJobsByWork
 	return err
 }
 
+const enqueueProcessWorkout = `-- name: EnqueueProcessWorkout :exec
+INSERT INTO
+  jobs (user_id, kind, workout_id, run_at)
+VALUES
+  ($1, 'process_workout', $2, $3)
+ON CONFLICT DO NOTHING
+`
+
+type EnqueueProcessWorkoutParams struct {
+	UserID    int32              `json:"user_id"`
+	WorkoutID *int32             `json:"workout_id"`
+	RunAt     pgtype.Timestamptz `json:"run_at"`
+}
+
+func (q *Queries) EnqueueProcessWorkout(ctx context.Context, arg *EnqueueProcessWorkoutParams) error {
+	_, err := q.db.Exec(ctx, enqueueProcessWorkout, arg.UserID, arg.WorkoutID, arg.RunAt)
+	return err
+}
+
 const enqueueStaleWorkouts = `-- name: EnqueueStaleWorkouts :execrows
 INSERT INTO
   jobs (user_id, kind, workout_id, run_at)

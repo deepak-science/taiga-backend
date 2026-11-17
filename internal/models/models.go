@@ -89,6 +89,8 @@ type Model interface {
 	// EnqueueDetectRoutes is called after anything that changes the user's tracks: a new, reprocessed or deleted workout.
 	EnqueueDetectRoutes(ctx context.Context, now time.Time, userToken *tokens.UserToken) error
 	DetectRoutes(ctx context.Context, userToken *tokens.UserToken) error
+	// DetectDuplicates runs first in the same job, so routes are grouped without the copies.
+	DetectDuplicates(ctx context.Context, now time.Time, userToken *tokens.UserToken) error
 	Jobs(ctx context.Context, state string, limit int32, userToken *tokens.UserToken) ([]*Job, error)
 	Job(ctx context.Context, id int32, userToken *tokens.UserToken) (*Job, error)
 	RetryDeadJob(ctx context.Context, id int32, now time.Time, userToken *tokens.UserToken) (*Job, error)
