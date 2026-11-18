@@ -29,19 +29,33 @@ type RouteOverride struct {
 	RouteID *int32 `json:"route_id"`
 }
 
-// routeSport is the sport of the route's runs, or empty when its representative is gone and detection hasn't picked another yet.
+// routeSport is the sport of the route's runs, or empty for a route with none.
+// Any run of it will do when the representative was just deleted and detection hasn't picked another yet.
 func routeSport(ctx context.Context, q db.Querier, route *db.Route) (string, error) {
-	if route.RepresentativeWorkoutID == nil {
-		return "", nil
+	ids := []int32{}
+	if route.RepresentativeWorkoutID != nil {
+		ids = append(ids, *route.RepresentativeWorkoutID)
 	}
-	rep, err := q.GetWorkout(ctx, &db.GetWorkoutParams{ID: *route.RepresentativeWorkoutID, UserID: route.UserID})
-	if IsNotFound(err) {
-		return "", nil
-	}
+	memberships, err := q.ListWorkoutRoutesByUser(ctx, route.UserID)
 	if err != nil {
 		return "", err
 	}
-	return rep.Sport, nil
+	for _, wr := range memberships {
+		if wr.RouteID == route.ID {
+			ids = append(ids, wr.WorkoutID)
+		}
+	}
+	for _, id := range ids {
+		w, err := q.GetWorkout(ctx, &db.GetWorkoutParams{ID: id, UserID: route.UserID})
+		if IsNotFound(err) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		return w.Sport, nil
+	}
+	return "", nil
 }
 
 // RouteOverride is the user's placement of the workout; not-found when detection placed it.
@@ -66,7 +80,7 @@ var errNoOverride = fmt.Errorf("workout has no route override of its own: %w", s
 
 // SetRouteOverride moves the workout onto a route, or with a nil route keeps it off all of them, and regroups the user's routes.
 func (m *storeModel) SetRouteOverride(ctx context.Context, workoutID int32, routeID *int32, userToken *tokens.UserToken) (*RouteOverride, error) {
-	err := m.store.InTx(ctx, func(q db.Querier) error {
+	err := m.routesTx(ctx, userToken.ID, func(q db.Querier) error {
 		workout, err := q.GetWorkout(ctx, &db.GetWorkoutParams{ID: workoutID, UserID: userToken.ID})
 		if err != nil {
 			return err
@@ -106,7 +120,7 @@ func (m *storeModel) SetRouteOverride(ctx context.Context, workoutID int32, rout
 
 // ClearRouteOverride hands the workout back to detection; it does nothing for a workout the user never placed.
 func (m *storeModel) ClearRouteOverride(ctx context.Context, workoutID int32, userToken *tokens.UserToken) error {
-	return m.store.InTx(ctx, func(q db.Querier) error {
+	return m.routesTx(ctx, userToken.ID, func(q db.Querier) error {
 		if _, err := q.GetWorkout(ctx, &db.GetWorkoutParams{ID: workoutID, UserID: userToken.ID}); err != nil {
 			return err
 		}
@@ -134,7 +148,7 @@ func (m *storeModel) MergeRoutes(ctx context.Context, into, from int32, userToke
 	if into == from {
 		return nil, ErrSameRoute
 	}
-	err := m.store.InTx(ctx, func(q db.Querier) error {
+	err := m.routesTx(ctx, userToken.ID, func(q db.Querier) error {
 		target, err := q.GetRoute(ctx, &db.GetRouteParams{ID: into, UserID: userToken.ID})
 		if err != nil {
 			return err
@@ -204,10 +218,25 @@ func (m *storeModel) MergeRoutes(ctx context.Context, into, from int32, userToke
 
 // UnmergeRoute undoes every merge into the route: the runs that came with one go back to the routes detection gives them.
 func (m *storeModel) UnmergeRoute(ctx context.Context, id int32, userToken *tokens.UserToken) error {
-	return m.store.InTx(ctx, func(q db.Querier) error {
+	return m.routesTx(ctx, userToken.ID, func(q db.Querier) error {
 		if _, err := q.GetRoute(ctx, &db.GetRouteParams{ID: id, UserID: userToken.ID}); err != nil {
 			return err
 		}
-		return detectRoutes(ctx, q, userToken.ID, id)
+		if err := detectRoutes(ctx, q, userToken.ID, id); err != nil {
+			return err
+		}
+		// Regrouping only sees runs that count right now; one that doesn't would bring its merge back when it counts again.
+		return q.DeleteMergeOverridesByRoute(ctx, &db.DeleteMergeOverridesByRouteParams{RouteID: &id, UserID: userToken.ID})
+	})
+}
+
+// routesTx is the transaction every regrouping of the user's routes runs in, taking turns on the user's row.
+// Each rebuilds all the memberships from what it read at its start, so two at once on PostgreSQL would overwrite each other or collide.
+func (m *storeModel) routesTx(ctx context.Context, userID int32, fn func(q db.Querier) error) error {
+	return m.store.InTx(ctx, func(q db.Querier) error {
+		if err := q.LockUser(ctx, userID); err != nil {
+			return err
+		}
+		return fn(q)
 	})
 }

@@ -76,6 +76,25 @@ func (q *Queries) CreateRoute(ctx context.Context, arg *CreateRouteParams) (*Rou
 	return &i, err
 }
 
+const deleteMergeOverridesByRoute = `-- name: DeleteMergeOverridesByRoute :exec
+DELETE FROM route_overrides
+WHERE
+  route_id = $1
+  AND user_id = $2
+  AND with_group = TRUE
+`
+
+type DeleteMergeOverridesByRouteParams struct {
+	RouteID *int32 `json:"route_id"`
+	UserID  int32  `json:"user_id"`
+}
+
+// Undoing a route's merges also drops the ones held by runs that aren't being grouped just now (excluded, say), or they'd bring the merge back later.
+func (q *Queries) DeleteMergeOverridesByRoute(ctx context.Context, arg *DeleteMergeOverridesByRouteParams) error {
+	_, err := q.db.Exec(ctx, deleteMergeOverridesByRoute, arg.RouteID, arg.UserID)
+	return err
+}
+
 const deleteRoute = `-- name: DeleteRoute :exec
 DELETE FROM routes
 WHERE

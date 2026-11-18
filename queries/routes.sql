@@ -200,3 +200,11 @@ SET
 WHERE
   route_id = sqlc.arg(from_route_id)
   AND user_id = sqlc.arg(user_id);
+
+-- name: DeleteMergeOverridesByRoute :exec
+-- Undoing a route's merges also drops the ones held by runs that aren't being grouped just now (excluded, say), or they'd bring the merge back later.
+DELETE FROM route_overrides
+WHERE
+  route_id = $1
+  AND user_id = $2
+  AND with_group = TRUE;

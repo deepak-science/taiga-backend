@@ -40,6 +40,8 @@ type Querier interface {
 	DeleteDoneJobsBefore(ctx context.Context, updatedAt pgtype.Timestamptz) (int64, error)
 	DeleteIdentity(ctx context.Context, arg *DeleteIdentityParams) (int64, error)
 	DeleteJobsByWorkout(ctx context.Context, arg *DeleteJobsByWorkoutParams) error
+	// Undoing a route's merges also drops the ones held by runs that aren't being grouped just now (excluded, say), or they'd bring the merge back later.
+	DeleteMergeOverridesByRoute(ctx context.Context, arg *DeleteMergeOverridesByRouteParams) error
 	DeleteRoute(ctx context.Context, arg *DeleteRouteParams) error
 	DeleteRouteOverride(ctx context.Context, arg *DeleteRouteOverrideParams) error
 	// SQLite doesn't enforce ON DELETE CASCADE without a per-connection pragma, so a deleted route clears its own.

@@ -229,7 +229,7 @@ func (m *storeModel) EnqueueDetectRoutes(ctx context.Context, now time.Time, use
 // DetectRoutes regroups all the user's tracked runs into routes from scratch, then applies their overrides.
 // Each new group keeps the id, and so the name, of the old route it shares the most runs with; old routes left with no runs are deleted.
 func (m *storeModel) DetectRoutes(ctx context.Context, userToken *tokens.UserToken) error {
-	return m.store.InTx(ctx, func(q db.Querier) error {
+	return m.routesTx(ctx, userToken.ID, func(q db.Querier) error {
 		return detectRoutes(ctx, q, userToken.ID, 0)
 	})
 }

@@ -129,6 +129,12 @@ func TestRouteOverrides(t *testing.T) {
 		walk := upload(21, typedef.SportWalking, typedef.SubSportGeneric)
 		_, err = m.SetRouteOverride(ctx, walk.ID, &northRoute.ID, alice)
 		assert.ErrorIs(t, err, models.ErrRouteSport)
+
+		// Until detection picks a new representative, the route's other runs still say what sport it is.
+		require.NoError(t, m.DeleteWorkout(ctx, *mustRoute(t, m, northRoute.ID, alice).RepresentativeWorkoutID, alice))
+		require.Nil(t, mustRoute(t, m, northRoute.ID, alice).RepresentativeWorkoutID)
+		_, err = m.SetRouteOverride(ctx, walk.ID, &northRoute.ID, alice)
+		assert.ErrorIs(t, err, models.ErrRouteSport)
 	})
 }
 
@@ -191,7 +197,15 @@ func TestMergeRoutes(t *testing.T) {
 
 	e4 := uploadHeading(t, m, repo, alice, 6, east, 300)
 	require.NoError(t, m.DetectRoutes(ctx, alice))
+
+	// A merged-in run that doesn't count while the merge is undone mustn't bring the merge back when it counts again.
+	_, err = m.CorrectWorkout(ctx, e3.ID, models.Corrections{ExcludedReason: "ran with a friend"}, alice, repo)
+	require.NoError(t, err)
+	require.NoError(t, m.DetectRoutes(ctx, alice))
 	require.NoError(t, m.UnmergeRoute(ctx, northRoute.ID, alice))
+	_, err = m.CorrectWorkout(ctx, e3.ID, models.Corrections{}, alice, repo)
+	require.NoError(t, err)
+	require.NoError(t, m.DetectRoutes(ctx, alice))
 	detail = mustRoute(t, m, northRoute.ID, alice)
 	assert.Equal(t, 2, detail.RunCount)
 	assert.Empty(t, detail.MergedWorkoutIDs)
