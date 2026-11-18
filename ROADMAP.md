@@ -223,7 +223,7 @@ Builds on the M6 series (positions); everything is per user, never matched acros
   - Groups are formed from every run, moved or not, so taking an odd run off a route can't reshape what's left.
   - A route that's named, merged into or moved onto is kept down to one run, so a named route no longer loses its name when it dissolves.
   - "Not this route" is the same as taking the run off every route: it stays off until the override is cleared or it's moved somewhere. Forbidding one route while still matching others would need detection to regroup around the ban; not built, with no case for it yet.
-  - [ ] Frontend: the controls on the workout and route pages.
+  - [x] Frontend (taiga-frontend#20): "Change" on the workout page's route (automatic, no route, or one of the routes), and "Merge in" and "Undo merges" on the route page, with the runs put there by hand marked.
 - [x] Frontend: a routes list, a route page (map of the representative track, its runs and a time trend), and the route shown on each workout.
 
 ## M10 — Corrections
