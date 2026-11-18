@@ -93,6 +93,41 @@ func (q *Queries) DeleteRoute(ctx context.Context, arg *DeleteRouteParams) error
 	return err
 }
 
+const deleteRouteOverride = `-- name: DeleteRouteOverride :exec
+DELETE FROM route_overrides
+WHERE
+  workout_id = $1
+  AND user_id = $2
+`
+
+type DeleteRouteOverrideParams struct {
+	WorkoutID int32 `json:"workout_id"`
+	UserID    int32 `json:"user_id"`
+}
+
+func (q *Queries) DeleteRouteOverride(ctx context.Context, arg *DeleteRouteOverrideParams) error {
+	_, err := q.db.Exec(ctx, deleteRouteOverride, arg.WorkoutID, arg.UserID)
+	return err
+}
+
+const deleteRouteOverridesByRoute = `-- name: DeleteRouteOverridesByRoute :exec
+DELETE FROM route_overrides
+WHERE
+  route_id = $1
+  AND user_id = $2
+`
+
+type DeleteRouteOverridesByRouteParams struct {
+	RouteID *int32 `json:"route_id"`
+	UserID  int32  `json:"user_id"`
+}
+
+// SQLite doesn't enforce ON DELETE CASCADE without a per-connection pragma, so a deleted route clears its own.
+func (q *Queries) DeleteRouteOverridesByRoute(ctx context.Context, arg *DeleteRouteOverridesByRouteParams) error {
+	_, err := q.db.Exec(ctx, deleteRouteOverridesByRoute, arg.RouteID, arg.UserID)
+	return err
+}
+
 const deleteWorkoutRoute = `-- name: DeleteWorkoutRoute :exec
 DELETE FROM workout_routes
 WHERE
@@ -185,6 +220,34 @@ func (q *Queries) GetRoute(ctx context.Context, arg *GetRouteParams) (*Route, er
 	return &i, err
 }
 
+const getRouteOverride = `-- name: GetRouteOverride :one
+SELECT
+  workout_id, user_id, route_id, with_group, created_at
+FROM
+  route_overrides
+WHERE
+  workout_id = $1
+  AND user_id = $2
+`
+
+type GetRouteOverrideParams struct {
+	WorkoutID int32 `json:"workout_id"`
+	UserID    int32 `json:"user_id"`
+}
+
+func (q *Queries) GetRouteOverride(ctx context.Context, arg *GetRouteOverrideParams) (*RouteOverride, error) {
+	row := q.db.QueryRow(ctx, getRouteOverride, arg.WorkoutID, arg.UserID)
+	var i RouteOverride
+	err := row.Scan(
+		&i.WorkoutID,
+		&i.UserID,
+		&i.RouteID,
+		&i.WithGroup,
+		&i.CreatedAt,
+	)
+	return &i, err
+}
+
 const getWorkoutRouteID = `-- name: GetWorkoutRouteID :one
 SELECT
   route_id
@@ -227,6 +290,43 @@ func (q *Queries) GetWorkoutTrack(ctx context.Context, arg *GetWorkoutTrackParam
 	var track []byte
 	err := row.Scan(&track)
 	return track, err
+}
+
+const listRouteOverridesByUser = `-- name: ListRouteOverridesByUser :many
+SELECT
+  workout_id, user_id, route_id, with_group, created_at
+FROM
+  route_overrides
+WHERE
+  user_id = $1
+ORDER BY
+  workout_id
+`
+
+func (q *Queries) ListRouteOverridesByUser(ctx context.Context, userID int32) ([]*RouteOverride, error) {
+	rows, err := q.db.Query(ctx, listRouteOverridesByUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*RouteOverride{}
+	for rows.Next() {
+		var i RouteOverride
+		if err := rows.Scan(
+			&i.WorkoutID,
+			&i.UserID,
+			&i.RouteID,
+			&i.WithGroup,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listRoutesByUser = `-- name: ListRoutesByUser :many
@@ -339,6 +439,26 @@ func (q *Queries) ListWorkoutTracksByUser(ctx context.Context, userID int32) ([]
 	return items, nil
 }
 
+const moveWorkoutRoutes = `-- name: MoveWorkoutRoutes :exec
+UPDATE workout_routes
+SET
+  route_id = $1
+WHERE
+  route_id = $2
+  AND user_id = $3
+`
+
+type MoveWorkoutRoutesParams struct {
+	ToRouteID   int32 `json:"to_route_id"`
+	FromRouteID int32 `json:"from_route_id"`
+	UserID      int32 `json:"user_id"`
+}
+
+func (q *Queries) MoveWorkoutRoutes(ctx context.Context, arg *MoveWorkoutRoutesParams) error {
+	_, err := q.db.Exec(ctx, moveWorkoutRoutes, arg.ToRouteID, arg.FromRouteID, arg.UserID)
+	return err
+}
+
 const renameRoute = `-- name: RenameRoute :one
 UPDATE routes
 SET
@@ -369,6 +489,26 @@ func (q *Queries) RenameRoute(ctx context.Context, arg *RenameRouteParams) (*Rou
 	return &i, err
 }
 
+const retargetRouteOverrides = `-- name: RetargetRouteOverrides :exec
+UPDATE route_overrides
+SET
+  route_id = $1
+WHERE
+  route_id = $2
+  AND user_id = $3
+`
+
+type RetargetRouteOverridesParams struct {
+	ToRouteID   *int32 `json:"to_route_id"`
+	FromRouteID *int32 `json:"from_route_id"`
+	UserID      int32  `json:"user_id"`
+}
+
+func (q *Queries) RetargetRouteOverrides(ctx context.Context, arg *RetargetRouteOverridesParams) error {
+	_, err := q.db.Exec(ctx, retargetRouteOverrides, arg.ToRouteID, arg.FromRouteID, arg.UserID)
+	return err
+}
+
 const setRouteRepresentative = `-- name: SetRouteRepresentative :exec
 UPDATE routes
 SET
@@ -386,6 +526,36 @@ type SetRouteRepresentativeParams struct {
 
 func (q *Queries) SetRouteRepresentative(ctx context.Context, arg *SetRouteRepresentativeParams) error {
 	_, err := q.db.Exec(ctx, setRouteRepresentative, arg.ID, arg.UserID, arg.RepresentativeWorkoutID)
+	return err
+}
+
+const upsertRouteOverride = `-- name: UpsertRouteOverride :exec
+INSERT INTO
+  route_overrides (workout_id, user_id, route_id, with_group)
+VALUES
+  ($1, $2, $3, $4)
+ON CONFLICT (workout_id) DO UPDATE
+SET
+  route_id = excluded.route_id,
+  with_group = excluded.with_group
+WHERE
+  route_overrides.user_id = excluded.user_id
+`
+
+type UpsertRouteOverrideParams struct {
+	WorkoutID int32  `json:"workout_id"`
+	UserID    int32  `json:"user_id"`
+	RouteID   *int32 `json:"route_id"`
+	WithGroup bool   `json:"with_group"`
+}
+
+func (q *Queries) UpsertRouteOverride(ctx context.Context, arg *UpsertRouteOverrideParams) error {
+	_, err := q.db.Exec(ctx, upsertRouteOverride,
+		arg.WorkoutID,
+		arg.UserID,
+		arg.RouteID,
+		arg.WithGroup,
+	)
 	return err
 }
 

@@ -140,3 +140,63 @@ INSERT INTO
 VALUES
   ($1, 'detect_routes', $2)
 ON CONFLICT DO NOTHING;
+
+-- name: MoveWorkoutRoutes :exec
+UPDATE workout_routes
+SET
+  route_id = sqlc.arg(to_route_id)
+WHERE
+  route_id = sqlc.arg(from_route_id)
+  AND user_id = sqlc.arg(user_id);
+
+-- name: UpsertRouteOverride :exec
+INSERT INTO
+  route_overrides (workout_id, user_id, route_id, with_group)
+VALUES
+  ($1, $2, $3, $4)
+ON CONFLICT (workout_id) DO UPDATE
+SET
+  route_id = excluded.route_id,
+  with_group = excluded.with_group
+WHERE
+  route_overrides.user_id = excluded.user_id;
+
+-- name: GetRouteOverride :one
+SELECT
+  *
+FROM
+  route_overrides
+WHERE
+  workout_id = $1
+  AND user_id = $2;
+
+-- name: ListRouteOverridesByUser :many
+SELECT
+  *
+FROM
+  route_overrides
+WHERE
+  user_id = $1
+ORDER BY
+  workout_id;
+
+-- name: DeleteRouteOverride :exec
+DELETE FROM route_overrides
+WHERE
+  workout_id = $1
+  AND user_id = $2;
+
+-- name: DeleteRouteOverridesByRoute :exec
+-- SQLite doesn't enforce ON DELETE CASCADE without a per-connection pragma, so a deleted route clears its own.
+DELETE FROM route_overrides
+WHERE
+  route_id = $1
+  AND user_id = $2;
+
+-- name: RetargetRouteOverrides :exec
+UPDATE route_overrides
+SET
+  route_id = sqlc.arg(to_route_id)
+WHERE
+  route_id = sqlc.arg(from_route_id)
+  AND user_id = sqlc.arg(user_id);

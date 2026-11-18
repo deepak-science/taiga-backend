@@ -43,6 +43,10 @@ type RouteDetail struct {
 	Workouts []*Workout `json:"workouts"`
 	// [lat, lon] pairs; empty if the representative run is gone.
 	Track [][2]float64 `json:"track"`
+	// MovedWorkoutIDs are the runs the user moved here one by one, in or out of the window.
+	MovedWorkoutIDs []int32 `json:"moved_workout_ids"`
+	// MergedWorkoutIDs are the runs here through a merge.
+	MergedWorkoutIDs []int32 `json:"merged_workout_ids"`
 }
 
 // summarize takes the sport and distance from the representative run, wherever it falls, and the figures from the runs starting in the window.
@@ -132,10 +136,29 @@ func (m *storeModel) Route(ctx context.Context, id int32, window Window, userTok
 	if err != nil {
 		return nil, err
 	}
-	detail := &RouteDetail{RouteSummary: *summarize(route, runs[id], window), Workouts: []*Workout{}, Track: [][2]float64{}}
+	detail := &RouteDetail{
+		RouteSummary: *summarize(route, runs[id], window), Workouts: []*Workout{}, Track: [][2]float64{},
+		MovedWorkoutIDs: []int32{}, MergedWorkoutIDs: []int32{},
+	}
+	onRoute := make(map[int32]bool, len(runs[id]))
 	for _, w := range runs[id] {
+		onRoute[w.ID] = true
 		if window.Contains(w.StartTime.Time) {
 			detail.Workouts = append(detail.Workouts, w)
+		}
+	}
+	overrides, err := q.ListRouteOverridesByUser(ctx, userToken.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, o := range overrides {
+		// An override detection couldn't apply (the run lost its track, say) isn't listed.
+		switch {
+		case o.RouteID == nil || *o.RouteID != id || !onRoute[o.WorkoutID]:
+		case o.WithGroup:
+			detail.MergedWorkoutIDs = append(detail.MergedWorkoutIDs, o.WorkoutID)
+		default:
+			detail.MovedWorkoutIDs = append(detail.MovedWorkoutIDs, o.WorkoutID)
 		}
 	}
 	if route.RepresentativeWorkoutID != nil {
@@ -203,104 +226,247 @@ func (m *storeModel) EnqueueDetectRoutes(ctx context.Context, now time.Time, use
 	return q.EnqueueDetectRoutes(ctx, &db.EnqueueDetectRoutesParams{UserID: userToken.ID, RunAt: timestamptz(now)})
 }
 
-// DetectRoutes regroups all the user's tracked runs into routes from scratch.
-// Each new group keeps the id, and so the name, of the old route it shares the most runs with; old routes nothing claims are deleted.
+// DetectRoutes regroups all the user's tracked runs into routes from scratch, then applies their overrides.
+// Each new group keeps the id, and so the name, of the old route it shares the most runs with; old routes left with no runs are deleted.
 func (m *storeModel) DetectRoutes(ctx context.Context, userToken *tokens.UserToken) error {
 	return m.store.InTx(ctx, func(q db.Querier) error {
-		rows, err := q.ListWorkoutTracksByUser(ctx, userToken.ID)
-		if err != nil {
-			return err
-		}
-		tracks := make([]*workouts.Track, len(rows))
-		for i, row := range rows {
-			var t workouts.Track
-			if err := json.Unmarshal(row.Track, &t); err != nil {
-				log.Printf("Skipping undecodable track of workout %d: %v", row.WorkoutID, err)
-				continue
-			}
-			tracks[i] = &t
-		}
-		// Routes never mix sports, so each sport is grouped on its own; members stay indices into rows.
-		var groups []workouts.RouteGroup
-		for _, sport := range workouts.ScoredSports {
-			var idx []int
-			var sub []*workouts.Track
-			for i, row := range rows {
-				if row.Sport == sport {
-					idx = append(idx, i)
-					sub = append(sub, tracks[i])
-				}
-			}
-			for _, g := range workouts.GroupRoutes(sub) {
-				members := make([]int, len(g.Members))
-				for k, m := range g.Members {
-					members[k] = idx[m]
-				}
-				groups = append(groups, workouts.RouteGroup{Members: members, Representative: idx[g.Representative]})
-			}
-		}
-
-		old, err := q.ListWorkoutRoutesByUser(ctx, userToken.ID)
-		if err != nil {
-			return err
-		}
-		oldRoute := make(map[int32]int32, len(old))
-		for _, wr := range old {
-			oldRoute[wr.WorkoutID] = wr.RouteID
-		}
-		existing, err := q.ListRoutesByUser(ctx, userToken.ID)
-		if err != nil {
-			return err
-		}
-
-		// Bigger groups pick first, so a route that split keeps its id on the larger part.
-		slices.SortStableFunc(groups, func(a, b workouts.RouteGroup) int { return cmp.Compare(len(b.Members), len(a.Members)) })
-		claimed := make(map[int32]bool)
-		if err := q.DeleteWorkoutRoutesByUser(ctx, userToken.ID); err != nil {
-			return err
-		}
-		for _, g := range groups {
-			overlap := make(map[int32]int)
-			for _, i := range g.Members {
-				if r, ok := oldRoute[rows[i].WorkoutID]; ok && !claimed[r] {
-					overlap[r]++
-				}
-			}
-			rep := rows[g.Representative].WorkoutID
-			var routeID int32
-			for r, n := range overlap {
-				if routeID == 0 || n > overlap[routeID] || (n == overlap[routeID] && r < routeID) {
-					routeID = r
-				}
-			}
-			if routeID != 0 {
-				claimed[routeID] = true
-				if err := q.SetRouteRepresentative(ctx, &db.SetRouteRepresentativeParams{ID: routeID, UserID: userToken.ID, RepresentativeWorkoutID: &rep}); err != nil {
-					return err
-				}
-			} else {
-				route, err := q.CreateRoute(ctx, &db.CreateRouteParams{UserID: userToken.ID, RepresentativeWorkoutID: &rep})
-				if err != nil {
-					return err
-				}
-				routeID = route.ID
-				claimed[routeID] = true
-			}
-			for _, i := range g.Members {
-				if err := q.AddWorkoutRoute(ctx, &db.AddWorkoutRouteParams{WorkoutID: rows[i].WorkoutID, RouteID: routeID, UserID: userToken.ID}); err != nil {
-					return err
-				}
-			}
-		}
-		for _, r := range existing {
-			if !claimed[r.ID] {
-				if err := q.DeleteRoute(ctx, &db.DeleteRouteParams{ID: r.ID, UserID: userToken.ID}); err != nil {
-					return err
-				}
-			}
-		}
-		return nil
+		return detectRoutes(ctx, q, userToken.ID, 0)
 	})
+}
+
+// routeCluster is a set of runs grouped by their tracks, as indices into the user's tracked runs, less any the user moved elsewhere.
+type routeCluster struct {
+	members []int
+	// forced is the route a merge puts the cluster on; 0 leaves it to claim one.
+	forced int32
+}
+
+// builtRoute is a route's runs after overrides.
+type builtRoute struct {
+	members []int
+	// core is the largest cluster on the route, which its representative comes from; empty when every run was moved here.
+	core []int
+}
+
+// detectRoutes is DetectRoutes inside a transaction.
+// A non-zero unmerge drops the merges into that route, leaving those runs to group on their own again.
+func detectRoutes(ctx context.Context, q db.Querier, userID int32, unmerge int32) error {
+	all, err := q.ListWorkoutTracksByUser(ctx, userID)
+	if err != nil {
+		return err
+	}
+	rows := all[:0]
+	var tracks []*workouts.Track
+	index := make(map[int32]int, len(all))
+	for _, row := range all {
+		var t workouts.Track
+		if err := json.Unmarshal(row.Track, &t); err != nil {
+			log.Printf("Skipping undecodable track of workout %d: %v", row.WorkoutID, err)
+			continue
+		}
+		index[row.WorkoutID] = len(rows)
+		rows = append(rows, row)
+		tracks = append(tracks, &t)
+	}
+
+	old, err := q.ListWorkoutRoutesByUser(ctx, userID)
+	if err != nil {
+		return err
+	}
+	oldRoute := make(map[int32]int32, len(old))
+	// Routes never mix sports, so an override onto a route of another sport (the run's sport was corrected since) is ignored.
+	routeSport := make(map[int32]string)
+	for _, wr := range old {
+		oldRoute[wr.WorkoutID] = wr.RouteID
+		if i, ok := index[wr.WorkoutID]; ok {
+			routeSport[wr.RouteID] = rows[i].Sport
+		}
+	}
+	existing, err := q.ListRoutesByUser(ctx, userID)
+	if err != nil {
+		return err
+	}
+	routeByID := make(map[int32]*db.Route, len(existing))
+	for _, r := range existing {
+		routeByID[r.ID] = r
+	}
+	overrideRows, err := q.ListRouteOverridesByUser(ctx, userID)
+	if err != nil {
+		return err
+	}
+	overrides := make(map[int32]*db.RouteOverride, len(overrideRows))
+	for _, o := range overrideRows {
+		overrides[o.WorkoutID] = o
+	}
+	applies := func(o *db.RouteOverride, sport string) bool {
+		if o.RouteID == nil {
+			return !o.WithGroup
+		}
+		if _, ok := routeByID[*o.RouteID]; !ok {
+			return false
+		}
+		s, known := routeSport[*o.RouteID]
+		return !known || s == sport
+	}
+
+	// Clusters come from every tracked run, moved or not, so taking a run off a route leaves the rest of it as it was.
+	var clusters []*routeCluster
+	var moved []int
+	for _, sport := range workouts.ScoredSports {
+		var idx []int
+		var sub []*workouts.Track
+		for i, row := range rows {
+			if row.Sport == sport {
+				idx = append(idx, i)
+				sub = append(sub, tracks[i])
+			}
+		}
+		for _, g := range workouts.ClusterRoutes(sub) {
+			c := &routeCluster{}
+			votes := make(map[int32]int)
+			released := false
+			for _, k := range g.Members {
+				i := idx[k]
+				id := rows[i].WorkoutID
+				o := overrides[id]
+				switch {
+				case o == nil || !applies(o, sport):
+					c.members = append(c.members, i)
+				case !o.WithGroup:
+					if o.RouteID != nil {
+						moved = append(moved, i)
+					}
+				case *o.RouteID == unmerge:
+					if err := q.DeleteRouteOverride(ctx, &db.DeleteRouteOverrideParams{WorkoutID: id, UserID: userID}); err != nil {
+						return err
+					}
+					delete(overrides, id)
+					released = true
+					c.members = append(c.members, i)
+				default:
+					votes[*o.RouteID]++
+					c.members = append(c.members, i)
+				}
+			}
+			for r, n := range votes {
+				if c.forced == 0 || n > votes[c.forced] || (n == votes[c.forced] && r < c.forced) {
+					c.forced = r
+				}
+			}
+			for _, i := range c.members {
+				id := rows[i].WorkoutID
+				if released {
+					// Or the cluster would claim the route it was just split from.
+					delete(oldRoute, id)
+				}
+				if c.forced == 0 {
+					continue
+				}
+				// Every run of a merged cluster carries the merge, so it outlives the runs it was made with.
+				if o := overrides[id]; o == nil || (o.WithGroup && *o.RouteID != c.forced) {
+					if err := q.UpsertRouteOverride(ctx, &db.UpsertRouteOverrideParams{WorkoutID: id, UserID: userID, RouteID: &c.forced, WithGroup: true}); err != nil {
+						return err
+					}
+				}
+			}
+			clusters = append(clusters, c)
+		}
+	}
+
+	built := make(map[int32]*builtRoute)
+	var order []int32
+	add := func(routeID int32, members []int, cluster bool) {
+		b := built[routeID]
+		if b == nil {
+			b = &builtRoute{}
+			built[routeID] = b
+			order = append(order, routeID)
+		}
+		b.members = append(b.members, members...)
+		if cluster && len(members) > len(b.core) {
+			b.core = members
+		}
+	}
+	var free []*routeCluster
+	for _, c := range clusters {
+		if c.forced != 0 {
+			add(c.forced, c.members, true)
+		} else {
+			free = append(free, c)
+		}
+	}
+	// A route the user named, moved a run onto or merged into is theirs to keep, even down to one run.
+	kept := make(map[int32]bool)
+	for _, r := range existing {
+		kept[r.ID] = r.Name != nil || built[r.ID] != nil
+	}
+	for _, i := range moved {
+		kept[*overrides[rows[i].WorkoutID].RouteID] = true
+	}
+
+	// Bigger clusters pick first, so a route that split keeps its id on the larger part.
+	slices.SortStableFunc(free, func(a, b *routeCluster) int { return cmp.Compare(len(b.members), len(a.members)) })
+	claimed := make(map[int32]bool)
+	for _, c := range free {
+		overlap := make(map[int32]int)
+		for _, i := range c.members {
+			if r, ok := oldRoute[rows[i].WorkoutID]; ok && !claimed[r] && routeByID[r] != nil {
+				overlap[r]++
+			}
+		}
+		var routeID int32
+		for r, n := range overlap {
+			if routeID == 0 || n > overlap[routeID] || (n == overlap[routeID] && r < routeID) {
+				routeID = r
+			}
+		}
+		if len(c.members) < 2 && !kept[routeID] {
+			continue
+		}
+		if routeID == 0 {
+			route, err := q.CreateRoute(ctx, &db.CreateRouteParams{UserID: userID})
+			if err != nil {
+				return err
+			}
+			routeID = route.ID
+		}
+		claimed[routeID] = true
+		add(routeID, c.members, true)
+	}
+	for _, i := range moved {
+		add(*overrides[rows[i].WorkoutID].RouteID, []int{i}, false)
+	}
+
+	if err := q.DeleteWorkoutRoutesByUser(ctx, userID); err != nil {
+		return err
+	}
+	for _, routeID := range order {
+		b := built[routeID]
+		rep := b.members[0]
+		if len(b.core) > 0 {
+			rep = workouts.Medoid(tracks, b.core)
+		}
+		if err := q.SetRouteRepresentative(ctx, &db.SetRouteRepresentativeParams{ID: routeID, UserID: userID, RepresentativeWorkoutID: &rows[rep].WorkoutID}); err != nil {
+			return err
+		}
+		for _, i := range b.members {
+			if err := q.AddWorkoutRoute(ctx, &db.AddWorkoutRouteParams{WorkoutID: rows[i].WorkoutID, RouteID: routeID, UserID: userID}); err != nil {
+				return err
+			}
+		}
+	}
+	for _, r := range existing {
+		if built[r.ID] != nil {
+			continue
+		}
+		if err := q.DeleteRouteOverridesByRoute(ctx, &db.DeleteRouteOverridesByRouteParams{RouteID: &r.ID, UserID: userID}); err != nil {
+			return err
+		}
+		if err := q.DeleteRoute(ctx, &db.DeleteRouteParams{ID: r.ID, UserID: userID}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // storeTrack replaces the workout's track, removing it for a run without GPS or a sport that doesn't get routes.

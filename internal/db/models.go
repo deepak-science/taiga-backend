@@ -48,6 +48,14 @@ type Route struct {
 	CreatedAt               pgtype.Timestamptz `json:"created_at"`
 }
 
+type RouteOverride struct {
+	WorkoutID int32              `json:"workout_id"`
+	UserID    int32              `json:"user_id"`
+	RouteID   *int32             `json:"route_id"`
+	WithGroup bool               `json:"with_group"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type User struct {
 	ID            int32              `json:"id"`
 	Email         string             `json:"email"`

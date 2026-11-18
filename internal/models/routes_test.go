@@ -132,8 +132,16 @@ func TestDetectRoutes(t *testing.T) {
 		assert.Empty(t, detail.Track)
 
 		require.NoError(t, m.DetectRoutes(ctx, alice))
+		detail, err = m.Route(ctx, r.ID, models.Window{}, alice)
+		require.NoError(t, err, "a named route is kept at one run")
+		assert.Equal(t, 1, detail.RunCount)
+		assert.NotNil(t, detail.RepresentativeWorkoutID)
+
+		_, err = m.RenameRoute(ctx, r.ID, nil, alice)
+		require.NoError(t, err)
+		require.NoError(t, m.DetectRoutes(ctx, alice))
 		_, err = m.Route(ctx, r.ID, models.Window{}, alice)
-		assert.True(t, models.IsNotFound(err), "one run left is no longer a route: %v", err)
+		assert.True(t, models.IsNotFound(err), "without a name, one run left is no longer a route: %v", err)
 	})
 }
 

@@ -41,6 +41,9 @@ type Querier interface {
 	DeleteIdentity(ctx context.Context, arg *DeleteIdentityParams) (int64, error)
 	DeleteJobsByWorkout(ctx context.Context, arg *DeleteJobsByWorkoutParams) error
 	DeleteRoute(ctx context.Context, arg *DeleteRouteParams) error
+	DeleteRouteOverride(ctx context.Context, arg *DeleteRouteOverrideParams) error
+	// SQLite doesn't enforce ON DELETE CASCADE without a per-connection pragma, so a deleted route clears its own.
+	DeleteRouteOverridesByRoute(ctx context.Context, arg *DeleteRouteOverridesByRouteParams) error
 	DeleteSegmentsByWorkout(ctx context.Context, arg *DeleteSegmentsByWorkoutParams) error
 	DeleteWorkout(ctx context.Context, arg *DeleteWorkoutParams) error
 	DeleteWorkoutRoute(ctx context.Context, arg *DeleteWorkoutRouteParams) error
@@ -62,6 +65,7 @@ type Querier interface {
 	GetIdentityUser(ctx context.Context, arg *GetIdentityUserParams) (*GetIdentityUserRow, error)
 	GetJob(ctx context.Context, arg *GetJobParams) (*Job, error)
 	GetRoute(ctx context.Context, arg *GetRouteParams) (*Route, error)
+	GetRouteOverride(ctx context.Context, arg *GetRouteOverrideParams) (*RouteOverride, error)
 	GetUser(ctx context.Context, id int32) (*GetUserRow, error)
 	//
 	// -- name: UpdateUser :exec
@@ -94,6 +98,7 @@ type Querier interface {
 	ListIdentitiesByUser(ctx context.Context, userID int32) ([]*UserIdentity, error)
 	ListJobsByUser(ctx context.Context, arg *ListJobsByUserParams) ([]*Job, error)
 	ListJobsByUserAndState(ctx context.Context, arg *ListJobsByUserAndStateParams) ([]*Job, error)
+	ListRouteOverridesByUser(ctx context.Context, userID int32) ([]*RouteOverride, error)
 	ListRoutesByUser(ctx context.Context, userID int32) ([]*Route, error)
 	// Every segment of the user's workouts of one sport, for picking each year's best at each segment in Go.
 	ListSegmentEffortsBySport(ctx context.Context, arg *ListSegmentEffortsBySportParams) ([]*ListSegmentEffortsBySportRow, error)
@@ -108,8 +113,10 @@ type Querier interface {
 	ListWorkoutsByUserInWindow(ctx context.Context, arg *ListWorkoutsByUserInWindowParams) ([]*Workout, error)
 	// Takes the user row's write lock for the rest of the transaction, so checks across their rows (e.g. their last way to sign in) can't race; works the same on both databases.
 	LockUser(ctx context.Context, id int32) error
+	MoveWorkoutRoutes(ctx context.Context, arg *MoveWorkoutRoutesParams) error
 	RenameRoute(ctx context.Context, arg *RenameRouteParams) (*Route, error)
 	RequeueDeadJob(ctx context.Context, arg *RequeueDeadJobParams) (*Job, error)
+	RetargetRouteOverrides(ctx context.Context, arg *RetargetRouteOverridesParams) error
 	RetryJobLater(ctx context.Context, arg *RetryJobLaterParams) error
 	// --
 	// really we don't want to select password except specifically for auth.
@@ -121,6 +128,7 @@ type Querier interface {
 	UpdateWorkout(ctx context.Context, arg *UpdateWorkoutParams) (*Workout, error)
 	// Everything reprocessing rebuilds from the activity file, and the corrections it applied over it.
 	UpdateWorkoutDerived(ctx context.Context, arg *UpdateWorkoutDerivedParams) (*Workout, error)
+	UpsertRouteOverride(ctx context.Context, arg *UpsertRouteOverrideParams) error
 	UpsertWorkoutSeries(ctx context.Context, arg *UpsertWorkoutSeriesParams) error
 	UpsertWorkoutTrack(ctx context.Context, arg *UpsertWorkoutTrackParams) error
 	UserHasPassword(ctx context.Context, id int32) (bool, error)
