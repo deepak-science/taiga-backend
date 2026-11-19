@@ -218,7 +218,12 @@ Builds on the M6 series (positions); everything is per user, never matched acros
   - Small detours (a block around construction, GPS drift) fall inside the tolerance and still match.
   - Extensions (the usual loop plus an extra mile) cover most of the route but add length: match them as a variant of the route, flagged, and keep them out of the route's total-time comparison. Today they fail the length check and become a route of their own.
   - Truly different runs become their own route. Partial overlap between routes is what sub-route segments (Strava-style, user-drawn or detected from shared stretches) would handle; that's a later step.
-- [ ] **User control beats detection:** naming is done (`PUT /routes/{id}`). Still to do: merge two routes, move a run to another route or detach it, mark "not this route". Those decisions are stored separately and survive re-detection. A route that dissolves (down to one run) loses its name today; overrides would fix that too.
+- [x] **User control beats detection.** Beside naming (`PUT /routes/{id}`): move a run onto another route or take it off every route (`PUT /workouts/{id}/route/override`), and merge two routes (`POST /routes/{id}/merge`), each undoable. The decisions live in `route_overrides`, one row per workout, and every re-detection applies them over its own grouping.
+  - A merge is stored on the runs, not the route: the group detection puts a marked run in goes to the merged route, and every run of that group gets the mark, so a new run on the merged-in route follows it and the merge outlives the runs it was made with.
+  - Groups are formed from every run, moved or not, so taking an odd run off a route can't reshape what's left.
+  - A route that's named, merged into or moved onto is kept down to one run, so a named route no longer loses its name when it dissolves.
+  - "Not this route" is the same as taking the run off every route: it stays off until the override is cleared or it's moved somewhere. Forbidding one route while still matching others would need detection to regroup around the ban; not built, with no case for it yet.
+  - [x] Frontend (taiga-frontend#20): "Change" on the workout page's route (automatic, no route, or one of the routes), and "Merge in" and "Undo merges" on the route page, with the runs put there by hand marked.
 - [x] Frontend: a routes list, a route page (map of the representative track, its runs and a time trend), and the route shown on each workout.
 
 ## M10 — Corrections
@@ -232,7 +237,7 @@ The file is the source of truth, but files are sometimes wrong: a ride saved as 
 - [ ] Other fields the file got wrong, as more override columns applied the same way, once there's a case for one.
 - [x] Frontend: the sport and exclusion controls on the workout page ("Correct"), with a corrected sport marked and an exclusion shown as "Counted: No".
 - [x] **Indoor runs aren't scored.** Treadmill, `indoor_running` and `indoor_walking` sessions measure distance with a belt or foot pod, so they get no segments and no track (`RunSummary.Scored`, #65).
-- [ ] Route changes (rename is done; merge, move, detach, "not this route") are M9's user control.
+- [x] Route changes (rename, merge, move, detach) are M9's user control.
 
 ## M11 — Time windows
 

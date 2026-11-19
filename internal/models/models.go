@@ -86,6 +86,12 @@ type Model interface {
 	Route(ctx context.Context, id int32, window Window, userToken *tokens.UserToken) (*RouteDetail, error)
 	RenameRoute(ctx context.Context, id int32, name *string, userToken *tokens.UserToken) (*RouteSummary, error)
 	WorkoutRoute(ctx context.Context, workoutID int32, userToken *tokens.UserToken) (*RouteSummary, error)
+	// The user's say over routes, applied on every detection; each change regroups the routes before returning.
+	RouteOverride(ctx context.Context, workoutID int32, userToken *tokens.UserToken) (*RouteOverride, error)
+	SetRouteOverride(ctx context.Context, workoutID int32, routeID *int32, userToken *tokens.UserToken) (*RouteOverride, error)
+	ClearRouteOverride(ctx context.Context, workoutID int32, userToken *tokens.UserToken) error
+	MergeRoutes(ctx context.Context, into, from int32, userToken *tokens.UserToken) (*RouteSummary, error)
+	UnmergeRoute(ctx context.Context, id int32, userToken *tokens.UserToken) error
 	// EnqueueDetectRoutes is called after anything that changes the user's tracks: a new, reprocessed or deleted workout.
 	EnqueueDetectRoutes(ctx context.Context, now time.Time, userToken *tokens.UserToken) error
 	DetectRoutes(ctx context.Context, userToken *tokens.UserToken) error

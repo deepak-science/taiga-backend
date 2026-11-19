@@ -24,6 +24,8 @@ func newRouteRouter(m models.Model) http.Handler {
 	router.Get("/", getRoutesFunc(m))
 	router.Get("/{routeid}", getRouteFunc(m))
 	router.Put("/{routeid}", putRouteFunc(m))
+	router.Post("/{routeid}/merge", postRouteMergeFunc(m))
+	router.Delete("/{routeid}/merges", deleteRouteMergesFunc(m))
 	return router
 }
 
@@ -158,5 +160,132 @@ func getWorkoutRouteFunc(m models.Model) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, route)
+	}
+}
+
+// overrideError maps errors from changing which route a run is on; it reports whether it handled err.
+func overrideError(w http.ResponseWriter, r *http.Request, err error) bool {
+	switch {
+	case models.IsNotFound(err):
+		notFoundHandler(w, r)
+	case errors.Is(err, models.ErrNoTrack), errors.Is(err, models.ErrUnknownRoute),
+		errors.Is(err, models.ErrRouteSport), errors.Is(err, models.ErrSameRoute):
+		unprocessableError(w, err)
+	default:
+		return false
+	}
+	return true
+}
+
+type routeIDRequest struct {
+	RouteID *int32 `json:"route_id"`
+}
+
+func decodeRouteID(w http.ResponseWriter, r *http.Request) (*int32, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1024)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	var req routeIDRequest
+	if err := dec.Decode(&req); err != nil {
+		badRequestError(w, fmt.Errorf("invalid JSON: %w", err))
+		return nil, false
+	}
+	return req.RouteID, true
+}
+
+// postRouteMergeFunc merges the route named in the body into the one in the path.
+func postRouteMergeFunc(m models.Model) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userToken, err := tokens.UserTokenFromContext(r.Context())
+		if err != nil {
+			unauthorizedHandler(w, r)
+			return
+		}
+		id, ok := routeID(r)
+		if !ok {
+			notFoundHandler(w, r)
+			return
+		}
+		from, ok := decodeRouteID(w, r)
+		if !ok {
+			return
+		}
+		if from == nil {
+			http.Error(w, "route_id is the route to merge into this one", http.StatusBadRequest)
+			return
+		}
+		route, err := m.MergeRoutes(r.Context(), id, *from, userToken)
+		if err != nil {
+			if !overrideError(w, r, err) {
+				serverError(w, err)
+			}
+			return
+		}
+		writeJSON(w, route)
+	}
+}
+
+func deleteRouteMergesFunc(m models.Model) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userToken, err := tokens.UserTokenFromContext(r.Context())
+		if err != nil {
+			unauthorizedHandler(w, r)
+			return
+		}
+		id, ok := routeID(r)
+		if !ok {
+			notFoundHandler(w, r)
+			return
+		}
+		if err := m.UnmergeRoute(r.Context(), id, userToken); err != nil {
+			if !overrideError(w, r, err) {
+				serverError(w, err)
+			}
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// workoutRouteOverrideFunc serves GET, PUT and DELETE of a workout's route override.
+func workoutRouteOverrideFunc(m models.Model) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		userToken, err := tokens.UserTokenFromContext(ctx)
+		if err != nil {
+			unauthorizedHandler(w, r)
+			return
+		}
+		id64, err := strconv.ParseInt(chi.URLParam(r, "workoutid"), 10, 32)
+		if err != nil {
+			notFoundHandler(w, r)
+			return
+		}
+		workoutID := int32(id64)
+
+		var override *models.RouteOverride
+		switch r.Method {
+		case http.MethodPut:
+			routeID, ok := decodeRouteID(w, r)
+			if !ok {
+				return
+			}
+			override, err = m.SetRouteOverride(ctx, workoutID, routeID, userToken)
+		case http.MethodDelete:
+			err = m.ClearRouteOverride(ctx, workoutID, userToken)
+		default:
+			override, err = m.RouteOverride(ctx, workoutID, userToken)
+		}
+		if err != nil {
+			if !overrideError(w, r, err) {
+				serverError(w, err)
+			}
+			return
+		}
+		if override == nil {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		writeJSON(w, override)
 	}
 }

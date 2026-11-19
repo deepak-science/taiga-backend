@@ -100,6 +100,9 @@ func (m *storeModel) DeleteWorkout(ctx context.Context, id int32, userToken *tok
 		if err := q.DeleteWorkoutRoute(ctx, &db.DeleteWorkoutRouteParams{WorkoutID: id, UserID: userToken.ID}); err != nil {
 			return err
 		}
+		if err := q.DeleteRouteOverride(ctx, &db.DeleteRouteOverrideParams{WorkoutID: id, UserID: userToken.ID}); err != nil {
+			return err
+		}
 		if err := q.ClearRouteRepresentative(ctx, &db.ClearRouteRepresentativeParams{RepresentativeWorkoutID: &id, UserID: userToken.ID}); err != nil {
 			return err
 		}

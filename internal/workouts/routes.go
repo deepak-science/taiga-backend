@@ -171,10 +171,21 @@ type RouteGroup struct {
 }
 
 // GroupRoutes clusters tracks, given oldest first, into routes of at least two runs; a run that matches nothing is left out.
+func GroupRoutes(tracks []*Track) []RouteGroup {
+	var out []RouteGroup
+	for _, g := range ClusterRoutes(tracks) {
+		if len(g.Members) >= 2 {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
+// ClusterRoutes is GroupRoutes with the runs that match nothing kept, each a group of its own.
 // Each run first joins the group whose first run it matches most closely.
 // That first run may be an off day, splitting one route in two, so groups whose representatives match are then merged until none do.
 // The result depends only on the tracks and their order, so rebuilding from scratch gives the same routes.
-func GroupRoutes(tracks []*Track) []RouteGroup {
+func ClusterRoutes(tracks []*Track) []RouteGroup {
 	var groups []RouteGroup
 	for i, t := range tracks {
 		if t == nil {
@@ -193,7 +204,7 @@ func GroupRoutes(tracks []*Track) []RouteGroup {
 		groups[best].Members = append(groups[best].Members, i)
 	}
 	for g := range groups {
-		groups[g].Representative = medoid(tracks, groups[g].Members)
+		groups[g].Representative = Medoid(tracks, groups[g].Members)
 	}
 
 	for merged := true; merged; {
@@ -205,7 +216,7 @@ func GroupRoutes(tracks []*Track) []RouteGroup {
 				}
 				members := append(groups[a].Members, groups[b].Members...)
 				slices.Sort(members)
-				groups[a] = RouteGroup{Members: members, Representative: medoid(tracks, members)}
+				groups[a] = RouteGroup{Members: members, Representative: Medoid(tracks, members)}
 				groups = slices.Delete(groups, b, b+1)
 				merged = true
 				break
@@ -213,18 +224,12 @@ func GroupRoutes(tracks []*Track) []RouteGroup {
 		}
 	}
 
-	var out []RouteGroup
-	for _, g := range groups {
-		if len(g.Members) >= 2 {
-			out = append(out, g)
-		}
-	}
-	return out
+	return groups
 }
 
-// medoid picks the member with the least total distance to the others, comparing coarse resamplings point by point.
+// Medoid picks the member with the least total distance to the others, comparing coarse resamplings point by point.
 // Members already match within tolerance, so the cheap comparison is enough to rank them and keeps a large route from costing a Fréchet per pair.
-func medoid(tracks []*Track, members []int) int {
+func Medoid(tracks []*Track, members []int) int {
 	proj := newProjection(tracks[members[0]].Points[0][0])
 	coarse := make([][][2]float64, len(members))
 	for k, m := range members {
