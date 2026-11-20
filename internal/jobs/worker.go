@@ -50,6 +50,9 @@ func (w *Worker) Run(ctx context.Context) {
 			if _, err := w.m.PruneJobs(ctx, w.Now().Add(-keepDone)); err != nil {
 				log.Printf("jobs: could not prune finished jobs: %v", err)
 			}
+			if err := w.m.PruneCLIAuth(ctx, w.Now()); err != nil {
+				log.Printf("jobs: could not prune CLI sign-ins and sessions: %v", err)
+			}
 			lastPrune = w.Now()
 		}
 		// Drain what's due before sleeping.

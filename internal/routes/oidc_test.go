@@ -187,7 +187,7 @@ func TestOIDCSignIn(t *testing.T) {
 
 	status, body := a.call(http.DefaultClient, nil, http.MethodGet, "/auth/providers")
 	require.Equal(t, http.StatusOK, status)
-	assert.JSONEq(t, `{"password_login":true,"registration_open":true,"providers":[{"name":"fake","display_name":"Fake"}]}`, string(body))
+	assert.JSONEq(t, `{"password_login":true,"registration_open":true,"device_login":true,"providers":[{"name":"fake","display_name":"Fake"}]}`, string(body))
 
 	first := a.signedIn(ada)
 	assert.Equal(t, "ada@example.com", first.Email)
@@ -386,7 +386,7 @@ func TestPasswordLoginOff(t *testing.T) {
 
 	status, body := a.call(http.DefaultClient, nil, http.MethodGet, "/auth/providers")
 	require.Equal(t, http.StatusOK, status)
-	assert.JSONEq(t, `{"password_login":false,"registration_open":false,"providers":[{"name":"fake","display_name":"Fake"}]}`, string(body))
+	assert.JSONEq(t, `{"password_login":false,"registration_open":false,"device_login":true,"providers":[{"name":"fake","display_name":"Fake"}]}`, string(body))
 	for _, path := range []string{"/auth/tokens", "/auth/register"} {
 		resp, err := http.Post(a.srv.URL+path, "application/json", strings.NewReader(`{"email":"grace@example.com","password":"password123"}`))
 		require.NoError(t, err)

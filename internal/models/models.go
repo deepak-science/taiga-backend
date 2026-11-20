@@ -47,6 +47,19 @@ type Model interface {
 	LinkIdentity(ctx context.Context, id Identity, userToken *tokens.UserToken) error
 	Identities(ctx context.Context, userToken *tokens.UserToken) (*UserIdentities, error)
 	UnlinkIdentity(ctx context.Context, id int32, passwordLogin bool, issuers []string, userToken *tokens.UserToken) error
+	// Signing in from a CLI: it asks, a signed-in user approves its code in a browser, and it polls for the grant.
+	StartDeviceAuthorization(ctx context.Context, clientName string, now time.Time) (*DeviceStart, error)
+	DeviceRequest(ctx context.Context, userCode string, now time.Time) (*DeviceRequest, error)
+	ApproveDevice(ctx context.Context, userCode string, now time.Time, userToken *tokens.UserToken) error
+	DenyDevice(ctx context.Context, userCode string, now time.Time) error
+	// ExchangeDeviceCode returns ErrAuthorizationPending, ErrSlowDown, ErrExpiredToken, ErrAccessDenied or ErrInvalidGrant until there's a grant.
+	ExchangeDeviceCode(ctx context.Context, deviceCode string, now time.Time) (*CLIGrant, error)
+	// A CLI session's refresh token buys new access tokens until it's revoked or lapses unused; ErrInvalidGrant after that.
+	RefreshCLISession(ctx context.Context, refreshToken string, now time.Time) (*UserNoPassword, error)
+	RevokeCLISessionByToken(ctx context.Context, refreshToken string) error
+	CLISessions(ctx context.Context, userToken *tokens.UserToken) ([]*CLISession, error)
+	RevokeCLISession(ctx context.Context, id int32, userToken *tokens.UserToken) error
+	PruneCLIAuth(ctx context.Context, now time.Time) error
 	Hat(ctx context.Context, hatID int32, userToken *tokens.UserToken) (*Hat, error)
 	Hats(ctx context.Context, userToken *tokens.UserToken) ([]*Hat, error)
 	AddHat(ctx context.Context, hat *Hat, userToken *tokens.UserToken) (*Hat, error)

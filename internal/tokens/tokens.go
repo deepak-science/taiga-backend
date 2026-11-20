@@ -16,6 +16,9 @@ import (
 	"time"
 )
 
+// Lifetime is how long a token is good for; a CLI session buys a new one with its refresh token.
+const Lifetime = 2 * time.Hour
+
 type Toker interface {
 	EncodeUser(userToken *UserToken) (string, error)
 	DecodeTokenString(tokenString string) (*UserToken, error)
@@ -83,7 +86,7 @@ func (tok *rsaToker) EncodeUser(userToken *UserToken) (string, error) {
 		userToken.Email,
 		userToken.ID,
 		jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(2 * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(Lifetime)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),
 			Issuer:    tok.issuer,

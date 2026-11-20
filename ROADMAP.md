@@ -328,6 +328,72 @@ Endomondo and Google Fit runs are on the same ground, so with cross-source dupli
   - It isn't the format. Watch runs cut down to a fix every 2.5 seconds, with distance measured along the fixes, still agree with cadence on 93%. What can't be reproduced is the phone's position error; independent noise on each fix is far harsher than the real thing, so a simulation says nothing.
   - No ground truth for the phone: of the Google Fit copies of watch runs, one has enough fixes to compare.
   - So: per activity, gated. Cadence where the file has it; else the run's own split when it has two modes; else no walking claimed for that run, not zero walking.
+## M14 — Signing in from `taco`
+
+`taco login` posts an email and password to `/auth/tokens` and keeps the two-hour token.
+An account that signs in through a provider has no password to give it, a deployment with `auth.password_login: false` has none for anyone, and a script outlives the token.
+The goal: `taco login` works for any account however it signs in, and stays signed in until it's revoked.
+
+### Design
+
+**taiga's own device flow, not the provider's.** The shape is OAuth's device authorization grant (RFC 8628) with taiga as the authorization server: the CLI shows a short code, the user approves it in a browser that's already signed in to taiga, and the CLI polls until it has a token.
+- It works for every way of signing in, passwords included, because approval happens inside a taiga session; the backend never learns how that session began.
+- The alternative, the CLI running the device flow against authentik and handing taiga the ID token, depends on each provider offering that grant, needs a public client configured per provider, and adds an endpoint that takes ID tokens from outside the callback's state and nonce checks. It also does nothing for password accounts.
+- A browser redirect to a port on localhost (RFC 8252) was the other candidate. It fails over SSH and on a headless box, which is where a CLI is most wanted.
+
+**The flow.**
+1. `taco login` calls `POST /auth/device` with a name for itself (the hostname by default) and gets `{device_code, user_code, verification_uri, verification_uri_complete, expires_in, interval}`. The code lasts ten minutes; the URI is `{public_base_url}/#/device`.
+2. It prints the URL and the code, opens the browser when it can, and polls `POST /auth/device/token` with the device code every `interval` seconds. Until approval that answers `400` with `authorization_pending`, or `slow_down`, `expired_token` or `access_denied`, as the RFC names them.
+3. In the browser, `#/device` asks the user to sign in if they aren't (by any method, coming back to the page afterwards), shows the code, the name the CLI gave and when it asked, and offers Approve and Deny: `POST /auth/device/approve` or `/deny` with the user code, behind the usual JWT middleware.
+4. The next poll returns `{token, refresh_token, expires_in}`: the same two-hour JWT every other sign-in gets, and a refresh token.
+5. When the JWT runs out, `taco` trades the refresh token at `POST /auth/tokens/refresh` for a new JWT. Nothing else in the API changes: every request still carries a JWT, and the authenticator still checks a signature and no database.
+
+**What's stored.**
+- `device_authorizations`: the device code as a SHA-256 hash, the user code, the client's name, when it expires, the user who approved it (null until then), whether it was denied, and when it was last polled. A row is used once and pruned once expired.
+- `cli_sessions`: one per approved device. The refresh token as a hash, the user, the name, when it was made and last used, and when it lapses. Only the CLI ever holds the token itself.
+- The account page lists the sessions (`GET /auth/sessions`) and revokes one (`DELETE /auth/sessions/{id}`). Revoking takes effect at the next refresh, so within two hours; that delay is the price of JWTs that need no lookup.
+
+**Choices made, each open to change.**
+- *Refresh tokens don't rotate.* Rotation with reuse detection is the textbook answer, but two `taco` processes refreshing at once would trip it and sign both out. A fixed token that's hashed at rest, revocable, and lapses after 90 days unused is enough for a homelab; rotation can come with a lock file in the CLI if it's ever wanted.
+- *A session isn't scoped.* It can do whatever the account can. Read-only or upload-only sessions would need scopes in the JWT and a check on every route, with no case for them yet.
+- *The user code* is eight letters from an alphabet without vowels or look-alikes, shown as `WDJB-MJHT` and compared without the dash or case: about 34 bits, for ten minutes.
+- *Where `taco` keeps it:* `~/.config/taco/credentials.json` (XDG), mode 0600, in place of `cred/token` under whatever directory it was run from.
+
+**What can go wrong.**
+- *Phishing is the real risk, not guessing.* Someone starts a login and sends a victim the link; if the victim approves, the attacker's CLI is in. So the page never approves on load, even from `verification_uri_complete`: it shows the code and the client's name and says to approve only a login just started from a terminal that shows the same code. Guessing a code gains nothing, since approving a stranger's code grants them your account, not you theirs.
+- *`POST /auth/device` takes no credentials* and writes a row, and the backend has no rate limiting. Pending authorizations are capped at about a hundred, expired ones pruned on insert (the count isn't locked, so requests arriving together can run a few over), and a poll sooner than `interval` gets `slow_down` without touching anything else.
+- *The device code* is 32 random bytes, hashed at rest, good for one exchange, and the exchange deletes the row.
+- Both codes and the refresh token never go in logs; the request logger prints paths, and none of them is in a path.
+- Closed registration doesn't matter: the flow only ever signs in to an account that exists.
+
+**Not a device flow, but nearly free afterwards: a token made on the account page.** `cli_sessions` is close to an API-key table already. A "create a token" button there would make a session without the device dance, for a cron job on a box with no one to approve it. Worth doing second, not instead.
+
+### Tasks
+
+Backend:
+- [x] Migration `000017_cli_sessions` (both dialects): `device_authorizations`, `cli_sessions`. Numbered after the stretches migration (000016).
+- [x] `POST /auth/device`, `POST /auth/device/token`, and behind the JWT middleware `GET /auth/device/{user_code}` (what the approval page shows), `POST /auth/device/approve`, `POST /auth/device/deny`.
+- [x] `POST /auth/tokens/refresh` and `POST /auth/tokens/revoke` (the CLI signing itself out); `GET /auth/sessions`, `DELETE /auth/sessions/{id}`.
+- [x] Pruning of expired authorizations and lapsed sessions: expired authorizations whenever one is asked for, and both hourly with the jobs prune.
+- [x] Tests: the whole flow against the real store, each RFC error, a code used twice, an expired code, a revoked session's refresh, another user's session.
+- [x] `docs/cli-sign-in.md`, and `device_login` in `GET /auth/providers` so an old CLI or frontend can tell the flow is there.
+
+Frontend:
+- [ ] `#/device` page: the code (from the link or typed), what's asking, Approve and Deny, and a plain confirmation afterwards.
+- [ ] Sign-in that returns to where it was headed, through a provider round trip too; today every sign-in lands on the workout list.
+- [ ] Sessions on the account page, with Revoke.
+
+`taco`:
+- [ ] `taco login` runs the device flow by default; `--password` keeps today's behaviour where the backend allows it.
+- [ ] Refresh on an expired token or a `401`, once, then retry the request.
+- [ ] Credentials under the XDG config directory, 0600; `taco logout` deletes them and revokes the session.
+- [ ] `taco whoami`, since "am I signed in, and as whom" is otherwise a guess.
+
+### Open questions
+
+- How long an unused session lasts: built as 90 days, started again by each refresh.
+- Whether the account-page token belongs in this milestone or the next.
+- Whether a signed-in `taco` should be able to approve another machine's login (`taco approve WDJB-MJHT`), for setting up a second box from the first without a browser.
 
 ## Later
 

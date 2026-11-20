@@ -17,6 +17,28 @@ type ActivityFile struct {
 	UserID       *int32             `json:"user_id"`
 }
 
+type CliSession struct {
+	ID         int32              `json:"id"`
+	UserID     int32              `json:"user_id"`
+	Name       string             `json:"name"`
+	TokenHash  string             `json:"token_hash"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	LastUsedAt pgtype.Timestamptz `json:"last_used_at"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+}
+
+type DeviceAuthorization struct {
+	ID             int32              `json:"id"`
+	DeviceCodeHash string             `json:"device_code_hash"`
+	UserCode       string             `json:"user_code"`
+	ClientName     string             `json:"client_name"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+	UserID         *int32             `json:"user_id"`
+	Denied         bool               `json:"denied"`
+	LastPolledAt   pgtype.Timestamptz `json:"last_polled_at"`
+}
+
 type Hat struct {
 	ID          int32              `json:"id"`
 	Name        *string            `json:"name"`

@@ -32,6 +32,7 @@ func newAuthRouter(m models.Model, tok tokens.Toker, o options) http.Handler {
 		router.Post("/tokens", createTokenFunc(m, tok))
 	}
 
+	mountDeviceSignIn(router, m, tok, o)
 	router.Get("/oidc/{provider}/login", oidcLogin(o.oidc))
 	router.Get("/oidc/{provider}/callback", oidcCallback(m, tok, o.oidc))
 	router.Group(func(r chi.Router) {
@@ -39,6 +40,7 @@ func newAuthRouter(m models.Model, tok tokens.Toker, o options) http.Handler {
 		r.Get("/identities", getIdentities(m, o))
 		r.Post("/identities/{provider}", linkIdentity(o.oidc))
 		r.Delete("/identities/{identityid}", unlinkIdentity(m, o))
+		mountDeviceApproval(r, m)
 	})
 	return router
 }
@@ -53,6 +55,8 @@ type providersResponse struct {
 	PasswordLogin    bool           `json:"password_login"`
 	RegistrationOpen bool           `json:"registration_open"`
 	Providers        []providerInfo `json:"providers"`
+	// DeviceLogin says a CLI can sign in through POST /auth/device; absent from backends that predate it.
+	DeviceLogin bool `json:"device_login"`
 }
 
 func getProvidersFunc(o options) http.HandlerFunc {
@@ -65,6 +69,7 @@ func getProvidersFunc(o options) http.HandlerFunc {
 			PasswordLogin:    o.passwordLogin,
 			RegistrationOpen: o.passwordLogin && o.registrationOpen,
 			Providers:        providers,
+			DeviceLogin:      true,
 		})
 	}
 }
