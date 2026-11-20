@@ -127,6 +127,7 @@ func ReadEndomondoFile(r io.Reader) (*Run, error) {
 			SpeedMeterPerSec:  orNaN(p.SpeedKmh) / 3.6,
 			AltitudeMeters:    orNaN(p.Altitude),
 			HeartRate:         orNaN(p.HeartRate),
+			Cadence:           math.NaN(),
 			Latitude:          math.NaN(),
 			Longitude:         math.NaN(),
 			DurationFromStart: ts.Sub(start),

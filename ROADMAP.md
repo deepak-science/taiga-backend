@@ -217,7 +217,7 @@ Builds on the M6 series (positions); everything is per user, never matched acros
 - [ ] **Variations.**
   - Small detours (a block around construction, GPS drift) fall inside the tolerance and still match.
   - Extensions (the usual loop plus an extra mile) cover most of the route but add length: match them as a variant of the route, flagged, and keep them out of the route's total-time comparison. Today they fail the length check and become a route of their own.
-  - Truly different runs become their own route. Partial overlap between routes is what sub-route segments (Strava-style, user-drawn or detected from shared stretches) would handle; that's a later step.
+  - Truly different runs become their own route. Partial overlap between routes is what stretches (M13) would handle.
 - [x] **User control beats detection.** Beside naming (`PUT /routes/{id}`): move a run onto another route or take it off every route (`PUT /workouts/{id}/route/override`), and merge two routes (`POST /routes/{id}/merge`), each undoable. The decisions live in `route_overrides`, one row per workout, and every re-detection applies them over its own grouping.
   - A merge is stored on the runs, not the route: the group detection puts a marked run in goes to the merged route, and every run of that group gets the mark, so a new run on the merged-in route follows it and the merge outlives the runs it was made with.
   - Groups are formed from every run, moved or not, so taking an odd run off a route can't reshape what's left.
@@ -248,6 +248,86 @@ Years of history (an Endomondo archive goes back to 2016) make an all-time list 
 - [x] **Best efforts per year or window.** The same `from`/`to` on `GET /segments/{name}/best`. The best page picks all time, the last 12 months, the last 90 days or a year, and under all time shows every distance's best in each year from one call, `GET /segments/yearly-bests`.
 - [x] **Route pages take the same window**, so a route's best can be this year's: `?from=&to=` on `GET /routes` and `GET /routes/{id}`, and a period picker on both pages.
 
+## M12 — Workout names
+
+A list of timestamps is hard to scan. Each workout gets a human name from when it happened and what it was: "Saturday afternoon run", "Lunchtime walk".
+
+- [ ] **A deterministic name** from the local start time and the sport: the weekday, a part of the day (early morning, morning, lunchtime, afternoon, evening, night, at fixed hour boundaries) and the sport's noun (run, walk, ride, treadmill run). No randomness and nothing generated, so the same workout always reads the same, and the rule fits in a table test.
+- [ ] **The name sits beside the timestamp, never in place of it.** Every API response keeps `start_time` as it is, and every frontend view that shows a name can still show the full timestamp; two "Saturday afternoon run"s are only told apart by their dates.
+- Open questions:
+  - **Whose local time.** Nothing stores a workout's timezone today; the period totals take the viewer's `?tz=`. A name from the viewer's zone calls a morning run abroad an evening one. Options: the FIT activity's `local_timestamp` offset where the file has one, a zone looked up from the first GPS fix, or the viewer's zone as the fallback for files with neither.
+  - **Backend or frontend.** Computed in the frontend it needs no storage and follows the viewer's zone; computed at processing time (a `name` column, rebuilt by reprocessing) it's the same in `taco` and the browser and can use the workout's own zone. The second seems right once the zone question is answered.
+  - **More than time of day**, later and only while still deterministic: the route's name ("Saturday morning Lake loop"), or a user-set title as an M10 correction that wins over the derived one.
+
+## M13 — Stretches: comparing a piece of a route
+
+M9 compares whole runs on the same route. The next question is about a piece of one: name "Whitney Way hill" once, then see every time over it, whichever run it was part of.
+"Segment" already means a best effort at a standard distance, so a named piece of ground is a **stretch** here.
+This began as exploration; the three looks at the data below are what the first pass was built from.
+
+- [x] **A stretch is a piece of track**: the points every 10m between two distances along one workout, with a name and a direction (up the hill isn't down it). `POST /stretches` cuts one from a workout's series; rename and delete beside it.
+  - A stretch that starts at a junction only matches runs arriving the way its source did: cut from Regent Street's corner, Whitney Way gets 40 of its 78 passes, and all 78 once it starts 50m on. The frontend should say so, or the start should be given some slack along the stretch.
+- [x] **Efforts over a stretch** (`stretch_efforts`): every pass of a workout of the same sport, timed between its closest approaches to the two ends, from the series, so a workout's efforts are the same whether it was just processed or matched later. Processing a workout replaces its efforts; making a stretch times the user's tracked workouts in the request, with the stored tracks ruling most out first (78 efforts from 269 workouts in a quarter of a second). `GET /stretches/{id}` lists them with the window the routes take, and `GET /workouts/{id}/stretches` the ones a workout made.
+- [x] **Within a route, or across them?** Across: a stretch is defined by its ground and matched against every tracked run of the sport (see the first look below; one stretch drew its 78 passes from six routes and eight runs on no route). A run can pass a stretch more than once (laps, out-and-back the same way), so an effort is a pass, not a workout.
+- [x] **Walking breaks.** Cadence is read from the file and kept as a series column, and a run's series carries `walking`: the warm-up before the first steady running, the cool-down after the last, and the breaks between. By cadence where the file has it, else by the run's own two speed modes, else absent (see the third look). An effort carries the share of it walked, null where that can't be told.
+  - [ ] Nothing per workout outside the series yet: no break count or run-only pace in the workout list.
+- [ ] **Places walked versus run.** Across runs, the same ground walked again and again is a pattern: a hill that's always walked, a warm-up block. Bin the ground into cells along the tracks and compare how often each is walked or run, drawn on a map. Those places are also candidate stretches, found without drawing them; so are the shared pieces of overlapping routes.
+- [ ] **Suggested stretches**: the candidates of the second look (shared pieces of routes, climbs) offered for naming. Not built; they repeat each other too much yet.
+- [ ] **Frontend**: pick a range on a workout's graph or map and save it as a stretch; a stretch page (its line on the map, efforts over time coloured by walked share); stretches and walking breaks on the workout page.
+- [ ] **Sparse GPS** (from review of the first pass). Matching goes point by point, so it needs fixes close together: a straight track matches itself with fixes up to 40m apart and fails at 60m. Two causes, one weakness:
+  - a record may only advance 80m along the stretch (the guard against jumping to a later part of a stretch that doubles back), so fixes further apart than that fall behind and drop off it;
+  - an end is only reached by a fix near it, so an end crossed between two distant fixes is missed.
+  - The watch's runs are 20m apart at worst (a marathon thinned to 2000 points), so nothing recorded so far is affected. It would show across a GPS dropout or on a sparse phone recording. When that's seen: fill in points between distant fixes before matching, as `BuildTrack` already does for routes, with a cap so a long dropout isn't bridged; simpler than scaling the lookahead and testing segments for crossings.
+- [ ] Not handled: a stretch's efforts aren't rebuilt if matching changes without `extractorVersion` moving, and on PostgreSQL a workout processed in the same instant a stretch is made can miss it until it's next reprocessed.
+
+### First look (2026-11-20)
+
+On the COROS export: 135 GPS runs and 85 walks, January 2024 to October 2025, one record a second, all with cadence. Throwaway code, not in the repo.
+
+- **Walking shows up cleanly in the watch's files.** In runs, cadence has two modes with a gap between (about 100–120 steps a minute walking, 130–150 running, split at 125), and so does speed over 10 seconds (1.5 and 2.5 m/s, split at 2.0). The two agree on 91.5% of records and give the same median of 9 breaks a run. About a quarter of all run time is walked; taking it out moves a run's pace by 30 seconds to 2 minutes a mile. (This was first read as "speed is enough for files without cadence"; the third look shows it isn't.)
+  - A break here is 10 seconds or more of walking, with gaps under 5 seconds joined, and under 0.5 m/s counted as stopped rather than walking.
+  - The watch sometimes writes cadence doubled (200+); those readings fall back to speed.
+- **Clustering where the breaks are.**
+  - DBSCAN on break positions (40m, 6 points) finds some twenty places, most visited by 20–70 runs, but chains everything near home into one cluster of 550 breaks: warm-up and cool-down walks overlap there. Start and middle positions give nearly the same clusters.
+  - A grid (30m cells, each run counted once per cell, "mostly walked" at 60% of 8 or more passes, neighbours joined) doesn't chain, and gives five places 60–210m long walked on about 80% of passes. It's stricter: a place walked on half the passes is missed. Of the two, the grid is the one to build on, and its cells are also what a walked-or-run map would draw.
+  - Taking warm-up and cool-down out (third look) doesn't cure the chaining either.
+- **Climbs can be detected, but not timed by detection.** The watch's altitude is in whole metres and the ground is gentle (the steepest repeated climb is 13m at 3.8%), so climbs were taken as 4m or more at 1.5% on altitude smoothed over 60m. Clustering them by where they start and end (DBSCAN, 60m on the worse of the two) gives nine hills for runs, the busiest a 760m climb of 18m. But detection found that hill on 20 runs, and matching its ground found 41 passes: where a climb starts and stops moves with the altitude noise, and a longer climb swallows a shorter one. So detection proposes stretches, and matching the ground times them.
+- **Matching a stretch against a run works.** Take the stretch's points every 10m; a pass enters within 30m of the first, moves forward along it never more than 30m off, and exits at its closest approach to the last. On a 522m stretch that found 78 passes on runs and 20 on walks, every one between 514 and 538m long, with times from 3:02 to 5:39.
+- **A stretch's time is mostly how much of it was walked** (correlation 0.80–0.85 on that stretch), so an effort needs its walked share beside its time, and the comparison worth having may be the time over it when it was run throughout.
+- **The hill as run isn't the hill as climbed.** That road's steep part is run downhill 78 times and uphill 4; what's walked on it is the gentle rise before the crest (85% of passes). A stretch has to be picked by the user or from where they walk, not from the gradient alone.
+- **Shared pieces of routes as candidate stretches.** Cutting each route's representative wherever the set of routes sharing its ground changes (35m, same heading, pieces of 200m or more) gives 22 pieces, the busiest passed by 112 runs from 10 routes. It finds real corridors but repeats them (521m and 560m versions of the same road from two representatives), so pieces need merging by ground before they're offered.
+- Not looked at yet: walks as their own sport, and a pass that enters or leaves partway.
+
+### Second look (2026-11-20): all three archives, and a list of candidates
+
+Endomondo and Google Fit runs are on the same ground, so with cross-source duplicates dropped there are 439 runs from 2016 to 2025.
+
+- **Old files match as well as new ones.** The Whitney Way stretch (553m, north from Regent Street) has 237 passes from 230 runs across nine routes and 37 runs on no route, back to 2016, at Endomondo's 2.5 seconds a point as well as the watch's one. A stretch's history is as long as the archive, which a route's rarely is.
+- **Walking in the older files: not to be trusted.** The fixed 2.0 m/s split calls 25% of Google Fit's run records walking and 35% of Endomondo's, close enough to the watch's 27% to look right, but the third look shows those files have no walking mode to split on.
+- **A list of candidates.** Route overlaps and climb clusters together gave 229 pieces, 41 after dropping those with under 5 passes and those repeating a busier one. Two tests for a repeat: each line passes as an effort over the other, or 70% of the shorter lies on the longer and the less busy one isn't half as long again.
+  - Cutting at every change in which routes share the ground fragments more as routes are added: 22 pieces from 15 routes became some 220 from about 30. Merging by coverage brings it back, but neighbouring pieces offset by a block still survive side by side. Cutting at junctions, where runs actually part, would be the next thing to try.
+  - Passes run throughout (under 5% walked) are few on anything long: a handful on Whitney Way, none on stretches over a kilometre. "Time when run throughout" only works for short stretches; longer ones need the walked share shown beside the time.
+- **Where runs are walked, as a map layer**: 30m cells with 5 or more passes by watch runs, coloured by the share of passes walked, warm-up and cool-down left out. Drawn with the candidates on a throwaway Leaflet page, the walked cells sit at junctions and the tops of rises, and a stretch's times over the years read as a scatter coloured by walked share (grey where it isn't known).
+
+### Third look (2026-11-20): warm-up, cool-down, and which files can show walking
+
+- **The rule:** the run proper starts with the first 30 seconds of unbroken running and ends with the last; what's before is warm-up, what's after is cool-down. On the watch's 134 runs:
+  - Warm-up comes in two kinds: 31 runs start running within 5 seconds, and 49 walk for one to two minutes first (median 76m). Cool-down is nearly always there: a median of 66 seconds and 94m, a tenth over 3½ minutes.
+  - Together they're 6% of recorded time, 91% of it walked, and hold 21% of all walking: 239 of 1,248 breaks. Mid-run breaks go from a median of 9 a run to 7, and the walked share inside the run from 26% to 22%.
+  - The run proper is a median 16 seconds a mile faster than the whole recording (4 to 37 for the middle 80%), before any mid-run walking is taken out.
+  - The 30 seconds isn't delicate: 10 to 60 gives nearly the same answer (median warm-up 27–54s, cool-down 55–84s). At 120 it breaks: a run that ends on run-walk intervals has its last third called cool-down.
+  - A fixed cut (the first and last 90 seconds) is wrong both ways: it eats running from the runs that start at once, and misses the longer cool-downs.
+- **It doesn't fix DBSCAN.** The big cluster near home drops from 552 breaks to 318 but stays: what's left is a chain along 940m of the street most runs go out and back on, breaks early and late in the run, not warm-up. Clustering breaks wants the grid, or positions along a stretch, not distance in the plane.
+- **Only the watch's files show walking.** Run by run, speed has two modes with a clear dip between on 96% of COROS runs (the dip at 1.9–2.3 m/s), on 6% of Endomondo's and 1% of Google Fit's: phone GPS distance smears the two into one hump. On those files the rule above finds no steady running at all in 34 of 195 Endomondo runs and a median 8-minute "cool-down", and 20 "breaks" a run on Google Fit. Whether those runs had fewer walking breaks or just noisier distance can't be told from the files.
+  - So walking breaks, warm-up and cool-down, and a stretch effort's walked share are for runs where walking can be told apart (next point); other efforts keep their time and show no walked share.
+  - Stretch matching is unaffected: it uses positions and timestamps, and the older files match as well as the new.
+- **A threshold per activity** (suggested 2026-11-20), found by splitting each run's speeds where the two classes are most distinct (Otsu):
+  - On the watch's runs it lands between 2.05 and 2.30 m/s and agrees with cadence no better than the fixed 2.0 (91.4% of records against 91.7%). The modes are far enough apart that anything in the dip works.
+  - It always finds a split, so a run with no walking gets half its running called walking: on the one run recorded by watch and phone both, the fixed split agrees with cadence on 98% of records and the per-run one on 37%. It needs a gate: the share of the speed variance the split explains is about 0.64 for one hump cut in two, and 0.80 on a typical watch run.
+  - On the older files that share is a median 0.65 (Endomondo, from its distances or from the app's own speed field) and 0.63 (Google Fit), at 10, 20 or 30 seconds of smoothing: one hump. About one run in eight passes 0.7.
+  - It isn't the format. Watch runs cut down to a fix every 2.5 seconds, with distance measured along the fixes, still agree with cadence on 93%. What can't be reproduced is the phone's position error; independent noise on each fix is far harsher than the real thing, so a simulation says nothing.
+  - No ground truth for the phone: of the Google Fit copies of watch runs, one has enough fixes to compare.
+  - So: per activity, gated. Cadence where the file has it; else the run's own split when it has two modes; else no walking claimed for that run, not zero walking.
 ## M14 — Signing in from `taco`
 
 `taco login` posts an email and password to `/auth/tokens` and keeps the two-hour token.
@@ -291,7 +371,7 @@ The goal: `taco login` works for any account however it signs in, and stays sign
 ### Tasks
 
 Backend:
-- [x] Migration `000017_cli_sessions` (both dialects): `device_authorizations`, `cli_sessions`. Numbered after the stretches migration (000016), which has to merge first.
+- [x] Migration `000017_cli_sessions` (both dialects): `device_authorizations`, `cli_sessions`. Numbered after the stretches migration (000016).
 - [x] `POST /auth/device`, `POST /auth/device/token`, and behind the JWT middleware `GET /auth/device/{user_code}` (what the approval page shows), `POST /auth/device/approve`, `POST /auth/device/deny`.
 - [x] `POST /auth/tokens/refresh` and `POST /auth/tokens/revoke` (the CLI signing itself out); `GET /auth/sessions`, `DELETE /auth/sessions/{id}`.
 - [x] Pruning of expired authorizations and lapsed sessions: expired authorizations whenever one is asked for, and both hourly with the jobs prune.

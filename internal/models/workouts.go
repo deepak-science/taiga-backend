@@ -103,6 +103,12 @@ func (m *storeModel) DeleteWorkout(ctx context.Context, id int32, userToken *tok
 		if err := q.DeleteRouteOverride(ctx, &db.DeleteRouteOverrideParams{WorkoutID: id, UserID: userToken.ID}); err != nil {
 			return err
 		}
+		if err := q.DeleteStretchEffortsByWorkout(ctx, &db.DeleteStretchEffortsByWorkoutParams{WorkoutID: id, UserID: userToken.ID}); err != nil {
+			return err
+		}
+		if err := q.ClearStretchSourceWorkout(ctx, &db.ClearStretchSourceWorkoutParams{SourceWorkoutID: &id, UserID: userToken.ID}); err != nil {
+			return err
+		}
 		if err := q.ClearRouteRepresentative(ctx, &db.ClearRouteRepresentativeParams{RepresentativeWorkoutID: &id, UserID: userToken.ID}); err != nil {
 			return err
 		}

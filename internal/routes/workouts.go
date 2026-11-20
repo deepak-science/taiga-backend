@@ -29,6 +29,7 @@ func newWorkoutRouter(m models.Model, fileRepo filerepo.FileRepo) http.Handler {
 	router.Get("/{workoutid}", getWorkoutFunc(m))
 	router.Get("/{workoutid}/segments", getWorkoutSegmentsFunc(m))
 	router.Get("/{workoutid}/route", getWorkoutRouteFunc(m))
+	router.Get("/{workoutid}/stretches", getWorkoutStretchesFunc(m))
 	router.Get("/{workoutid}/route/override", workoutRouteOverrideFunc(m))
 	router.Put("/{workoutid}/route/override", workoutRouteOverrideFunc(m))
 	router.Delete("/{workoutid}/route/override", workoutRouteOverrideFunc(m))

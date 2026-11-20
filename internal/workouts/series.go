@@ -1,6 +1,7 @@
 package workouts
 
 import (
+	"encoding/json"
 	"math"
 	"strconv"
 )
@@ -37,6 +38,10 @@ type Series struct {
 	HeartRate      Values `json:"heart_rate,omitempty"`
 	Latitude       Values `json:"lat,omitempty"`
 	Longitude      Values `json:"lon,omitempty"`
+	// Cadence is steps a minute for a run or walk, revolutions a minute otherwise.
+	Cadence Values `json:"cadence,omitempty"`
+	// Walking is a run's walking breaks, warm-up and cool-down; nil when the records can't tell walking from running, or it isn't a run.
+	Walking *Walking `json:"walking,omitempty"`
 }
 
 // BuildSeries samples the run's records evenly down to at most maxPoints, always keeping the last.
@@ -66,6 +71,12 @@ func BuildSeries(run *Run, maxPoints int) *Series {
 		}
 		return out
 	}
+	// On foot the file counts one foot's strides, and steps are what a runner means by cadence.
+	// It goes by the sport as corrected, so a session the user turned into a run is counted like one.
+	stepsPerStride := 1.0
+	if Scored(run.Summary.Sport) {
+		stepsPerStride = 2
+	}
 	s := &Series{
 		TimeSeconds: column(func(r *RecordData) float64 { return r.DurationFromStart.Seconds() }, 1),
 		DistanceMeters: column(func(r *RecordData) float64 {
@@ -80,6 +91,7 @@ func BuildSeries(run *Run, maxPoints int) *Series {
 		// Six decimals of a degree is about 10cm.
 		Latitude:  column(func(r *RecordData) float64 { return r.Latitude }, 6),
 		Longitude: column(func(r *RecordData) float64 { return r.Longitude }, 6),
+		Cadence:   column(func(r *RecordData) float64 { return r.Cadence * stepsPerStride }, 0),
 	}
 	// Time and distance are the x axes, so keep them present even when empty.
 	if s.TimeSeconds == nil {
@@ -91,6 +103,9 @@ func BuildSeries(run *Run, maxPoints int) *Series {
 			s.DistanceMeters[i] = math.NaN()
 		}
 	}
+	if run.Summary.Sport == SportRunning {
+		s.Walking = DetectWalking(s)
+	}
 	return s
 }
 
@@ -100,4 +115,21 @@ func round(x float64, decimals int) float64 {
 	}
 	p := math.Pow(10, float64(decimals))
 	return math.Round(x*p) / p
+}
+
+// UnmarshalJSON reads null back as NaN, so a stored series decodes to what was built.
+func (v *Values) UnmarshalJSON(data []byte) error {
+	var raw []*float64
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	out := make(Values, len(raw))
+	for i, x := range raw {
+		out[i] = math.NaN()
+		if x != nil {
+			out[i] = *x
+		}
+	}
+	*v = out
+	return nil
 }

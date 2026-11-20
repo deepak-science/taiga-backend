@@ -80,6 +80,8 @@ func NewFileRepo(t *testing.T) filerepo.FileRepo {
 type Split struct {
 	Meters  float64
 	Seconds float64
+	// StepsPerMinute is the cadence recorded along the split; zero records none, as a watch without the sensor would.
+	StepsPerMinute float64
 }
 
 // EncodeFIT returns a single-session activity FIT file with a record every 10m along the given splits.
@@ -148,22 +150,27 @@ func buildActivity(start time.Time, splits []Split, bearing float64) *filedef.Ac
 	activity.FileId = *mesgdef.NewFileId(nil).SetType(typedef.FileActivity).SetTimeCreated(start)
 
 	var meters, seconds float64
-	addRecord := func() {
-		activity.Records = append(activity.Records, mesgdef.NewRecord(nil).
-			SetTimestamp(start.Add(time.Duration(seconds*float64(time.Second)))).
+	addRecord := func(stepsPerMinute float64) {
+		record := mesgdef.NewRecord(nil).
+			SetTimestamp(start.Add(time.Duration(seconds * float64(time.Second)))).
 			SetDistanceScaled(meters).
 			SetHeartRate(RecordHeartRate).
 			SetEnhancedAltitudeScaled(RecordAltitude(meters)).
-			SetPositionLatDegrees(StartLatitude+north*meters/metersPerDegree).
-			SetPositionLongDegrees(StartLongitude+east*meters/lonScale))
+			SetPositionLatDegrees(StartLatitude + north*meters/metersPerDegree).
+			SetPositionLongDegrees(StartLongitude + east*meters/lonScale)
+		if stepsPerMinute > 0 {
+			// FIT counts one foot's strides.
+			record.SetCadence(uint8(stepsPerMinute / 2))
+		}
+		activity.Records = append(activity.Records, record)
 	}
-	addRecord()
+	addRecord(splits[0].StepsPerMinute)
 	for _, split := range splits {
 		secondsPerMeter := split.Seconds / split.Meters
 		for covered := 0.0; covered < split.Meters; covered += step {
 			meters += step
 			seconds += step * secondsPerMeter
-			addRecord()
+			addRecord(split.StepsPerMinute)
 		}
 	}
 

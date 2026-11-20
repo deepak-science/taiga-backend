@@ -21,6 +21,7 @@ func recordsRun(n int, withHR bool) *Run {
 			SpeedMeterPerSec:  3,
 			AltitudeMeters:    math.NaN(),
 			HeartRate:         hr,
+			Cadence:           math.NaN(),
 			Latitude:          math.NaN(),
 			Longitude:         math.NaN(),
 		})
