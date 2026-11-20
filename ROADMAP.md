@@ -422,10 +422,21 @@ Nothing is built; this is what would need deciding.
 
 Open questions:
 
-- Whether reanalysis is close enough to what it was like on the ground: compare it with a station for a few remembered days (a storm, a heat wave) before trusting it.
+- Whether the model holds away from home: the first look below is one flat, inland place.
 - Hourly values for a 20-minute run: take the nearest hour or interpolate between two.
 - Whether the outbound request is acceptable from the homelab at all, or the lookup should be something `taco` does from a laptop and uploads.
 - Where the units live: the API speaks miles today, so Fahrenheit and mph would match, but the stored values should be metric.
+
+### First look (2026-11-20)
+
+Is a model close enough to what it was like on the ground? Open-Meteo's archive against two stations (through Meteostat's hourly files, its forecast-filled values dropped) at the start hours of the 627 workouts in the one 0.1° cell most of them start in, 2016 to 2026. Throwaway code, not in the repo.
+
+- **Temperature: yes, with ERA5 asked for by name.** With `models=era5` it is typically 0.8°C (1.4°F) from the regional airport, within 1.7°C nine times in ten, and unbiased. A small airfield 3km from the cell's centre differs from that airport by 0.9°C, so the model is as close to a station as two stations are to each other. Open-Meteo's default blend is worse here: 1.3°C typically, about 0.5°C cool.
+- **Dew point: yes.** ERA5 is typically 0.95°C from the airport, within 2.1°C nine times in ten. It looks twice as far from the airfield, but the two stations disagree by as much, which points at the airfield's sensor.
+- **Wind: direction yes, speed roughly.** Direction is within 45° of the station in 94–95% of hours with 8 km/h of wind or more. Speed is typically 4.2 km/h off on a mean of 13, and the two stations differ by the same, so no single source says better.
+- **Rain by the hour: no.** Of 581 workout hours with measured precipitation at the airport, the default blend called 39 wet (0.2mm or more) and the station agreed on 11. Across all hours the station agrees on about 60% of the model's wet hours. Keep precipitation as a coarse flag (a wet day), not as "it rained on this run".
+- **So:** one provider, Open-Meteo with ERA5 pinned, and no station matching. ERA5 stops about five days short of today, so a new run takes the default blend first and ERA5 once it's there.
+- **What this doesn't show.** ERA5 is built partly from station observations, quite possibly that airport's, so some of the agreement is circular; the airfield is the fairer test, and ERA5 is typically 1.0°C from it. It's one flat, inland place: nothing here speaks for the 44 workouts elsewhere, for hills or for a coast. And a station kilometres away isn't the weather on the route either.
 
 ## Later
 
