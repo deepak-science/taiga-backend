@@ -409,7 +409,10 @@ Nothing is built; this is what would need deciding.
   - The files themselves don't have it (checked 2026-11-20). The Endomondo export has no weather field in any of its 405 workouts. The COROS files have no weather message either, though the app shows conditions for a run: only the watch's own average temperature per lap (262 of 269 files) and per session (146), nothing per record.
   - The watch's temperature isn't the weather: worn on the wrist it reads body heat. Five runs from late October to mid-November 2026 all average 22–25°C (72–77°F), starting warm from indoors (24–27°C) and settling to 19–23°C whatever the day was like. It isn't read from the file today, and at best it could flag a provider's answer that is far off on a hot day.
   - Behind an interface with one implementation, so the provider is a config choice (`weather.provider`, off by default) and tests use a fake.
-- [ ] **What's kept**, in a `workout_weather` row per workout: temperature, dew point (what makes heat hard, more than humidity as a percentage), wind speed and direction, precipitation, cloud cover, and which provider and model said so. Taken at the start, or averaged over the hours the workout spans for a long one.
+- [ ] **What's kept**, in a `workout_weather` row per workout: temperature, dew point (what makes heat hard, more than humidity as a percentage), wind speed and direction, precipitation, cloud cover, and which provider and model said so.
+  - Twice over, at the start and at the end, each interpolated between the hours either side: a long summer run that starts at 18°C and ends at 30°C isn't one that sat at 24°C throughout, and the day's hours are already in the response. Adding the end later would mean fetching everything again.
+  - The mean of the two is what labels, filters and groups go by. The page shows one figure unless the run moved more than about 1.5°C, which is how far the sources disagree with each other anyway, and a range when it did.
+  - Nothing finer: no weather per record, and no pace against temperature within a run. The data is hourly on a grid some 10km wide.
 - [ ] **Fetched by a job, not by processing.** The file is the source of truth for everything processing derives, and reprocessing rebuilds it all; the weather comes from outside, is slow, and can fail, so it gets its own job kind (`fetch_weather`) queued when a workout first has a track, retried by the queue, and left alone by reprocessing unless the start or place changed.
   - Twice for a new run: the default blend as soon as it answers (about a day behind), so the workout page has something, and the same job queued again a week out (`run_at`) to replace it with ERA5. The row's model says which one it holds.
   - A backfill for the workouts already there, paced to the provider's limits: about 800 workouts, many from the same few places, so one request per place and month rather than one per workout.
@@ -424,7 +427,6 @@ Nothing is built; this is what would need deciding.
 Open questions:
 
 - Whether the model holds away from home: the first look below is one flat, inland place.
-- Hourly values for a 20-minute run: take the nearest hour or interpolate between two.
 - Whether the outbound request is acceptable from the homelab at all, or the lookup should be something `taco` does from a laptop and uploads.
 - Where the units live: the API speaks miles today, so Fahrenheit and mph would match, but the stored values should be metric.
 
