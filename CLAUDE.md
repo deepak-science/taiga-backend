@@ -417,7 +417,7 @@ Switch by updating `config.yaml` or setting `TAIGA_DB_DRIVER` environment variab
 - `ci.yml` runs `nix flake check` (which builds the binary and Docker image too) on every push, and
   publishes the image to `ghcr.io/<owner>/taiga` from `master` and tags only (the homelab deploys `master-<sha>`). Tag fan-out is
   delegated to `hanko version docker tags --latest-on-release-tag`:
-  - Tagged release (`vX.Y.Z`) → `:X.Y.Z`, `:X.Y`, `:X`, `:latest`, `:master-<sha>`
+  - Tagged release (`vX.Y.Z`) → `:X.Y.Z`, `:X.Y`, `:X`, `:latest` (`--branch-sha-tag=false`, since the tag checkout is detached and would be named `:detached-<sha>`; the master push of the same commit publishes `:master-<sha>`)
   - `master` between releases → `:master-<sha>` only: CI passes `--semver-tags=false` there, since hanko versions an untagged master build as the next release and would otherwise move `:X.Y.Z`, `:X.Y`, `:X` and `:latest` onto it
   - Feature branches → nothing published
 
