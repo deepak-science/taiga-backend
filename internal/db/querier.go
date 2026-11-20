@@ -47,7 +47,7 @@ type Querier interface {
 	DeleteActivityFile(ctx context.Context, arg *DeleteActivityFileParams) error
 	DeleteCliSession(ctx context.Context, arg *DeleteCliSessionParams) (int64, error)
 	DeleteCliSessionByHash(ctx context.Context, tokenHash string) error
-	DeleteDeviceAuthorization(ctx context.Context, id int32) error
+	DeleteDeviceAuthorization(ctx context.Context, id int32) (int64, error)
 	DeleteDoneJobsBefore(ctx context.Context, updatedAt pgtype.Timestamptz) (int64, error)
 	DeleteExpiredDeviceAuthorizations(ctx context.Context, expiresAt pgtype.Timestamptz) error
 	DeleteIdentity(ctx context.Context, arg *DeleteIdentityParams) (int64, error)

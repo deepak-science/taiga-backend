@@ -293,7 +293,7 @@ file_repo:
 - `DELETE /auth/identities/{id}` - Unlink; `409` when it's the user's only way to sign in
 
 ### Signing in from a CLI (`docs/cli-sign-in.md`)
-- `POST /auth/device` - A CLI asks to sign in, optionally `{"client_name": "laptop"}`: `{device_code, user_code, verification_uri, verification_uri_complete, expires_in, interval}`; `429` when a hundred are already waiting
+- `POST /auth/device` - A CLI asks to sign in, optionally `{"client_name": "laptop"}`: `{device_code, user_code, verification_uri, verification_uri_complete, expires_in, interval}`; `429` when about a hundred are already waiting
 - `POST /auth/device/token` - The CLI polls with `{"device_code": "..."}`: `{token, refresh_token, expires_in}` once approved, until then `400` with `{"error": ...}`, one of `authorization_pending`, `slow_down`, `access_denied`, `expired_token`, `invalid_grant`
 - `POST /auth/tokens/refresh` - `{"refresh_token": "..."}` buys a new `{token, expires_in}`; `400` `invalid_grant` once the session is revoked or lapsed
 - `POST /auth/tokens/revoke` - `{"refresh_token": "..."}` ends that session; `204` either way

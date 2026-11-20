@@ -70,7 +70,7 @@ WHERE
   AND denied = FALSE
   AND expires_at > $2;
 
--- name: DeleteDeviceAuthorization :exec
+-- name: DeleteDeviceAuthorization :execrows
 DELETE FROM device_authorizations
 WHERE
   id = $1;

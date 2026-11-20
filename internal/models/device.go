@@ -27,6 +27,7 @@ const (
 	// CLISessionTTL is how long a session lasts unused; each refresh starts it again.
 	CLISessionTTL = 90 * 24 * time.Hour
 	// maxDeviceAuthorizations caps the sign-ins waiting at once: asking for one takes no credentials and writes a row.
+	// The count and the insert aren't serialized, so a burst can run a few over: it bounds a flood, it isn't a quota.
 	maxDeviceAuthorizations = 100
 	// Letters that don't spell words and aren't mistaken for each other, the alphabet RFC 8628 suggests.
 	userCodeAlphabet = "BCDFGHJKLMNPQRSTVWXZ"
@@ -226,19 +227,31 @@ func (m *storeModel) ExchangeDeviceCode(ctx context.Context, deviceCode string, 
 		if err != nil {
 			return err
 		}
+		drop := func(why error) error {
+			answer = why
+			_, err := q.DeleteDeviceAuthorization(ctx, row.ID)
+			return err
+		}
 		switch {
 		case !row.ExpiresAt.Time.After(now):
-			answer = ErrExpiredToken
-			return q.DeleteDeviceAuthorization(ctx, row.ID)
+			return drop(ErrExpiredToken)
 		case row.Denied:
-			answer = ErrAccessDenied
-			return q.DeleteDeviceAuthorization(ctx, row.ID)
+			return drop(ErrAccessDenied)
 		case row.LastPolledAt.Valid && now.Sub(row.LastPolledAt.Time) < DevicePollInterval-devicePollSlack:
 			answer = ErrSlowDown
 			return nil
 		case row.UserID == nil:
 			answer = ErrAuthorizationPending
 			return q.TouchDeviceAuthorization(ctx, &db.TouchDeviceAuthorizationParams{ID: row.ID, LastPolledAt: timestamptz(now)})
+		}
+		// Using the code up comes first, and counts: two polls arriving together both see it approved, and only the one whose delete finds the row gets a session.
+		used, err := q.DeleteDeviceAuthorization(ctx, row.ID)
+		if err != nil {
+			return err
+		}
+		if used == 0 {
+			answer = ErrInvalidGrant
+			return nil
 		}
 		user, err := q.GetUser(ctx, *row.UserID)
 		if err != nil {
@@ -255,7 +268,7 @@ func (m *storeModel) ExchangeDeviceCode(ctx context.Context, deviceCode string, 
 			return err
 		}
 		grant = &CLIGrant{User: &UserNoPassword{ID: user.ID, Email: user.Email, DisplayName: user.DisplayName}, RefreshToken: refresh}
-		return q.DeleteDeviceAuthorization(ctx, row.ID)
+		return nil
 	})
 	if err != nil {
 		return nil, err

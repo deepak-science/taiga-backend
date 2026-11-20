@@ -71,5 +71,5 @@ Each approved sign-in is a session, named after the client.
 ## What's kept, and what isn't
 
 - The device code and the refresh token are stored only as SHA-256 hashes; the CLI holds the only copies. The user code is stored as it is: it's short-lived and worth nothing without a signed-in user to approve it.
-- A sign-in nobody approves is deleted when it runs out. At most a hundred may be waiting at once (`429` past that), since asking for one takes no credentials.
+- A sign-in nobody approves is deleted when it runs out. About a hundred may be waiting at once (`429` past that), since asking for one takes no credentials; requests arriving together can run a few over.
 - Approving a code signs that CLI in as you. Only approve a sign-in you started, on a terminal showing the same code: the link someone sends you is theirs, not yours.

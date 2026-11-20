@@ -361,7 +361,7 @@ The goal: `taco login` works for any account however it signs in, and stays sign
 
 **What can go wrong.**
 - *Phishing is the real risk, not guessing.* Someone starts a login and sends a victim the link; if the victim approves, the attacker's CLI is in. So the page never approves on load, even from `verification_uri_complete`: it shows the code and the client's name and says to approve only a login just started from a terminal that shows the same code. Guessing a code gains nothing, since approving a stranger's code grants them your account, not you theirs.
-- *`POST /auth/device` takes no credentials* and writes a row, and the backend has no rate limiting. Pending authorizations are capped (a hundred, say, oldest expired pruned on insert), and a poll sooner than `interval` gets `slow_down` without touching anything else.
+- *`POST /auth/device` takes no credentials* and writes a row, and the backend has no rate limiting. Pending authorizations are capped at about a hundred, expired ones pruned on insert (the count isn't locked, so requests arriving together can run a few over), and a poll sooner than `interval` gets `slow_down` without touching anything else.
 - *The device code* is 32 random bytes, hashed at rest, good for one exchange, and the exchange deletes the row.
 - Both codes and the refresh token never go in logs; the request logger prints paths, and none of them is in a path.
 - Closed registration doesn't matter: the flow only ever signs in to an account that exists.

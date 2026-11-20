@@ -172,15 +172,18 @@ func (q *Queries) DeleteCliSessionByHash(ctx context.Context, tokenHash string) 
 	return err
 }
 
-const deleteDeviceAuthorization = `-- name: DeleteDeviceAuthorization :exec
+const deleteDeviceAuthorization = `-- name: DeleteDeviceAuthorization :execrows
 DELETE FROM device_authorizations
 WHERE
   id = $1
 `
 
-func (q *Queries) DeleteDeviceAuthorization(ctx context.Context, id int32) error {
-	_, err := q.db.Exec(ctx, deleteDeviceAuthorization, id)
-	return err
+func (q *Queries) DeleteDeviceAuthorization(ctx context.Context, id int32) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteDeviceAuthorization, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteExpiredDeviceAuthorizations = `-- name: DeleteExpiredDeviceAuthorizations :exec
