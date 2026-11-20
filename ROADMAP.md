@@ -402,10 +402,10 @@ Frontend:
 - **Faster CI.** Backend runs took 12–14½ minutes (November 2026): the flake check, a second build of the binary, the image publish and a binary-cache upload of everything. Now a branch run takes about 2 minutes with the dependency cache restored (3¼ when the dependencies changed), plus a minute to publish on master. What's left:
   - The Determinate installer still lists FlakeHub's cache as a substituter, and every lookup there fails with 401 (some 400 a run). Harmless so far, but one run stalled 2½ minutes during those lookups; dropping it from the substituters would rule that out.
   - Run formatting, lint and tests as parallel jobs, so a formatting failure reports in seconds.
-- `taco` is behind the API: `taco compare` / `taco best <distance>`, sport, source and whether it counts in `taco workouts` with `--from`/`--to`, and `taco stretches` to list them and one stretch's efforts.
-- **`taco` sets itself up.** Today it reads `config.toml` from whatever directory it's run in (or `--config-file`), the tracked one points at localhost, and logging to the terminal is on unless the file turns it off, so a first run against a real server means writing a file by hand and passing its path every time.
-  - Look for the config under the XDG config directory (`~/.config/taco/config.toml`) beside the credentials, with `--config-file` and a file in the working directory still winning.
-  - `taco init` (or `taco login --server https://taiga.example.com/api` on first use) writes that file: the server's address, checked by asking it for `/auth/providers`, and quiet logging.
-  - Quiet by default: log to the terminal only with `-v`.
-  - More than one server: the credentials are already kept per backend, so a named profile (`--profile test`) is the config's half of that.
+- **`taco` catches up with the API.**
+  - **Built** (taiga-cliclient#44): `taco workouts` pages (`--limit`/`--offset`, `--all`) and takes `--from`/`--to`, with sport, source and why a workout doesn't count; `taco best <segment>`, `taco compare <id>...`, and `taco stretches` to list them or one stretch's efforts.
+  - Left: the writes (corrections, cutting or renaming a stretch, reprocessing), routes, totals, and files that failed to parse.
+- **`taco` sets itself up.**
+  - **Built** (taiga-cliclient#45): `taco init <server>` finds the API (at the address given, or under `/api` there) and writes `~/.config/taco/config.toml` beside the credentials; `--config-file` and a `config.toml` in the working directory still win. Quiet unless `-v`.
+  - Left: more than one server. The credentials are already kept per backend, so a named profile (`--profile test`) is the config's half of that.
 - **Admin panel** in the frontend, for running the deployment rather than looking at runs: the job queue (queued, running, dead jobs with their last error, retry), reprocess one or all workouts, files that failed to parse, and eventually account management in place of `kubectl exec … useradd`. Needs a notion of an admin user first.
