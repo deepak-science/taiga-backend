@@ -54,7 +54,7 @@
       treefmtEval = eachSystem (pkgs: inputs.treefmt-nix.lib.evalModule pkgs ./treefmt.nix);
 
       # Stamped by hanko; do not hand-edit (use `just release`).
-      version = "0.1.0";
+      version = "0.2.0";
       commonLdflags = hanko.lib.mkGoLdflags { inherit self version; };
 
       taigaOverlay = final: _prev: {
