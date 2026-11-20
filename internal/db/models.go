@@ -56,6 +56,30 @@ type RouteOverride struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type Stretch struct {
+	ID              int32              `json:"id"`
+	UserID          int32              `json:"user_id"`
+	Name            string             `json:"name"`
+	Sport           string             `json:"sport"`
+	SourceWorkoutID *int32             `json:"source_workout_id"`
+	Meters          float64            `json:"meters"`
+	Points          []byte             `json:"points"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
+type StretchEffort struct {
+	ID                 int32    `json:"id"`
+	StretchID          int32    `json:"stretch_id"`
+	WorkoutID          int32    `json:"workout_id"`
+	UserID             int32    `json:"user_id"`
+	StartOffsetSeconds float64  `json:"start_offset_seconds"`
+	EndOffsetSeconds   float64  `json:"end_offset_seconds"`
+	DurationSeconds    float64  `json:"duration_seconds"`
+	StartMeters        float64  `json:"start_meters"`
+	DistanceMeters     float64  `json:"distance_meters"`
+	WalkedFraction     *float64 `json:"walked_fraction"`
+}
+
 type User struct {
 	ID            int32              `json:"id"`
 	Email         string             `json:"email"`

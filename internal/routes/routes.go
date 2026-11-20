@@ -64,6 +64,7 @@ func New(m models.Model, tok tokens.Toker, fileRepo filerepo.FileRepo, opts ...O
 		r.Mount("/segments", newSegmentRouter(m))
 		r.Mount("/jobs", newJobRouter(m))
 		r.Mount("/routes", newRouteRouter(m))
+		r.Mount("/stretches", newStretchRouter(m))
 	})
 
 	return r

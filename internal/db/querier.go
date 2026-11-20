@@ -16,10 +16,14 @@ type Querier interface {
 	ClaimJob(ctx context.Context, arg *ClaimJobParams) (*Job, error)
 	// SQLite doesn't enforce ON DELETE SET NULL without a per-connection pragma, so a deleted workout clears itself.
 	ClearRouteRepresentative(ctx context.Context, arg *ClearRouteRepresentativeParams) error
+	// A deleted workout leaves the stretches cut from it standing, without the pointer back.
+	ClearStretchSourceWorkout(ctx context.Context, arg *ClearStretchSourceWorkoutParams) error
 	CreateActivityFile(ctx context.Context, arg *CreateActivityFileParams) (*ActivityFile, error)
 	CreateHat(ctx context.Context, arg *CreateHatParams) (*Hat, error)
 	CreateIdentity(ctx context.Context, arg *CreateIdentityParams) (*UserIdentity, error)
 	CreateRoute(ctx context.Context, arg *CreateRouteParams) (*Route, error)
+	CreateStretch(ctx context.Context, arg *CreateStretchParams) (*Stretch, error)
+	CreateStretchEffort(ctx context.Context, arg *CreateStretchEffortParams) error
 	//
 	// -- name: ListUsers :many
 	// SELECT
@@ -47,6 +51,10 @@ type Querier interface {
 	// SQLite doesn't enforce ON DELETE CASCADE without a per-connection pragma, so a deleted route clears its own.
 	DeleteRouteOverridesByRoute(ctx context.Context, arg *DeleteRouteOverridesByRouteParams) error
 	DeleteSegmentsByWorkout(ctx context.Context, arg *DeleteSegmentsByWorkoutParams) error
+	DeleteStretch(ctx context.Context, arg *DeleteStretchParams) error
+	// SQLite doesn't enforce ON DELETE CASCADE without a per-connection pragma, so a deleted stretch clears its own efforts.
+	DeleteStretchEffortsByStretch(ctx context.Context, arg *DeleteStretchEffortsByStretchParams) error
+	DeleteStretchEffortsByWorkout(ctx context.Context, arg *DeleteStretchEffortsByWorkoutParams) error
 	DeleteWorkout(ctx context.Context, arg *DeleteWorkoutParams) error
 	DeleteWorkoutRoute(ctx context.Context, arg *DeleteWorkoutRouteParams) error
 	DeleteWorkoutRoutesByUser(ctx context.Context, userID int32) error
@@ -68,6 +76,7 @@ type Querier interface {
 	GetJob(ctx context.Context, arg *GetJobParams) (*Job, error)
 	GetRoute(ctx context.Context, arg *GetRouteParams) (*Route, error)
 	GetRouteOverride(ctx context.Context, arg *GetRouteOverrideParams) (*RouteOverride, error)
+	GetStretch(ctx context.Context, arg *GetStretchParams) (*Stretch, error)
 	GetUser(ctx context.Context, id int32) (*GetUserRow, error)
 	//
 	// -- name: UpdateUser :exec
@@ -106,10 +115,19 @@ type Querier interface {
 	ListSegmentEffortsBySport(ctx context.Context, arg *ListSegmentEffortsBySportParams) ([]*ListSegmentEffortsBySportRow, error)
 	// Distance segments shortest first, then duration segments shortest first.
 	ListSegmentsByWorkout(ctx context.Context, arg *ListSegmentsByWorkoutParams) ([]*WorkoutSegment, error)
+	ListStretchEffortsByStretch(ctx context.Context, arg *ListStretchEffortsByStretchParams) ([]*ListStretchEffortsByStretchRow, error)
+	// Every effort with when its workout started, newest first; the stretch list sums them per stretch.
+	ListStretchEffortsByUser(ctx context.Context, userID int32) ([]*ListStretchEffortsByUserRow, error)
+	// A workout's passes in the order it ran them, with each stretch's name.
+	ListStretchEffortsByWorkout(ctx context.Context, arg *ListStretchEffortsByWorkoutParams) ([]*ListStretchEffortsByWorkoutRow, error)
+	ListStretchesByUser(ctx context.Context, userID int32) ([]*Stretch, error)
+	ListStretchesByUserAndSport(ctx context.Context, arg *ListStretchesByUserAndSportParams) ([]*Stretch, error)
 	ListWorkoutRoutesByUser(ctx context.Context, userID int32) ([]*WorkoutRoute, error)
 	// Oldest first, the order route detection assigns runs in; routes only group runs of one sport.
 	// A duplicate is left out even before reprocessing drops its track, since the same job marks it.
 	ListWorkoutTracksByUser(ctx context.Context, userID int32) ([]*ListWorkoutTracksByUserRow, error)
+	// The workouts a new stretch is matched against: tracked (so scored, with GPS) and not a copy of another.
+	ListWorkoutTracksByUserAndSport(ctx context.Context, arg *ListWorkoutTracksByUserAndSportParams) ([]*ListWorkoutTracksByUserAndSportRow, error)
 	ListWorkoutsByUser(ctx context.Context, userID int32) ([]*Workout, error)
 	// Starting in [window_from, window_to); callers pass far-off bounds for an open end, so the same SQL runs on SQLite.
 	ListWorkoutsByUserInWindow(ctx context.Context, arg *ListWorkoutsByUserInWindowParams) ([]*Workout, error)
@@ -117,6 +135,7 @@ type Querier interface {
 	LockUser(ctx context.Context, id int32) error
 	MoveWorkoutRoutes(ctx context.Context, arg *MoveWorkoutRoutesParams) error
 	RenameRoute(ctx context.Context, arg *RenameRouteParams) (*Route, error)
+	RenameStretch(ctx context.Context, arg *RenameStretchParams) (*Stretch, error)
 	RequeueDeadJob(ctx context.Context, arg *RequeueDeadJobParams) (*Job, error)
 	RetargetRouteOverrides(ctx context.Context, arg *RetargetRouteOverridesParams) error
 	RetryJobLater(ctx context.Context, arg *RetryJobLaterParams) error
