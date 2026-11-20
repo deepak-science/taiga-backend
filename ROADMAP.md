@@ -273,7 +273,8 @@ This began as exploration; the three looks at the data below are what the first 
   - [ ] Nothing per workout outside the series yet: no break count or run-only pace in the workout list.
 - [ ] **Places walked versus run.** Across runs, the same ground walked again and again is a pattern: a hill that's always walked, a warm-up block. Bin the ground into cells along the tracks and compare how often each is walked or run, drawn on a map. Those places are also candidate stretches, found without drawing them; so are the shared pieces of overlapping routes.
 - [ ] **Suggested stretches**: the candidates of the second look (shared pieces of routes, climbs) offered for naming. Not built; they repeat each other too much yet.
-- [ ] **Frontend**: pick a range on a workout's graph or map and save it as a stretch; a stretch page (its line on the map, efforts over time coloured by walked share); stretches and walking breaks on the workout page.
+- [x] **Frontend, first part** (taiga-frontend#21): "Save a stretch" on a workout's graph (a name and a from and to in miles, filled in from the split or best effort selected, shown on the graph and map as they change), a stretches list, and a stretch page with its line on the map, its efforts, and time over the date coloured by walked share.
+  - [ ] Still to do: stretches and walking breaks on the workout page itself, cadence as a line on its graph, and picking a range by dragging on the graph, which still zooms.
 - [ ] **Sparse GPS** (from review of the first pass). Matching goes point by point, so it needs fixes close together: a straight track matches itself with fixes up to 40m apart and fails at 60m. Two causes, one weakness:
   - a record may only advance 80m along the stretch (the guard against jumping to a later part of a stretch that doubles back), so fixes further apart than that fall behind and drop off it;
   - an end is only reached by a fix near it, so an end crossed between two distant fixes is missed.
@@ -379,15 +380,16 @@ Backend:
 - [x] `docs/cli-sign-in.md`, and `device_login` in `GET /auth/providers` so an old CLI or frontend can tell the flow is there.
 
 Frontend:
-- [ ] `#/device` page: the code (from the link or typed), what's asking, Approve and Deny, and a plain confirmation afterwards.
-- [ ] Sign-in that returns to where it was headed, through a provider round trip too; today every sign-in lands on the workout list.
-- [ ] Sessions on the account page, with Revoke.
+- [x] `#/device` page (taiga-frontend#22): the code from the link or typed, what's asking and as whom, Approve and Deny, and a plain confirmation afterwards. Approving checks the browser is still signed in as the account the card names, and asks again if it isn't.
+- [x] Sign-in that returns to where it was headed, kept per tab so it survives a provider round trip; it also comes back to the page a session ran out on. The provider round trip hasn't been tried against a real provider yet.
+- [x] Sessions on the account page, with Revoke.
 
 `taco`:
-- [ ] `taco login` runs the device flow by default; `--password` keeps today's behaviour where the backend allows it.
-- [ ] Refresh on an expired token or a `401`, once, then retry the request.
-- [ ] Credentials under the XDG config directory, 0600; `taco logout` deletes them and revokes the session.
-- [ ] `taco whoami`, since "am I signed in, and as whom" is otherwise a guess.
+- [x] `taco login` runs the device flow by default (taiga-cliclient#42); `taco login --email` is the password sign-in where the backend allows it. It opens a browser only where that puts a window in front of the user, never over SSH.
+- [x] Refresh before a request when the token has run out or is about to, and once more on a `401`, as the session the request went out with.
+- [x] Credentials in `~/.config/taco/credentials.json`, 0600, an entry per backend, behind a lock so two tacos don't lose each other's changes; `taco logout` forgets them and revokes the session.
+- [x] `taco whoami`.
+- [ ] Not tried yet: any of it against the deployed stack, where the frontend's `/api` proxy and `auth.public_base_url` decide what link the CLI prints.
 
 ### Open questions
 
@@ -400,5 +402,5 @@ Frontend:
 - **Faster CI.** Backend runs took 12–14½ minutes (November 2026): the flake check, a second build of the binary, the image publish and a binary-cache upload of everything. Now a branch run takes about 2 minutes with the dependency cache restored (3¼ when the dependencies changed), plus a minute to publish on master. What's left:
   - The Determinate installer still lists FlakeHub's cache as a substituter, and every lookup there fails with 401 (some 400 a run). Harmless so far, but one run stalled 2½ minutes during those lookups; dropping it from the substituters would rule that out.
   - Run formatting, lint and tests as parallel jobs, so a formatting failure reports in seconds.
-- `taco compare` / `taco best <distance>` in the CLI.
+- `taco` is behind the API: `taco compare` / `taco best <distance>`, sport, source and whether it counts in `taco workouts` with `--from`/`--to`, and `taco stretches` to list them and one stretch's efforts.
 - **Admin panel** in the frontend, for running the deployment rather than looking at runs: the job queue (queued, running, dead jobs with their last error, retry), reprocess one or all workouts, files that failed to parse, and eventually account management in place of `kubectl exec … useradd`. Needs a notion of an admin user first.
