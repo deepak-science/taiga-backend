@@ -248,7 +248,7 @@ Years of history (an Endomondo archive goes back to 2016) make an all-time list 
 - [x] **Best efforts per year or window.** The same `from`/`to` on `GET /segments/{name}/best`. The best page picks all time, the last 12 months, the last 90 days or a year, and under all time shows every distance's best in each year from one call, `GET /segments/yearly-bests`.
 - [x] **Route pages take the same window**, so a route's best can be this year's: `?from=&to=` on `GET /routes` and `GET /routes/{id}`, and a period picker on both pages.
 
-## M14 — Signing in from `taco` (design)
+## M14 — Signing in from `taco`
 
 `taco login` posts an email and password to `/auth/tokens` and keeps the two-hour token.
 An account that signs in through a provider has no password to give it, a deployment with `auth.password_login: false` has none for anyone, and a script outlives the token.
@@ -291,12 +291,12 @@ The goal: `taco login` works for any account however it signs in, and stays sign
 ### Tasks
 
 Backend:
-- [ ] Migration (both dialects): `device_authorizations`, `cli_sessions`.
-- [ ] `POST /auth/device`, `POST /auth/device/token`, and behind the JWT middleware `GET /auth/device/{user_code}` (what the approval page shows), `POST /auth/device/approve`, `POST /auth/device/deny`.
-- [ ] `POST /auth/tokens/refresh`; `GET /auth/sessions`, `DELETE /auth/sessions/{id}`.
-- [ ] Pruning of expired authorizations and lapsed sessions (on insert, or with the jobs prune).
-- [ ] Tests: the whole flow against the real store, each RFC error, a code used twice, an expired code, a revoked session's refresh, another user's session.
-- [ ] `docs/` page, and `GET /auth/providers` saying the flow is there so an old CLI or frontend can tell.
+- [x] Migration `000017_cli_sessions` (both dialects): `device_authorizations`, `cli_sessions`. Numbered after the stretches migration (000016), which has to merge first.
+- [x] `POST /auth/device`, `POST /auth/device/token`, and behind the JWT middleware `GET /auth/device/{user_code}` (what the approval page shows), `POST /auth/device/approve`, `POST /auth/device/deny`.
+- [x] `POST /auth/tokens/refresh` and `POST /auth/tokens/revoke` (the CLI signing itself out); `GET /auth/sessions`, `DELETE /auth/sessions/{id}`.
+- [x] Pruning of expired authorizations and lapsed sessions: expired authorizations whenever one is asked for, and both hourly with the jobs prune.
+- [x] Tests: the whole flow against the real store, each RFC error, a code used twice, an expired code, a revoked session's refresh, another user's session.
+- [x] `docs/cli-sign-in.md`, and `device_login` in `GET /auth/providers` so an old CLI or frontend can tell the flow is there.
 
 Frontend:
 - [ ] `#/device` page: the code (from the link or typed), what's asking, Approve and Deny, and a plain confirmation afterwards.
@@ -311,7 +311,7 @@ Frontend:
 
 ### Open questions
 
-- How long an unused session lasts (90 days above), and whether using it extends it.
+- How long an unused session lasts: built as 90 days, started again by each refresh.
 - Whether the account-page token belongs in this milestone or the next.
 - Whether a signed-in `taco` should be able to approve another machine's login (`taco approve WDJB-MJHT`), for setting up a second box from the first without a browser.
 

@@ -281,7 +281,7 @@ file_repo:
 - `GET /ping` - Simple ping/pong response
 - `GET /health` - Health check with database connectivity status
 - `POST /auth/register` - User registration; `403` when `auth.registration` is closed (env `TAIGA_AUTH_REGISTRATION=open|closed`, default open in development and closed otherwise) or `auth.password_login` is off
-- `GET /auth/providers` - What the login page should offer: `{password_login, registration_open, providers: [{name, display_name}]}`
+- `GET /auth/providers` - What the login page should offer: `{password_login, registration_open, device_login, providers: [{name, display_name}]}` (`device_login` says a CLI can sign in through `POST /auth/device`)
 - `POST /auth/tokens` - User login with `{email, password}` (returns a JWT token); `403` when `auth.password_login` is off
 - `GET /auth/oidc/{provider}/login` - Redirect to the provider to sign in
 - `GET /auth/oidc/{provider}/callback` - Where the provider sends the browser back; verifies the ID token, finds the account by (issuer, subject), links or creates one as the provider allows, and redirects to the frontend's `#/login/callback?token=…` (or `?error=…`), or to `#/account?linked=…` after linking
@@ -290,6 +290,16 @@ file_repo:
 - `GET /auth/identities` - `{password, identities: [{id, provider, display_name, issuer, email_at_link, created_at}]}`; `password` is whether the user can also sign in with one
 - `POST /auth/identities/{provider}` - Start linking the provider to the signed-in account: `{url}` to send the browser to, which comes back through the callback
 - `DELETE /auth/identities/{id}` - Unlink; `409` when it's the user's only way to sign in
+
+### Signing in from a CLI (`docs/cli-sign-in.md`)
+- `POST /auth/device` - A CLI asks to sign in, optionally `{"client_name": "laptop"}`: `{device_code, user_code, verification_uri, verification_uri_complete, expires_in, interval}`; `429` when a hundred are already waiting
+- `POST /auth/device/token` - The CLI polls with `{"device_code": "..."}`: `{token, refresh_token, expires_in}` once approved, until then `400` with `{"error": ...}`, one of `authorization_pending`, `slow_down`, `access_denied`, `expired_token`, `invalid_grant`
+- `POST /auth/tokens/refresh` - `{"refresh_token": "..."}` buys a new `{token, expires_in}`; `400` `invalid_grant` once the session is revoked or lapsed
+- `POST /auth/tokens/revoke` - `{"refresh_token": "..."}` ends that session; `204` either way
+- `GET /auth/device/{user_code}` (requires JWT token) - The sign-in waiting on that code, `{user_code, client_name, created_at, expires_at}`; `404` once decided or run out
+- `POST /auth/device/approve`, `POST /auth/device/deny` (requires JWT token) - `{"user_code": "WDJB-MJHT"}` signs the waiting CLI in as the user, or turns it away; `204`, `404` once decided or run out
+- `GET /auth/sessions` (requires JWT token) - The user's CLI sessions, most recently used first: `{id, name, created_at, last_used_at, expires_at}`
+- `DELETE /auth/sessions/{id}` (requires JWT token) - Revoke one; `204`
 
 ### Protected Endpoints (require JWT token)
 - `GET /hats` - List all hats

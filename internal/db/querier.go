@@ -12,11 +12,15 @@ import (
 
 type Querier interface {
 	AddWorkoutRoute(ctx context.Context, arg *AddWorkoutRouteParams) error
+	ApproveDeviceAuthorization(ctx context.Context, arg *ApproveDeviceAuthorizationParams) (int64, error)
 	// The outer state check makes a lost race claim nothing (postgres re-checks it after waiting on the row lock), so no SKIP LOCKED and the same SQL runs on sqlite.
 	ClaimJob(ctx context.Context, arg *ClaimJobParams) (*Job, error)
 	// SQLite doesn't enforce ON DELETE SET NULL without a per-connection pragma, so a deleted workout clears itself.
 	ClearRouteRepresentative(ctx context.Context, arg *ClearRouteRepresentativeParams) error
+	CountDeviceAuthorizations(ctx context.Context) (int64, error)
 	CreateActivityFile(ctx context.Context, arg *CreateActivityFileParams) (*ActivityFile, error)
+	CreateCliSession(ctx context.Context, arg *CreateCliSessionParams) (*CliSession, error)
+	CreateDeviceAuthorization(ctx context.Context, arg *CreateDeviceAuthorizationParams) (*DeviceAuthorization, error)
 	CreateHat(ctx context.Context, arg *CreateHatParams) (*Hat, error)
 	CreateIdentity(ctx context.Context, arg *CreateIdentityParams) (*UserIdentity, error)
 	CreateRoute(ctx context.Context, arg *CreateRouteParams) (*Route, error)
@@ -37,9 +41,14 @@ type Querier interface {
 	CreateWorkout(ctx context.Context, arg *CreateWorkoutParams) (*Workout, error)
 	CreateWorkoutSegment(ctx context.Context, arg *CreateWorkoutSegmentParams) (*WorkoutSegment, error)
 	DeleteActivityFile(ctx context.Context, arg *DeleteActivityFileParams) error
+	DeleteCliSession(ctx context.Context, arg *DeleteCliSessionParams) (int64, error)
+	DeleteCliSessionByHash(ctx context.Context, tokenHash string) error
+	DeleteDeviceAuthorization(ctx context.Context, id int32) error
 	DeleteDoneJobsBefore(ctx context.Context, updatedAt pgtype.Timestamptz) (int64, error)
+	DeleteExpiredDeviceAuthorizations(ctx context.Context, expiresAt pgtype.Timestamptz) error
 	DeleteIdentity(ctx context.Context, arg *DeleteIdentityParams) (int64, error)
 	DeleteJobsByWorkout(ctx context.Context, arg *DeleteJobsByWorkoutParams) error
+	DeleteLapsedCliSessions(ctx context.Context, expiresAt pgtype.Timestamptz) error
 	// Undoing a route's merges also drops the ones held by runs that aren't being grouped just now (excluded, say), or they'd bring the merge back later.
 	DeleteMergeOverridesByRoute(ctx context.Context, arg *DeleteMergeOverridesByRouteParams) error
 	DeleteRoute(ctx context.Context, arg *DeleteRouteParams) error
@@ -52,6 +61,7 @@ type Querier interface {
 	DeleteWorkoutRoutesByUser(ctx context.Context, userID int32) error
 	DeleteWorkoutSeries(ctx context.Context, arg *DeleteWorkoutSeriesParams) error
 	DeleteWorkoutTrack(ctx context.Context, arg *DeleteWorkoutTrackParams) error
+	DenyDeviceAuthorization(ctx context.Context, arg *DenyDeviceAuthorizationParams) (int64, error)
 	// One pending detection per user (idx_jobs_pending), however many workouts change before it runs.
 	EnqueueDetectRoutes(ctx context.Context, arg *EnqueueDetectRoutesParams) error
 	EnqueueProcessWorkout(ctx context.Context, arg *EnqueueProcessWorkoutParams) error
@@ -63,9 +73,13 @@ type Querier interface {
 	FirstWorkoutStartInWindow(ctx context.Context, arg *FirstWorkoutStartInWindowParams) (pgtype.Timestamptz, error)
 	GetActivityFile(ctx context.Context, arg *GetActivityFileParams) (*ActivityFile, error)
 	GetActivityFileByHash(ctx context.Context, arg *GetActivityFileByHashParams) (*ActivityFile, error)
+	GetCliSessionByHash(ctx context.Context, tokenHash string) (*CliSession, error)
+	GetDeviceAuthorizationByHash(ctx context.Context, deviceCodeHash string) (*DeviceAuthorization, error)
 	GetHat(ctx context.Context, arg *GetHatParams) (*Hat, error)
 	GetIdentityUser(ctx context.Context, arg *GetIdentityUserParams) (*GetIdentityUserRow, error)
 	GetJob(ctx context.Context, arg *GetJobParams) (*Job, error)
+	// What the approval page shows: one nobody has decided yet and that hasn't run out.
+	GetPendingDeviceAuthorization(ctx context.Context, arg *GetPendingDeviceAuthorizationParams) (*DeviceAuthorization, error)
 	GetRoute(ctx context.Context, arg *GetRouteParams) (*Route, error)
 	GetRouteOverride(ctx context.Context, arg *GetRouteOverrideParams) (*RouteOverride, error)
 	GetUser(ctx context.Context, id int32) (*GetUserRow, error)
@@ -94,6 +108,7 @@ type Querier interface {
 	ListActivityFilesWithoutWorkout(ctx context.Context, userID *int32) ([]*ActivityFile, error)
 	// A distance segment ranks by time, a duration segment by distance covered; only workouts of one sport starting in [window_from, window_to) compete.
 	ListBestSegmentsByName(ctx context.Context, arg *ListBestSegmentsByNameParams) ([]*ListBestSegmentsByNameRow, error)
+	ListCliSessionsByUser(ctx context.Context, userID int32) ([]*CliSession, error)
 	// What a periodic total needs of each counted workout starting in [window_from, window_to), oldest first; bucketing by local week or month happens in Go, since the two databases share no date functions.
 	ListCountedWorkoutsInWindow(ctx context.Context, arg *ListCountedWorkoutsInWindowParams) ([]*ListCountedWorkoutsInWindowRow, error)
 	ListHatsByUser(ctx context.Context, userID *int32) ([]*Hat, error)
@@ -126,6 +141,8 @@ type Querier interface {
 	SelectEmailPasswordForAuth(ctx context.Context, email string) (*SelectEmailPasswordForAuthRow, error)
 	SetRouteRepresentative(ctx context.Context, arg *SetRouteRepresentativeParams) error
 	SetWorkoutDuplicateOf(ctx context.Context, arg *SetWorkoutDuplicateOfParams) error
+	TouchCliSession(ctx context.Context, arg *TouchCliSessionParams) error
+	TouchDeviceAuthorization(ctx context.Context, arg *TouchDeviceAuthorizationParams) error
 	UpdateActivityFile(ctx context.Context, arg *UpdateActivityFileParams) (*ActivityFile, error)
 	UpdateWorkout(ctx context.Context, arg *UpdateWorkoutParams) (*Workout, error)
 	// Everything reprocessing rebuilds from the activity file, and the corrections it applied over it.
