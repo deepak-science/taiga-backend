@@ -389,7 +389,7 @@ Frontend:
 - [x] Refresh before a request when the token has run out or is about to, and once more on a `401`, as the session the request went out with.
 - [x] Credentials in `~/.config/taco/credentials.json`, 0600, an entry per backend, behind a lock so two tacos don't lose each other's changes; `taco logout` forgets them and revokes the session.
 - [x] `taco whoami`.
-- [ ] Not tried yet: any of it against the deployed stack, where the frontend's `/api` proxy and `auth.public_base_url` decide what link the CLI prints.
+- [x] Tried on the deployed stack (2026-11-20): `taco login` printed its link, the code was approved in the browser, and the session worked.
 
 ### Open questions
 
