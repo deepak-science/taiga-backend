@@ -79,6 +79,8 @@ jobs:
           # hanko versions untagged master builds as the next release, so its semver fan-out (and :latest) would move onto unreleased code; master gets only :master-<sha>.
           ARGS=(--latest-on-release-tag)
           if [[ "$REF_TYPE" == branch && "$REF_NAME" == master ]]; then ARGS+=(--semver-tags=false); fi
+          # A tag push checks out a detached HEAD, which hanko would name :detached-<sha>; the master push already publishes :master-<sha>.
+          if [[ "$REF_TYPE" == tag ]]; then ARGS+=(--branch-sha-tag=false); fi
           nix develop --command hanko version docker tags "${ARGS[@]}" "$IMAGE" \
           | while IFS= read -r tag; do
               [[ -z "$tag" ]] && continue
