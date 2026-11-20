@@ -397,6 +397,35 @@ Frontend:
 - Whether the account-page token belongs in this milestone or the next.
 - Whether a signed-in `taco` should be able to approve another machine's login (`taco approve WDJB-MJHT`), for setting up a second box from the first without a browser.
 
+## M15 — Weather (exploration)
+
+A run's pace says little without the day it was run on: the same route is a different effort at 30°C and humid than at 5°C, and into a headwind than with it.
+The goal: every workout that has a place and a time knows what the weather was, so the workout page can show it and comparisons can take it into account.
+Nothing is built; this is what would need deciding.
+
+- [ ] **Where the weather comes from.** A historical service that answers for a point and an hour, going back to the oldest workouts, some ten years.
+  - Open-Meteo's archive is the first to try: reanalysis by the hour for any coordinates, decades back, no key for personal use. Check its terms and request limits before building on it, and how many days it lags behind today (a run from this morning needs its forecast endpoint, or a second look later).
+  - Station observations (NOAA, Meteostat) are what was measured rather than modelled, but mean finding the nearest station and living with its gaps.
+  - The watch's own temperature isn't it: worn on the wrist it reads body heat. It isn't read from the file today either.
+  - Behind an interface with one implementation, so the provider is a config choice (`weather.provider`, off by default) and tests use a fake.
+- [ ] **What's kept**, in a `workout_weather` row per workout: temperature, dew point (what makes heat hard, more than humidity as a percentage), wind speed and direction, precipitation, cloud cover, and which provider said so. Taken at the start, or averaged over the hours the workout spans for a long one.
+- [ ] **Fetched by a job, not by processing.** The file is the source of truth for everything processing derives, and reprocessing rebuilds it all; the weather comes from outside, is slow, and can fail, so it gets its own job kind (`fetch_weather`) queued when a workout first has a track, retried by the queue, and left alone by reprocessing unless the start or place changed.
+  - A backfill for the workouts already there, paced to the provider's limits: about 800 workouts, many from the same few places, so one request per place and month rather than one per workout.
+  - Hand-entered workouts and ones without GPS have no place. Either no weather, or a home location on the account to stand in.
+- [ ] **What leaves the server.** Each lookup tells a third party where and when the user ran. Round the coordinates first (0.1° is about 10km, finer than the weather model's own grid), send the hour and not the minute, and say in the docs that turning weather on does this.
+- [ ] **Showing it**: on the workout page and as an optional column in the list and `taco workouts`; a wind arrow on the map, since direction only means something against the route.
+- [ ] **Using it**, which is the point:
+  - Filter and group by conditions: best 5k above 25°C, this route on cold days.
+  - Headwind and tailwind along the track: the wind against each piece of the run's heading, which matters for an out-and-back and for a stretch run one way.
+  - A temperature-adjusted pace, so a summer run and a winter one can be compared. There are published adjustments by dew point; whether one fits these runs is something the data can answer first (pace against dew point on the same route, walking taken out).
+
+Open questions:
+
+- Whether reanalysis is close enough to what it was like on the ground: compare it with a station for a few remembered days (a storm, a heat wave) before trusting it.
+- Hourly values for a 20-minute run: take the nearest hour or interpolate between two.
+- Whether the outbound request is acceptable from the homelab at all, or the lookup should be something `taco` does from a laptop and uploads.
+- Where the units live: the API speaks miles today, so Fahrenheit and mph would match, but the stored values should be metric.
+
 ## Later
 
 - **Faster CI.** Backend runs took 12–14½ minutes (November 2026): the flake check, a second build of the binary, the image publish and a binary-cache upload of everything. Now a branch run takes about 2 minutes with the dependency cache restored (3¼ when the dependencies changed), plus a minute to publish on master. What's left:
