@@ -94,6 +94,7 @@ func summariseRecord(rec *mesgdef.Record) *RecordData {
 		SpeedMeterPerSec: firstValid(rec.EnhancedSpeedScaled(), rec.SpeedScaled()),
 		AltitudeMeters:   firstValid(rec.EnhancedAltitudeScaled(), rec.AltitudeScaled()),
 		HeartRate:        validUint8(rec.HeartRate),
+		Cadence:          cadence(rec),
 		Latitude:         rec.PositionLatDegrees(),
 		Longitude:        rec.PositionLongDegrees(),
 	}
@@ -133,6 +134,10 @@ func ReadActivity(activity *filedef.Activity) (*Run, error) {
 		// rec := activity.Records[i]
 		rec_summary := summariseRecord(rec)
 		rec_summary.DurationFromStart = rec_summary.Timestamp.Sub(run.Summary.StartTime)
+		// On foot, FIT counts one foot's strides; steps are what a runner means by cadence.
+		if Scored(run.Summary.Sport) {
+			rec_summary.Cadence *= 2
+		}
 
 		run.Records = append(run.Records, rec_summary)
 
@@ -157,4 +162,16 @@ func ReadFitFile(r io.Reader) (*Run, error) {
 		return nil, err
 	}
 	return run, nil
+}
+
+// cadence is the record's cadence as FIT has it: revolutions a minute, which for a run counts one foot's strides.
+func cadence(rec *mesgdef.Record) float64 {
+	if rec.Cadence == basetype.Uint8Invalid {
+		return math.NaN()
+	}
+	rpm := float64(rec.Cadence)
+	if rec.FractionalCadence != basetype.Uint8Invalid {
+		rpm += float64(rec.FractionalCadence) / 128
+	}
+	return rpm
 }

@@ -97,6 +97,14 @@ type Model interface {
 	DetectRoutes(ctx context.Context, userToken *tokens.UserToken) error
 	// DetectDuplicates runs first in the same job, so routes are grouped without the copies.
 	DetectDuplicates(ctx context.Context, now time.Time, userToken *tokens.UserToken) error
+	// Stretches are named pieces of ground cut from a workout; every workout of the sport that passes over one gets an effort.
+	Stretches(ctx context.Context, window Window, userToken *tokens.UserToken) ([]*StretchSummary, error)
+	Stretch(ctx context.Context, id int32, window Window, userToken *tokens.UserToken) (*StretchDetail, error)
+	// CreateStretch times the user's existing workouts over the new stretch before returning.
+	CreateStretch(ctx context.Context, req NewStretch, userToken *tokens.UserToken) (*StretchDetail, error)
+	RenameStretch(ctx context.Context, id int32, name string, userToken *tokens.UserToken) (*StretchDetail, error)
+	DeleteStretch(ctx context.Context, id int32, userToken *tokens.UserToken) error
+	WorkoutStretchEfforts(ctx context.Context, workoutID int32, userToken *tokens.UserToken) ([]*WorkoutStretchEffort, error)
 	Jobs(ctx context.Context, state string, limit int32, userToken *tokens.UserToken) ([]*Job, error)
 	Job(ctx context.Context, id int32, userToken *tokens.UserToken) (*Job, error)
 	RetryDeadJob(ctx context.Context, id int32, now time.Time, userToken *tokens.UserToken) (*Job, error)

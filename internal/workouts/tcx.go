@@ -115,6 +115,7 @@ func ReadTCXFile(r io.Reader) (*Run, error) {
 				SpeedMeterPerSec: math.NaN(),
 				AltitudeMeters:   orNaN(p.Altitude),
 				HeartRate:        orNaN(p.HeartRate),
+				Cadence:          math.NaN(),
 				Latitude:         math.NaN(),
 				Longitude:        math.NaN(),
 			}

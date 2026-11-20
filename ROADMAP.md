@@ -259,17 +259,22 @@ A list of timestamps is hard to scan. Each workout gets a human name from when i
   - **Backend or frontend.** Computed in the frontend it needs no storage and follows the viewer's zone; computed at processing time (a `name` column, rebuilt by reprocessing) it's the same in `taco` and the browser and can use the workout's own zone. The second seems right once the zone question is answered.
   - **More than time of day**, later and only while still deterministic: the route's name ("Saturday morning Lake loop"), or a user-set title as an M10 correction that wins over the derived one.
 
-## M13 — Stretches: comparing a piece of a route (exploration)
+## M13 — Stretches: comparing a piece of a route
 
 M9 compares whole runs on the same route. The next question is about a piece of one: name "Whitney Way hill" once, then see every time over it, whichever run it was part of.
 "Segment" already means a best effort at a standard distance, so a named piece of ground is a **stretch** here.
-Everything below is exploratory: the first step is looking at the data, and what gets built follows from what shows up.
+This began as exploration; the three looks at the data below are what the first pass was built from.
 
-- [ ] **A stretch is a piece of track**: the resampled points between two places on one run, with a name and a direction (up the hill isn't down it). The obvious way to make one is to select a range on a workout's graph or map, which the frontend can already do, and save it.
-- [ ] **Efforts over a stretch.** Find every run whose track passes along it and time each pass. `workout_tracks` holds positions every 20m but no times, so an effort's time comes from the file's records at processing time, or from the series with interpolation (good to about one stored point). Derived data like routes: a per-user job, redone when a stretch or a workout changes.
-- [ ] **Within a route, or across them?** Across: a stretch is defined by its ground and matched against every tracked run of the sport (see the first look below; one stretch drew its 78 passes from six routes and eight runs on no route). A run can pass a stretch more than once (laps, out-and-back the same way), so an effort is a pass, not a workout.
-- [ ] **Walking breaks.** Within a run, find the spells of walking: how many, how long, and where, with the warm-up before the first steady running and the cool-down after the last kept apart. Per workout this gives a count of breaks and time walked, and a run pace with the walking taken out. It needs cadence, a new record field and series column: only the watch's files can tell walking from running (see the third look).
+- [x] **A stretch is a piece of track**: the points every 10m between two distances along one workout, with a name and a direction (up the hill isn't down it). `POST /stretches` cuts one from a workout's series; rename and delete beside it.
+  - A stretch that starts at a junction only matches runs arriving the way its source did: cut from Regent Street's corner, Whitney Way gets 40 of its 78 passes, and all 78 once it starts 50m on. The frontend should say so, or the start should be given some slack along the stretch.
+- [x] **Efforts over a stretch** (`stretch_efforts`): every pass of a workout of the same sport, timed between its closest approaches to the two ends, from the series, so a workout's efforts are the same whether it was just processed or matched later. Processing a workout replaces its efforts; making a stretch times the user's tracked workouts in the request, with the stored tracks ruling most out first (78 efforts from 269 workouts in a quarter of a second). `GET /stretches/{id}` lists them with the window the routes take, and `GET /workouts/{id}/stretches` the ones a workout made.
+- [x] **Within a route, or across them?** Across: a stretch is defined by its ground and matched against every tracked run of the sport (see the first look below; one stretch drew its 78 passes from six routes and eight runs on no route). A run can pass a stretch more than once (laps, out-and-back the same way), so an effort is a pass, not a workout.
+- [x] **Walking breaks.** Cadence is read from the file and kept as a series column, and a run's series carries `walking`: the warm-up before the first steady running, the cool-down after the last, and the breaks between. By cadence where the file has it, else by the run's own two speed modes, else absent (see the third look). An effort carries the share of it walked, null where that can't be told.
+  - [ ] Nothing per workout outside the series yet: no break count or run-only pace in the workout list.
 - [ ] **Places walked versus run.** Across runs, the same ground walked again and again is a pattern: a hill that's always walked, a warm-up block. Bin the ground into cells along the tracks and compare how often each is walked or run, drawn on a map. Those places are also candidate stretches, found without drawing them; so are the shared pieces of overlapping routes.
+- [ ] **Suggested stretches**: the candidates of the second look (shared pieces of routes, climbs) offered for naming. Not built; they repeat each other too much yet.
+- [ ] **Frontend**: pick a range on a workout's graph or map and save it as a stretch; a stretch page (its line on the map, efforts over time coloured by walked share); stretches and walking breaks on the workout page.
+- [ ] Not handled: a stretch's efforts aren't rebuilt if matching changes without `extractorVersion` moving, and on PostgreSQL a workout processed in the same instant a stretch is made can miss it until it's next reprocessed.
 
 ### First look (2026-11-20)
 
