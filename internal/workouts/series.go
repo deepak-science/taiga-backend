@@ -71,6 +71,12 @@ func BuildSeries(run *Run, maxPoints int) *Series {
 		}
 		return out
 	}
+	// On foot the file counts one foot's strides, and steps are what a runner means by cadence.
+	// It goes by the sport as corrected, so a session the user turned into a run is counted like one.
+	stepsPerStride := 1.0
+	if Scored(run.Summary.Sport) {
+		stepsPerStride = 2
+	}
 	s := &Series{
 		TimeSeconds: column(func(r *RecordData) float64 { return r.DurationFromStart.Seconds() }, 1),
 		DistanceMeters: column(func(r *RecordData) float64 {
@@ -85,7 +91,7 @@ func BuildSeries(run *Run, maxPoints int) *Series {
 		// Six decimals of a degree is about 10cm.
 		Latitude:  column(func(r *RecordData) float64 { return r.Latitude }, 6),
 		Longitude: column(func(r *RecordData) float64 { return r.Longitude }, 6),
-		Cadence:   column(func(r *RecordData) float64 { return r.Cadence }, 0),
+		Cadence:   column(func(r *RecordData) float64 { return r.Cadence * stepsPerStride }, 0),
 	}
 	// Time and distance are the x axes, so keep them present even when empty.
 	if s.TimeSeconds == nil {

@@ -134,10 +134,6 @@ func ReadActivity(activity *filedef.Activity) (*Run, error) {
 		// rec := activity.Records[i]
 		rec_summary := summariseRecord(rec)
 		rec_summary.DurationFromStart = rec_summary.Timestamp.Sub(run.Summary.StartTime)
-		// On foot, FIT counts one foot's strides; steps are what a runner means by cadence.
-		if Scored(run.Summary.Sport) {
-			rec_summary.Cadence *= 2
-		}
 
 		run.Records = append(run.Records, rec_summary)
 
@@ -164,7 +160,7 @@ func ReadFitFile(r io.Reader) (*Run, error) {
 	return run, nil
 }
 
-// cadence is the record's cadence as FIT has it: revolutions a minute, which for a run counts one foot's strides.
+// cadence is the record's cadence, with its fraction where the device writes one.
 func cadence(rec *mesgdef.Record) float64 {
 	if rec.Cadence == basetype.Uint8Invalid {
 		return math.NaN()

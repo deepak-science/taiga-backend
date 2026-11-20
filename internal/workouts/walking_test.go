@@ -117,9 +117,9 @@ func TestBuildSeriesOnlyLooksForWalkingInRuns(t *testing.T) {
 		run := &Run{Summary: RunSummary{Sport: sport}}
 		var d float64
 		for i := range 400 {
-			speed, cadence := 2.6, 144.0
+			speed, cadence := 2.6, 72.0
 			if i >= 150 && i < 200 {
-				speed, cadence = 1.5, 108
+				speed, cadence = 1.5, 54
 			}
 			d += speed
 			run.Records = append(run.Records, &RecordData{

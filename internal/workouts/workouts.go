@@ -45,7 +45,7 @@ type RecordData struct {
 	SpeedMeterPerSec float64   `json:"-"`
 	AltitudeMeters   float64   `json:"-"`
 	HeartRate        float64   `json:"-"`
-	// Cadence is steps a minute counting both feet for a run or walk, and revolutions a minute for anything else.
+	// Cadence is as the file has it: revolutions a minute, which for a run or walk counts one foot's strides.
 	Cadence           float64       `json:"-"`
 	Latitude          float64       `json:"-"`
 	Longitude         float64       `json:"-"`

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 
 	"gitea.deepak.science/deepak/taiga/internal/db"
 	"gitea.deepak.science/deepak/taiga/internal/tokens"
@@ -188,6 +189,10 @@ func (m *storeModel) CreateStretch(ctx context.Context, req NewStretch, userToke
 		if err != nil {
 			return err
 		}
+		// Processing gives efforts only to workouts with a track, so a source without one would be a stretch its own workout isn't on.
+		if !slices.ContainsFunc(tracks, func(t *db.ListWorkoutTracksByUserAndSportRow) bool { return t.WorkoutID == req.WorkoutID }) {
+			return fmt.Errorf("%w: workout %d has too little GPS to match against, or is a copy of another", ErrStretchSource, req.WorkoutID)
+		}
 		for _, t := range tracks {
 			var track workouts.Track
 			if err := json.Unmarshal(t.Track, &track); err != nil {
@@ -248,14 +253,16 @@ func addStretchEfforts(ctx context.Context, q db.Querier, stretchID, workoutID i
 	return nil
 }
 
-// storeStretchEfforts replaces a workout's passes over the user's stretches; a workout that doesn't count keeps none.
-func storeStretchEfforts(ctx context.Context, q db.Querier, workoutID int32, summary *workouts.RunSummary, series *workouts.Series, userToken *tokens.UserToken) error {
+// storeStretchEfforts replaces a workout's passes over the user's stretches; a workout that doesn't count, or has too little GPS for a track, keeps none.
+func storeStretchEfforts(ctx context.Context, q db.Querier, workoutID int32, run *workouts.Run, series *workouts.Series, userToken *tokens.UserToken) error {
 	if err := q.DeleteStretchEffortsByWorkout(ctx, &db.DeleteStretchEffortsByWorkoutParams{WorkoutID: workoutID, UserID: userToken.ID}); err != nil {
 		return err
 	}
-	if !summary.Scored() {
+	// The same workouts a new stretch is matched against: those with a stored track.
+	if !run.Summary.Scored() || workouts.BuildTrack(run) == nil {
 		return nil
 	}
+	summary := &run.Summary
 	stretches, err := q.ListStretchesByUserAndSport(ctx, &db.ListStretchesByUserAndSportParams{UserID: userToken.ID, Sport: summary.Sport})
 	if err != nil {
 		return err

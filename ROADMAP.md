@@ -274,6 +274,10 @@ This began as exploration; the three looks at the data below are what the first 
 - [ ] **Places walked versus run.** Across runs, the same ground walked again and again is a pattern: a hill that's always walked, a warm-up block. Bin the ground into cells along the tracks and compare how often each is walked or run, drawn on a map. Those places are also candidate stretches, found without drawing them; so are the shared pieces of overlapping routes.
 - [ ] **Suggested stretches**: the candidates of the second look (shared pieces of routes, climbs) offered for naming. Not built; they repeat each other too much yet.
 - [ ] **Frontend**: pick a range on a workout's graph or map and save it as a stretch; a stretch page (its line on the map, efforts over time coloured by walked share); stretches and walking breaks on the workout page.
+- [ ] **Sparse GPS** (from review of the first pass). Matching goes point by point, so it needs fixes close together: a straight track matches itself with fixes up to 40m apart and fails at 60m. Two causes, one weakness:
+  - a record may only advance 80m along the stretch (the guard against jumping to a later part of a stretch that doubles back), so fixes further apart than that fall behind and drop off it;
+  - an end is only reached by a fix near it, so an end crossed between two distant fixes is missed.
+  - The watch's runs are 20m apart at worst (a marathon thinned to 2000 points), so nothing recorded so far is affected. It would show across a GPS dropout or on a sparse phone recording. When that's seen: fill in points between distant fixes before matching, as `BuildTrack` already does for routes, with a cap so a long dropout isn't bridged; simpler than scaling the lookahead and testing segments for crossings.
 - [ ] Not handled: a stretch's efforts aren't rebuilt if matching changes without `extractorVersion` moving, and on PostgreSQL a workout processed in the same instant a stretch is made can miss it until it's next reprocessed.
 
 ### First look (2026-11-20)

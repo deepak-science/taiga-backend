@@ -13,6 +13,7 @@ import (
 	"gitea.deepak.science/deepak/taiga/internal/testsupport"
 	"gitea.deepak.science/deepak/taiga/internal/tokens"
 	"gitea.deepak.science/deepak/taiga/internal/workouts"
+	"github.com/muktihari/fit/profile/typedef"
 )
 
 func (c *apiClient) stretch(id int32, query string) models.StretchDetail {
@@ -202,4 +203,59 @@ func TestWalkingBreaksAndWalkedShare(t *testing.T) {
 		assert.NotContains(t, string(body), `"walking"`)
 		assert.NotContains(t, string(body), `"cadence"`)
 	})
+}
+
+func TestCadenceFollowsACorrectedSport(t *testing.T) {
+	srv, m, toker := newAPI(t)
+	alice := newUserClient(t, srv, m, toker, "alice@example.com")
+	// A run the watch saved as a generic session: FIT counts one foot, so the file says 75 and 55.
+	_, workoutID := alice.uploadWorkout(testsupport.EncodeFITSport(t, routeDay, []testsupport.Split{
+		{Meters: 400, Seconds: 160, StepsPerMinute: 150},
+		{Meters: 100, Seconds: 70, StepsPerMinute: 110},
+		{Meters: 500, Seconds: 200, StepsPerMinute: 150},
+	}, typedef.SportGeneric))
+	series := func() (cadence []float64, walking *workouts.Walking) {
+		status, body := alice.get(fmt.Sprintf("/workouts/%d/series", workoutID))
+		require.Equal(t, http.StatusOK, status, string(body))
+		var s struct {
+			Cadence []float64         `json:"cadence"`
+			Walking *workouts.Walking `json:"walking"`
+		}
+		require.NoError(t, json.Unmarshal(body, &s))
+		return s.Cadence, s.Walking
+	}
+
+	cadence, walking := series()
+	assert.Equal(t, 75.0, cadence[0], "not on foot as far as the file says, so left as revolutions")
+	assert.Nil(t, walking)
+
+	status, body := alice.put(fmt.Sprintf("/workouts/%d/corrections", workoutID), `{"sport":"running"}`)
+	require.Equal(t, http.StatusOK, status, string(body))
+	cadence, walking = series()
+	assert.Equal(t, 150.0, cadence[0], "steps once it's a run")
+	require.NotNil(t, walking)
+	assert.Len(t, walking.Breaks, 1, "and only the walked part is walking, not the whole run at half its cadence")
+}
+
+func TestStretchesLeaveOutWorkoutsWithoutATrack(t *testing.T) {
+	srv, m, toker := newAPI(t)
+	alice := newUserClient(t, srv, m, toker, "alice@example.com")
+	_, long := alice.uploadWorkout(testsupport.EncodeFIT(t, routeDay, []testsupport.Split{{Meters: 2000, Seconds: 600}}))
+	// 150m of GPS is too little for a track, though it covers the stretch below end to end.
+	_, short := alice.uploadWorkout(testsupport.EncodeFIT(t, routeDay.AddDate(0, 0, 1), []testsupport.Split{{Meters: 150, Seconds: 45}}))
+
+	status, body := alice.postJSON("/stretches", fmt.Sprintf(`{"name":"From the door","workout_id":%d,"start_m":0,"end_m":120}`, long))
+	require.Equal(t, http.StatusCreated, status, string(body))
+	var created models.StretchDetail
+	require.NoError(t, json.Unmarshal(body, &created))
+	require.Len(t, created.Efforts, 1)
+	assert.Equal(t, long, created.Efforts[0].WorkoutID)
+
+	status, body = alice.post(fmt.Sprintf("/workouts/%d/reprocess", short))
+	require.Equal(t, http.StatusOK, status, string(body))
+	assert.Len(t, alice.stretch(created.ID, "").Efforts, 1, "reprocessing gives it no effort either, so both ways of matching agree")
+
+	status, body = alice.postJSON("/stretches", fmt.Sprintf(`{"name":"Too short a run","workout_id":%d,"start_m":10,"end_m":130}`, short))
+	assert.Equal(t, http.StatusUnprocessableEntity, status, string(body))
+	assert.Contains(t, string(body), "too little GPS")
 }

@@ -189,7 +189,7 @@ func storeDerived(ctx context.Context, q db.Querier, workoutID int32, run *worko
 	if err := storeTrack(ctx, q, workoutID, run, userToken); err != nil {
 		return err
 	}
-	return storeStretchEfforts(ctx, q, workoutID, &run.Summary, built, userToken)
+	return storeStretchEfforts(ctx, q, workoutID, run, built, userToken)
 }
 
 // WorkoutSeries returns the stored series JSON; ErrNoSeries for a workout with nothing recorded (hand-entered, or not yet reprocessed).
