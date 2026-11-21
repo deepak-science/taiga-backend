@@ -176,6 +176,12 @@ func putActivityFileFunc(m models.Model) http.HandlerFunc {
 			badRequestError(w, err)
 			return
 		}
+		if updateReq.FileRepoHash != nil {
+			if err := filerepo.CheckHash(*updateReq.FileRepoHash); err != nil {
+				badRequestError(w, err)
+				return
+			}
+		}
 
 		// Get current activity file to get existing values
 		currentFile, err := m.ActivityFile(ctx, activityFileID, userToken)

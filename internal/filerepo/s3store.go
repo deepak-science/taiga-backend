@@ -69,6 +69,9 @@ func (s *s3Store) Store(ctx context.Context, r io.Reader) (hash string, err erro
 }
 
 func (s *s3Store) Exists(ctx context.Context, hash string) (exists bool, err error) {
+	if err := CheckHash(hash); err != nil {
+		return false, err
+	}
 	key := s.buildKey(hash)
 
 	_, err = s.client.HeadObject(ctx, &s3.HeadObjectInput{
@@ -87,6 +90,9 @@ func (s *s3Store) Exists(ctx context.Context, hash string) (exists bool, err err
 }
 
 func (s *s3Store) Fetch(ctx context.Context, hash string) (rc io.ReadCloser, err error) {
+	if err := CheckHash(hash); err != nil {
+		return nil, err
+	}
 	key := s.buildKey(hash)
 
 	result, err := s.client.GetObject(ctx, &s3.GetObjectInput{

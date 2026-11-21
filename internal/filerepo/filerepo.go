@@ -22,6 +22,23 @@ type FileRepo interface {
 	Fetch(ctx context.Context, hash string) (rc io.ReadCloser, err error)
 }
 
+// ErrInvalidHash is what Exists and Fetch return for anything but a hash Store could have returned.
+var ErrInvalidHash = errors.New("not a file hash")
+
+// CheckHash returns ErrInvalidHash unless hash is lowercase hex SHA-256.
+// A hash becomes a path or key, and one can arrive from a request (PUT /activity_files/{id}).
+func CheckHash(hash string) error {
+	if len(hash) != sha256.Size*2 {
+		return ErrInvalidHash
+	}
+	for _, c := range hash {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return ErrInvalidHash
+		}
+	}
+	return nil
+}
+
 var _ FileRepo = &localStore{}
 
 type localStore struct {
@@ -76,6 +93,9 @@ func (f *localStore) outputPath(hash string) (string, error) {
 }
 
 func (f *localStore) Exists(ctx context.Context, hash string) (exists bool, err error) {
+	if err := CheckHash(hash); err != nil {
+		return false, err
+	}
 	outputPath, err := f.outputPath(hash)
 	if err != nil {
 		return false, err
@@ -91,6 +111,9 @@ func (f *localStore) Exists(ctx context.Context, hash string) (exists bool, err 
 }
 
 func (f *localStore) Fetch(ctx context.Context, hash string) (rc io.ReadCloser, err error) {
+	if err := CheckHash(hash); err != nil {
+		return nil, err
+	}
 	outputPath, err := f.outputPath(hash)
 	if err != nil {
 		return nil, err

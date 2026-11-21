@@ -418,3 +418,19 @@ func TestWorkoutWeather(t *testing.T) {
 	status, _ = alice.get(path)
 	assert.Equal(t, http.StatusNotFound, status)
 }
+
+func TestActivityFileHashMustBeAHash(t *testing.T) {
+	srv, m, toker := newAPI(t)
+	alice := newUserClient(t, srv, m, toker, "alice@example.com")
+	status, af := alice.uploadFile(fourKFIT(t))
+	require.Equal(t, http.StatusCreated, status)
+
+	for _, hash := range []string{"../../../../etc/passwd", "ab", "", strings.Repeat("A", 64), strings.Repeat("a", 62) + "/."} {
+		status, _ := alice.put(fmt.Sprintf("/activity_files/%d", af.ID), fmt.Sprintf(`{"file_repo_hash": %q}`, hash))
+		assert.Equal(t, http.StatusBadRequest, status, hash)
+	}
+
+	status, body := alice.get(fmt.Sprintf("/activity_files/%d/download", af.ID))
+	require.Equal(t, http.StatusOK, status)
+	assert.Equal(t, fourKFIT(t), body)
+}
