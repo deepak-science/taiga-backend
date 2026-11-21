@@ -58,7 +58,6 @@ func New(m models.Model, tok tokens.Toker, fileRepo filerepo.FileRepo, opts ...O
 	// authenticated routes
 	r.Group(func(r chi.Router) {
 		r.Use(tok.Authenticator)
-		r.Mount("/hats", newHatRouter(m))
 		r.Mount("/activity_files", newActivityFileRouter(m, fileRepo))
 		r.Mount("/workouts", newWorkoutRouter(m, fileRepo))
 		r.Mount("/segments", newSegmentRouter(m))
@@ -75,7 +74,7 @@ func hello(w http.ResponseWriter, r *http.Request) {
 	response := map[string]any{
 		"message": "Hello, World!",
 		"status":  "success",
-		"service": "trygo-template",
+		"service": "taiga",
 	}
 
 	w.Header().Set("Content-Type", "application/json")

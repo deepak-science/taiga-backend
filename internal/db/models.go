@@ -39,15 +39,6 @@ type DeviceAuthorization struct {
 	LastPolledAt   pgtype.Timestamptz `json:"last_polled_at"`
 }
 
-type Hat struct {
-	ID          int32              `json:"id"`
-	Name        *string            `json:"name"`
-	Description *string            `json:"description"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-	UserID      *int32             `json:"user_id"`
-}
-
 type Job struct {
 	ID         int32              `json:"id"`
 	UserID     int32              `json:"user_id"`

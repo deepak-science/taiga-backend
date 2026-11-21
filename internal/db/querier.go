@@ -23,7 +23,6 @@ type Querier interface {
 	CreateActivityFile(ctx context.Context, arg *CreateActivityFileParams) (*ActivityFile, error)
 	CreateCliSession(ctx context.Context, arg *CreateCliSessionParams) (*CliSession, error)
 	CreateDeviceAuthorization(ctx context.Context, arg *CreateDeviceAuthorizationParams) (*DeviceAuthorization, error)
-	CreateHat(ctx context.Context, arg *CreateHatParams) (*Hat, error)
 	CreateIdentity(ctx context.Context, arg *CreateIdentityParams) (*UserIdentity, error)
 	CreateRoute(ctx context.Context, arg *CreateRouteParams) (*Route, error)
 	CreateStretch(ctx context.Context, arg *CreateStretchParams) (*Stretch, error)
@@ -88,7 +87,6 @@ type Querier interface {
 	GetActivityFileByHash(ctx context.Context, arg *GetActivityFileByHashParams) (*ActivityFile, error)
 	GetCliSessionByHash(ctx context.Context, tokenHash string) (*CliSession, error)
 	GetDeviceAuthorizationByHash(ctx context.Context, deviceCodeHash string) (*DeviceAuthorization, error)
-	GetHat(ctx context.Context, arg *GetHatParams) (*Hat, error)
 	GetIdentityUser(ctx context.Context, arg *GetIdentityUserParams) (*GetIdentityUserRow, error)
 	GetJob(ctx context.Context, arg *GetJobParams) (*Job, error)
 	// What the approval page shows: one nobody has decided yet and that hasn't run out.
@@ -125,7 +123,6 @@ type Querier interface {
 	ListCliSessionsByUser(ctx context.Context, userID int32) ([]*CliSession, error)
 	// What a periodic total needs of each counted workout starting in [window_from, window_to), oldest first; bucketing by local week or month happens in Go, since the two databases share no date functions.
 	ListCountedWorkoutsInWindow(ctx context.Context, arg *ListCountedWorkoutsInWindowParams) ([]*ListCountedWorkoutsInWindowRow, error)
-	ListHatsByUser(ctx context.Context, userID *int32) ([]*Hat, error)
 	ListIdentitiesByUser(ctx context.Context, userID int32) ([]*UserIdentity, error)
 	ListJobsByUser(ctx context.Context, arg *ListJobsByUserParams) ([]*Job, error)
 	ListJobsByUserAndState(ctx context.Context, arg *ListJobsByUserAndStateParams) ([]*Job, error)

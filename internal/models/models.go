@@ -61,9 +61,6 @@ type Model interface {
 	CLISessions(ctx context.Context, userToken *tokens.UserToken) ([]*CLISession, error)
 	RevokeCLISession(ctx context.Context, id int32, userToken *tokens.UserToken) error
 	PruneCLIAuth(ctx context.Context, now time.Time) error
-	Hat(ctx context.Context, hatID int32, userToken *tokens.UserToken) (*Hat, error)
-	Hats(ctx context.Context, userToken *tokens.UserToken) ([]*Hat, error)
-	AddHat(ctx context.Context, hat *Hat, userToken *tokens.UserToken) (*Hat, error)
 	ActivityFile(ctx context.Context, id int32, userToken *tokens.UserToken) (*ActivityFile, error)
 	ActivityFiles(ctx context.Context, userToken *tokens.UserToken) ([]*ActivityFile, error)
 	ActivityFilesWithoutWorkout(ctx context.Context, userToken *tokens.UserToken) ([]*ActivityFile, error)
