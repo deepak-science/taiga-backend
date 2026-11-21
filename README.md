@@ -24,3 +24,7 @@ Every config field is bound, so a deployment can be configured by environment al
 
 - [CLAUDE.md](CLAUDE.md): architecture, commands, configuration and the full API.
 - [ROADMAP.md](ROADMAP.md): what's done and what's next.
+
+## Data
+
+Place names and timezones come from [GeoNames](https://www.geonames.org) (`cities5000`, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)), cut down and built into the binary as `internal/places/cities.tsv.gz`.

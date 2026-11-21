@@ -150,6 +150,8 @@ func ReadEndomondoFile(r io.Reader) (*Run, error) {
 	case !pointsAgree(run.Records, distance.Meters, start):
 		run.Summary.ExcludedReason = ExcludedPointsDisagree
 	}
+	// Before the points go: ones too poor to measure with still say where it was.
+	run.locate()
 	if run.Summary.ExcludedReason != "" {
 		run.Records = nil
 	}

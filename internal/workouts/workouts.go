@@ -36,6 +36,12 @@ type RunSummary struct {
 	ExcludedReason string `json:"excluded_reason"`
 	// Source is what recorded the workout, e.g. "COROS PACE 3" or "Endomondo"; empty when the file doesn't say.
 	Source string `json:"source"`
+	// Place is the town the workout started in or beside, e.g. "Madison"; empty without GPS or out of reach of any town.
+	Place string `json:"place"`
+	// Timezone is the IANA zone at the start, from the first GPS fix; empty without one.
+	Timezone string `json:"timezone"`
+	// UTCOffsetSeconds is the local offset at the start: the zone's, or else the one the file states; nil when neither is known.
+	UTCOffsetSeconds *int32 `json:"utc_offset_seconds"`
 }
 
 // RecordData is one FIT record; fields the device didn't record are NaN.

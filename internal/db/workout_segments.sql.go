@@ -87,7 +87,8 @@ func (q *Queries) DeleteSegmentsByWorkout(ctx context.Context, arg *DeleteSegmen
 const listBestSegmentsByName = `-- name: ListBestSegmentsByName :many
 SELECT
   workout_segments.id, workout_segments.workout_id, workout_segments.user_id, workout_segments.name, workout_segments.distance_meters, workout_segments.duration_seconds, workout_segments.start_offset_seconds, workout_segments.end_offset_seconds, workout_segments.created_at, workout_segments.kind,
-  workouts.start_time AS workout_start_time
+  workouts.start_time AS workout_start_time,
+  workouts.name AS workout_name
 FROM
   workout_segments
   JOIN workouts ON workouts.id = workout_segments.workout_id
@@ -127,6 +128,7 @@ type ListBestSegmentsByNameRow struct {
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	Kind               string             `json:"kind"`
 	WorkoutStartTime   pgtype.Timestamptz `json:"workout_start_time"`
+	WorkoutName        string             `json:"workout_name"`
 }
 
 // A distance segment ranks by time, a duration segment by distance covered; only workouts of one sport starting in [window_from, window_to) compete.
@@ -158,6 +160,7 @@ func (q *Queries) ListBestSegmentsByName(ctx context.Context, arg *ListBestSegme
 			&i.CreatedAt,
 			&i.Kind,
 			&i.WorkoutStartTime,
+			&i.WorkoutName,
 		); err != nil {
 			return nil, err
 		}
@@ -172,7 +175,8 @@ func (q *Queries) ListBestSegmentsByName(ctx context.Context, arg *ListBestSegme
 const listSegmentEffortsBySport = `-- name: ListSegmentEffortsBySport :many
 SELECT
   workout_segments.id, workout_segments.workout_id, workout_segments.user_id, workout_segments.name, workout_segments.distance_meters, workout_segments.duration_seconds, workout_segments.start_offset_seconds, workout_segments.end_offset_seconds, workout_segments.created_at, workout_segments.kind,
-  workouts.start_time AS workout_start_time
+  workouts.start_time AS workout_start_time,
+  workouts.name AS workout_name
 FROM
   workout_segments
   JOIN workouts ON workouts.id = workout_segments.workout_id
@@ -201,6 +205,7 @@ type ListSegmentEffortsBySportRow struct {
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	Kind               string             `json:"kind"`
 	WorkoutStartTime   pgtype.Timestamptz `json:"workout_start_time"`
+	WorkoutName        string             `json:"workout_name"`
 }
 
 // Every segment of the user's workouts of one sport, for picking each year's best at each segment in Go.
@@ -225,6 +230,7 @@ func (q *Queries) ListSegmentEffortsBySport(ctx context.Context, arg *ListSegmen
 			&i.CreatedAt,
 			&i.Kind,
 			&i.WorkoutStartTime,
+			&i.WorkoutName,
 		); err != nil {
 			return nil, err
 		}

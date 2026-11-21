@@ -34,7 +34,11 @@ INSERT INTO
     sport,
     sub_sport,
     excluded_reason,
-    source
+    source,
+    name,
+    place,
+    timezone,
+    utc_offset_seconds
   )
 VALUES
   (
@@ -50,7 +54,11 @@ VALUES
     $10,
     $11,
     $12,
-    $13
+    $13,
+    $14,
+    $15,
+    $16,
+    $17
   )
 RETURNING
   *;
@@ -106,6 +114,10 @@ SET
   source = $13,
   sport_override = $14,
   user_excluded_reason = $15,
+  name = $16,
+  place = $17,
+  timezone = $18,
+  utc_offset_seconds = $19,
   updated_at = CURRENT_TIMESTAMP
 WHERE
   id = $1
