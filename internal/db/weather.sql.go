@@ -73,11 +73,11 @@ WHERE
     SELECT
       1
     FROM
-      jobs AS dead
+      jobs AS held
     WHERE
-      dead.kind = 'fetch_weather'
-      AND dead.workout_id = workouts.id
-      AND dead.state = 'dead'
+      held.kind = 'fetch_weather'
+      AND held.workout_id = workouts.id
+      AND held.state IN ('queued', 'running', 'dead')
   )
 ORDER BY
   workouts.start_time DESC
@@ -94,7 +94,7 @@ type EnqueueWeatherDueParams struct {
 }
 
 // Every user's tracked workouts that ended by the cutoff and have no reading from the source, newest first.
-// One whose last fetch died waits for a retry through /jobs, so an outage doesn't queue it again every sweep.
+// One whose last fetch died waits for a retry through /jobs, so an outage doesn't queue it again every sweep; one with a fetch pending is left out so it doesn't use up the limit.
 func (q *Queries) EnqueueWeatherDue(ctx context.Context, arg *EnqueueWeatherDueParams) (int64, error) {
 	result, err := q.db.Exec(ctx, enqueueWeatherDue,
 		arg.RunAt,

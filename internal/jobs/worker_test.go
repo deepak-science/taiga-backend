@@ -433,3 +433,38 @@ func TestReprocessingQueuesAWeatherFetch(t *testing.T) {
 	drain(t, w)
 	assert.Len(t, fake.Requests(), 1, "a workout whose span hasn't moved keeps the reading it has")
 }
+
+func TestWeatherIsDroppedWhenTheSpanMoves(t *testing.T) {
+	m, repo := testsupport.NewModel(t), testsupport.NewFileRepo(t)
+	user := createUser(t, m, "alice@example.com")
+	fake := testsupport.NewFakeWeather(t)
+	w, c := newWorker(m, repo)
+	w.Weather = weather.NewOpenMeteo(fake.URL())
+	wo := upload(t, m, repo, user, testsupport.EncodeFIT(t, start, fourK))
+	c.advance(25 * time.Hour)
+	w.SweepWeather(t.Context())
+	drain(t, w)
+	_, err := m.WorkoutWeather(t.Context(), wo.ID, user)
+	require.NoError(t, err)
+
+	// As if an older processor had read another start from the file: rebuilding in the request, not through the queue, puts the file's back.
+	moved := *wo
+	moved.StartTime = pgtype.Timestamptz{Time: start.Add(-2 * time.Hour), Valid: true}
+	_, err = m.UpdateWorkout(t.Context(), wo.ID, &moved, user)
+	require.NoError(t, err)
+	_, err = m.CorrectWorkout(t.Context(), wo.ID, models.Corrections{}, user, repo)
+	require.NoError(t, err)
+	_, err = m.WorkoutWeather(t.Context(), wo.ID, user)
+	assert.ErrorIs(t, err, models.ErrNoWeather, "readings for the old span are gone")
+
+	w.SweepWeather(t.Context())
+	drain(t, w)
+	_, err = m.WorkoutWeather(t.Context(), wo.ID, user)
+	require.NoError(t, err)
+	assert.Len(t, fake.Requests(), 2)
+
+	_, err = m.CorrectWorkout(t.Context(), wo.ID, models.Corrections{ExcludedReason: "ran with a friend"}, user, repo)
+	require.NoError(t, err)
+	_, err = m.WorkoutWeather(t.Context(), wo.ID, user)
+	assert.NoError(t, err, "an excluded workout keeps the weather it had")
+}

@@ -115,7 +115,7 @@ func (m *storeModel) FetchWeather(ctx context.Context, workoutID int32, provider
 		if err != nil {
 			return fmt.Errorf("weather for workout %d from %s: %w", workoutID, source.Name, err)
 		}
-		if err := querier.UpsertWorkoutWeather(ctx, &db.UpsertWorkoutWeatherParams{
+		row := &db.UpsertWorkoutWeatherParams{
 			WorkoutID:             workoutID,
 			Source:                source.Name,
 			UserID:                userToken.ID,
@@ -137,7 +137,22 @@ func (m *storeModel) FetchWeather(ctx context.Context, workoutID int32, provider
 			EndWindDirectionDeg:   reading.End.WindDirectionDeg,
 			EndCloudCoverPct:      reading.End.CloudCoverPct,
 			PrecipitationMm:       reading.PrecipitationMM,
-		}); err != nil {
+		}
+		// The lookup ran outside any transaction; the workout may have been deleted or reprocessed to another span meanwhile, and its reading would be an orphan or a wrong one.
+		err = m.store.InTx(ctx, func(q db.Querier) error {
+			found, err := q.GetWorkout(ctx, &db.GetWorkoutParams{ID: workoutID, UserID: userToken.ID})
+			if IsNotFound(err) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			if !found.StartTime.Time.Equal(start) || !found.EndTime.Time.Equal(end) {
+				return nil
+			}
+			return q.UpsertWorkoutWeather(ctx, row)
+		})
+		if err != nil {
 			return err
 		}
 	}

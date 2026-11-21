@@ -26,8 +26,10 @@ No account, no workout, no track. Open-Meteo also sees the server's address, as 
 
 ## Which workouts, and when
 
-Only workouts with a stored track get weather: outdoor runs and walks that count.
-Hand-entered workouts, ones without GPS, rides and excluded runs get none.
+Weather is fetched only for workouts with a stored track: outdoor runs and walks that count.
+Hand-entered workouts, ones without GPS, rides and excluded runs are never asked about.
+A workout that had its weather and was later excluded or corrected to another sport keeps it, since it is still what the weather was.
+One reprocessed to a different start or end loses its readings and is asked about again.
 
 There are two sources, and a workout keeps the reading from each:
 

@@ -79,7 +79,7 @@ type Querier interface {
 	EnqueueStaleWorkouts(ctx context.Context, arg *EnqueueStaleWorkoutsParams) (int64, error)
 	EnqueueUserWorkouts(ctx context.Context, arg *EnqueueUserWorkoutsParams) (int64, error)
 	// Every user's tracked workouts that ended by the cutoff and have no reading from the source, newest first.
-	// One whose last fetch died waits for a retry through /jobs, so an outage doesn't queue it again every sweep.
+	// One whose last fetch died waits for a retry through /jobs, so an outage doesn't queue it again every sweep; one with a fetch pending is left out so it doesn't use up the limit.
 	EnqueueWeatherDue(ctx context.Context, arg *EnqueueWeatherDueParams) (int64, error)
 	FinishJob(ctx context.Context, arg *FinishJobParams) error
 	// The earliest start in [window_from, window_to), excluded workouts included since they're still listed; no rows when the window is empty.
