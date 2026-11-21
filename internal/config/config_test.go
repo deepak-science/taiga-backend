@@ -140,6 +140,7 @@ func TestEnvironmentVariablesReachKeysWithoutDefaults(t *testing.T) {
 	t.Setenv("TAIGA_TOKENS_PRIVATE_KEY_PATH", "/jwt/private.pem")
 	t.Setenv("TAIGA_TOKENS_PUBLIC_KEY_PATH", "/jwt/public.pem")
 	t.Setenv("TAIGA_FILE_REPO_S3_BUCKET", "bucket")
+	t.Setenv("TAIGA_WEATHER_PROVIDER", "open-meteo")
 	t.Chdir(t.TempDir())
 
 	cfg, err := config.Load("config")
@@ -149,6 +150,7 @@ func TestEnvironmentVariablesReachKeysWithoutDefaults(t *testing.T) {
 	assert.Equal(t, "/jwt/private.pem", cfg.Tokens.PrivateKeyPath)
 	assert.Equal(t, "/jwt/public.pem", cfg.Tokens.PublicKeyPath)
 	assert.Equal(t, "bucket", cfg.FileRepo.S3Bucket)
+	assert.Equal(t, "open-meteo", cfg.Weather.Provider)
 }
 
 func TestEnvironmentVariablesOverrideConfig(t *testing.T) {

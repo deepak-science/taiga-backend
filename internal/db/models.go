@@ -174,3 +174,27 @@ type WorkoutTrack struct {
 	UserID    int32  `json:"user_id"`
 	Track     []byte `json:"track"`
 }
+
+type WorkoutWeather struct {
+	WorkoutID             int32              `json:"workout_id"`
+	Source                string             `json:"source"`
+	UserID                int32              `json:"user_id"`
+	FetchedAt             pgtype.Timestamptz `json:"fetched_at"`
+	Latitude              float64            `json:"latitude"`
+	Longitude             float64            `json:"longitude"`
+	AskedStart            pgtype.Timestamptz `json:"asked_start"`
+	AskedEnd              pgtype.Timestamptz `json:"asked_end"`
+	StartTemperatureC     float64            `json:"start_temperature_c"`
+	StartDewPointC        float64            `json:"start_dew_point_c"`
+	StartHumidityPct      float64            `json:"start_humidity_pct"`
+	StartWindSpeedMps     float64            `json:"start_wind_speed_mps"`
+	StartWindDirectionDeg float64            `json:"start_wind_direction_deg"`
+	StartCloudCoverPct    float64            `json:"start_cloud_cover_pct"`
+	EndTemperatureC       float64            `json:"end_temperature_c"`
+	EndDewPointC          float64            `json:"end_dew_point_c"`
+	EndHumidityPct        float64            `json:"end_humidity_pct"`
+	EndWindSpeedMps       float64            `json:"end_wind_speed_mps"`
+	EndWindDirectionDeg   float64            `json:"end_wind_direction_deg"`
+	EndCloudCoverPct      float64            `json:"end_cloud_cover_pct"`
+	PrecipitationMm       float64            `json:"precipitation_mm"`
+}

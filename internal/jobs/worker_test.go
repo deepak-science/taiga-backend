@@ -15,6 +15,7 @@ import (
 	"gitea.deepak.science/deepak/taiga/internal/models"
 	"gitea.deepak.science/deepak/taiga/internal/testsupport"
 	"gitea.deepak.science/deepak/taiga/internal/tokens"
+	"gitea.deepak.science/deepak/taiga/internal/weather"
 	"gitea.deepak.science/deepak/taiga/internal/workouts"
 )
 
@@ -305,4 +306,165 @@ func TestCopiesFromAnotherSourceStopCounting(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, efforts, 1)
 	assert.Equal(t, phone.ID, efforts[0].WorkoutID)
+}
+
+// weatherWorker is a worker that asks a fake Open-Meteo, with one tracked run already uploaded.
+func weatherWorker(t *testing.T) (*jobs.Worker, *clock, *testsupport.FakeWeather, models.Model, *tokens.UserToken, *models.Workout) {
+	t.Helper()
+	m, repo := testsupport.NewModel(t), testsupport.NewFileRepo(t)
+	user := createUser(t, m, "alice@example.com")
+	fake := testsupport.NewFakeWeather(t)
+	w, c := newWorker(m, repo)
+	w.Weather = weather.NewOpenMeteo(fake.URL())
+	return w, c, fake, m, user, upload(t, m, repo, user, testsupport.EncodeFIT(t, start, fourK))
+}
+
+func TestWeatherIsFetchedFromEachSourceWhenItHasIt(t *testing.T) {
+	w, c, fake, m, user, wo := weatherWorker(t)
+
+	w.SweepWeather(t.Context())
+	drain(t, w)
+	assert.Empty(t, fake.Requests(), "no source has a run that just ended")
+	_, err := m.WorkoutWeather(t.Context(), wo.ID, user)
+	assert.ErrorIs(t, err, models.ErrNoWeather)
+
+	c.advance(25 * time.Hour)
+	w.SweepWeather(t.Context())
+	drain(t, w)
+	found, err := m.WorkoutWeather(t.Context(), wo.ID, user)
+	require.NoError(t, err)
+	assert.Equal(t, weather.SourceDefault, found.Source)
+	assert.InDelta(t, 8.0, found.Start.TemperatureC, 1e-9, "07:00 from the default blend")
+	assert.InDelta(t, 8.0+1100.0/3600, found.End.TemperatureC, 1e-9, "18 minutes 20 later")
+	assert.InDelta(t, 70, found.Start.HumidityPct, 1e-9)
+	assert.True(t, found.FetchedAt.Equal(c.now()))
+	requests := fake.Requests()
+	require.Len(t, requests, 1)
+	assert.Equal(t, "45", requests[0].Get("latitude"))
+	assert.Equal(t, "-93", requests[0].Get("longitude"))
+
+	w.SweepWeather(t.Context())
+	drain(t, w)
+	assert.Len(t, fake.Requests(), 1, "nothing to ask until ERA5 has caught up")
+
+	c.advance(7 * 24 * time.Hour)
+	w.SweepWeather(t.Context())
+	drain(t, w)
+	found, err = m.WorkoutWeather(t.Context(), wo.ID, user)
+	require.NoError(t, err)
+	assert.Equal(t, weather.SourceERA5, found.Source, "the better source wins once it's there")
+	assert.InDelta(t, 7.0, found.Start.TemperatureC, 1e-9)
+	require.Len(t, found.Sources, 2, "the first reading is kept beside it")
+	assert.Equal(t, weather.SourceDefault, found.Sources[1].Source)
+	requests = fake.Requests()
+	require.Len(t, requests, 2)
+	assert.Equal(t, "era5", requests[1].Get("models"))
+
+	w.SweepWeather(t.Context())
+	drain(t, w)
+	assert.Len(t, fake.Requests(), 2, "a workout with every source is left alone")
+}
+
+func TestWeatherOffQueuesNothing(t *testing.T) {
+	w, c, fake, m, user, _ := weatherWorker(t)
+	w.Weather = nil
+	c.advance(30 * 24 * time.Hour)
+	w.SweepWeather(t.Context())
+	all, err := m.Jobs(t.Context(), "", 10, user)
+	require.NoError(t, err)
+	assert.Empty(t, all)
+	assert.Empty(t, fake.Requests())
+}
+
+func TestWeatherNotThereYetIsAskedForAgain(t *testing.T) {
+	w, c, fake, m, user, wo := weatherWorker(t)
+	fake.SetEmpty(true)
+	c.advance(25 * time.Hour)
+	w.SweepWeather(t.Context())
+	drain(t, w)
+	assert.Equal(t, models.JobDone, onlyJob(t, m, user).State, "nothing yet is no failure")
+	_, err := m.WorkoutWeather(t.Context(), wo.ID, user)
+	assert.ErrorIs(t, err, models.ErrNoWeather)
+
+	fake.SetEmpty(false)
+	c.advance(time.Hour)
+	w.SweepWeather(t.Context())
+	drain(t, w)
+	_, err = m.WorkoutWeather(t.Context(), wo.ID, user)
+	assert.NoError(t, err)
+}
+
+func TestWeatherFailuresDieAndWaitForARetry(t *testing.T) {
+	w, c, fake, m, user, wo := weatherWorker(t)
+	fake.SetStatus(503)
+	c.advance(25 * time.Hour)
+	w.SweepWeather(t.Context())
+	for range jobs.MaxAttempts {
+		drain(t, w)
+		c.advance(time.Hour)
+	}
+	job := onlyJob(t, m, user)
+	require.Equal(t, models.JobDead, job.State)
+	require.NotNil(t, job.LastError)
+	assert.Contains(t, *job.LastError, "503")
+
+	w.SweepWeather(t.Context())
+	onlyJob(t, m, user)
+
+	fake.SetStatus(0)
+	_, err := m.RetryDeadJob(t.Context(), job.ID, c.now(), user)
+	require.NoError(t, err)
+	drain(t, w)
+	_, err = m.WorkoutWeather(t.Context(), wo.ID, user)
+	assert.NoError(t, err)
+}
+
+func TestReprocessingQueuesAWeatherFetch(t *testing.T) {
+	w, c, fake, m, user, wo := weatherWorker(t)
+	c.advance(25 * time.Hour)
+	_, err := m.EnqueueReprocessAll(t.Context(), c.now(), user)
+	require.NoError(t, err)
+	drain(t, w)
+	_, err = m.WorkoutWeather(t.Context(), wo.ID, user)
+	require.NoError(t, err)
+
+	_, err = m.EnqueueReprocessAll(t.Context(), c.now(), user)
+	require.NoError(t, err)
+	drain(t, w)
+	assert.Len(t, fake.Requests(), 1, "a workout whose span hasn't moved keeps the reading it has")
+}
+
+func TestWeatherIsDroppedWhenTheSpanMoves(t *testing.T) {
+	m, repo := testsupport.NewModel(t), testsupport.NewFileRepo(t)
+	user := createUser(t, m, "alice@example.com")
+	fake := testsupport.NewFakeWeather(t)
+	w, c := newWorker(m, repo)
+	w.Weather = weather.NewOpenMeteo(fake.URL())
+	wo := upload(t, m, repo, user, testsupport.EncodeFIT(t, start, fourK))
+	c.advance(25 * time.Hour)
+	w.SweepWeather(t.Context())
+	drain(t, w)
+	_, err := m.WorkoutWeather(t.Context(), wo.ID, user)
+	require.NoError(t, err)
+
+	// As if an older processor had read another start from the file: rebuilding in the request, not through the queue, puts the file's back.
+	moved := *wo
+	moved.StartTime = pgtype.Timestamptz{Time: start.Add(-2 * time.Hour), Valid: true}
+	_, err = m.UpdateWorkout(t.Context(), wo.ID, &moved, user)
+	require.NoError(t, err)
+	_, err = m.CorrectWorkout(t.Context(), wo.ID, models.Corrections{}, user, repo)
+	require.NoError(t, err)
+	_, err = m.WorkoutWeather(t.Context(), wo.ID, user)
+	assert.ErrorIs(t, err, models.ErrNoWeather, "readings for the old span are gone")
+
+	w.SweepWeather(t.Context())
+	drain(t, w)
+	_, err = m.WorkoutWeather(t.Context(), wo.ID, user)
+	require.NoError(t, err)
+	assert.Len(t, fake.Requests(), 2)
+
+	_, err = m.CorrectWorkout(t.Context(), wo.ID, models.Corrections{ExcludedReason: "ran with a friend"}, user, repo)
+	require.NoError(t, err)
+	_, err = m.WorkoutWeather(t.Context(), wo.ID, user)
+	assert.NoError(t, err, "an excluded workout keeps the weather it had")
 }

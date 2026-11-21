@@ -54,6 +54,10 @@ This is the taiga API: upload FIT files (or Endomondo export JSON, or TCX such a
   - SHA-256 based file organization
   - Configurable prefix length for directory structure
 
+- **internal/weather**: What the weather was over a workout (`docs/weather.md`)
+  - `Provider` with one implementation, Open-Meteo's archive API; `Sources` is the ranked list of answers it can give
+  - Off unless `weather.provider` is set, since a lookup tells the provider roughly where and when the user ran
+
 - **internal/workouts**: Activity file processing
   - FIT, Endomondo JSON and TCX parsing (`ReadActivityFile` tells them apart by content) and workout data extraction
   - Segment analysis and activity processing
@@ -268,6 +272,9 @@ file_repo:
   type: "local"                      # "local" or "s3" (s3_bucket, s3_region, s3_prefix)
   asset_path: "local/filerepo/"      # content-addressable file storage
   prefix_length: 2                   # directory structure depth
+
+weather:
+  provider: ""                       # "open-meteo" looks up each tracked workout's weather; off by default (docs/weather.md)
 ```
 
 ### Environment Variables
@@ -339,6 +346,9 @@ file_repo:
 - `PUT /stretches/{id}` - Rename with `{"name": "..."}`
 - `DELETE /stretches/{id}` - Delete the stretch and its efforts; `204`
 - `GET /workouts/{id}/stretches` - The workout's passes over the user's stretches in the order it ran them, each effort with `stretch_id`, `name` and `stretch_meters`
+
+### Weather API (requires JWT token; `docs/weather.md`)
+- `GET /workouts/{id}/weather` - `{source, fetched_at, start, end, precipitation_mm, sources}`: the reading from the best source the workout has, `start` and `end` each `{temperature_c, dew_point_c, humidity_pct, wind_speed_mps, wind_direction_deg, cloud_cover_pct}`, and every source's reading under `sources`, best first; `404` when no source has answered (weather off, no track, or not fetched yet)
 
 ### Routes API (requires JWT token)
 - `GET /routes` - The user's routes, most recently run first; `?from=&to=` (as on `GET /workouts`) keeps routes run in the window, and counts only those runs: `{id, name, sport, representative_workout_id, run_count, distance_miles, best_time_seconds, best_workout_id, latest_start_time}`
@@ -470,6 +480,7 @@ The application provides a comprehensive API for managing activity files (primar
 - Routes are derived across workouts, so they aren't part of per-workout reprocessing: a new, reprocessed or deleted workout queues one `detect_routes` job per user, which regroups every tracked run of each sport from scratch (`workouts.GroupRoutes`: oldest first against each route's first run, then merging routes whose representatives match) and keeps the id and name of the old route each group overlaps most. A run matching nothing isn't a route until a second run matches it
 - The user's say over routes (`route_overrides`, one row per workout) is applied by that same regrouping, so it survives it: a run moved onto a route (`route_id`), kept off every route (null `route_id`), or carrying a merge (`with_group`: the whole group detection puts it in goes to `route_id`, and every run of that group is given the row, so the merge outlives the runs it was made with). Groups are still formed from every tracked run, so moving one away leaves the rest as it was; the representative is never a run that was moved in. A route that is named, merged into or moved onto is kept down to one run, and deleted only when it has none. Changing an override regroups in the request itself, not through the queue; every regrouping, the job's included, first takes the user's row lock (`routesTx`), so two never rebuild the memberships at once
 - The same `detect_routes` job first finds cross-source duplicates (`DetectDuplicates`, `workouts.FindDuplicates`): two workouts from files with different `source`s, any sport, sharing at least half the shorter one's span are one workout recorded twice. The richer source is kept (a watch's FIT, then Endomondo, then Google Fit; between equals the first uploaded), and the other gets `duplicate_of`, the kept one's id. Reprocessing turns that into `excluded_reason` "duplicate of the COROS PACE 3 recording", which outranks any other reason. A changed mark queues the workout for reprocessing; `duplicate_of` has no foreign key, so a deleted original leaves a dangling id that the next detection clears, and the copy counts again. Copies from one source are left alone, since a recorder can't record a workout twice
+- Weather (`workout_weather`, one row per workout and source, with what was asked and when) is not derived from the file, so processing never touches it: `fetch_weather` jobs fill it from `weather.Provider` when `weather.provider` is set. Each hour the worker queues one for every tracked workout that a source in `weather.Sources` should have by now (`MinAge` after it ended) and doesn't, 100 per source, which is the first fetch, the later ERA5 one and the backfill alike; a job can't queue its own second pass, since `idx_jobs_pending` allows one pending job per kind and workout. The job asks with the track's first point rounded to 0.1° and keeps start and end conditions; a source with nothing yet (`weather.ErrNotYet`) leaves no row and no failure, and a workout whose last fetch died is skipped until the job is retried. A reprocessed workout queues a fetch too, which only asks again if its span moved; a rebuild that changes the span drops the readings (on every path, the synchronous ones included) so the sweep asks again. A workout that later loses its track keeps the weather it has
 - `internal/jobs` runs a worker goroutine in the server: on boot it queues a `process_workout` job for every workout whose version isn't current, then polls the `jobs` table
 - The claim query runs unchanged on both databases (no `SKIP LOCKED`); a claimed job holds a 5-minute lease, so a crashed worker's job is picked up again
 - Failures retry with exponential backoff from 30s, up to 5 attempts; errors that can't succeed on retry (unreadable file, missing workout) go straight to `dead`

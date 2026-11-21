@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"time"
 
 	"gitea.deepak.science/deepak/taiga/internal/db"
 	"gitea.deepak.science/deepak/taiga/internal/filerepo"
@@ -161,6 +162,12 @@ func (m *storeModel) rebuild(ctx context.Context, workout *Workout, corrections 
 		if err != nil {
 			return err
 		}
+		// Weather was asked for the span the workout had; for another span it's the wrong hours, and dropping it has the next sweep ask again.
+		if !sameSecond(workout.StartTime, updated.StartTime) || !sameSecond(workout.EndTime, updated.EndTime) {
+			if err := q.DeleteWorkoutWeather(ctx, &db.DeleteWorkoutWeatherParams{WorkoutID: workout.ID, UserID: userToken.ID}); err != nil {
+				return err
+			}
+		}
 		return storeDerived(ctx, q, workout.ID, run, userToken)
 	})
 	if err != nil {
@@ -168,6 +175,11 @@ func (m *storeModel) rebuild(ctx context.Context, workout *Workout, corrections 
 		return nil, err
 	}
 	return updated, nil
+}
+
+// sameSecond compares stored times no finer than the databases agree on.
+func sameSecond(a, b pgtype.Timestamptz) bool {
+	return a.Valid == b.Valid && a.Time.Truncate(time.Second).Equal(b.Time.Truncate(time.Second))
 }
 
 // storeDerived replaces everything computed from the run's records (segments, series, track, stretch efforts); replacing the whole segment set drops distances and durations no longer standard.

@@ -30,6 +30,7 @@ func newWorkoutRouter(m models.Model, fileRepo filerepo.FileRepo) http.Handler {
 	router.Get("/{workoutid}/segments", getWorkoutSegmentsFunc(m))
 	router.Get("/{workoutid}/route", getWorkoutRouteFunc(m))
 	router.Get("/{workoutid}/stretches", getWorkoutStretchesFunc(m))
+	router.Get("/{workoutid}/weather", getWorkoutWeatherFunc(m))
 	router.Get("/{workoutid}/route/override", workoutRouteOverrideFunc(m))
 	router.Put("/{workoutid}/route/override", workoutRouteOverrideFunc(m))
 	router.Delete("/{workoutid}/route/override", workoutRouteOverrideFunc(m))
@@ -375,6 +376,36 @@ func getWorkoutSeriesFunc(m models.Model) http.HandlerFunc {
 			// Stored already encoded, so serve the bytes as they are.
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(series)
+		}
+	}
+}
+
+func getWorkoutWeatherFunc(m models.Model) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		userToken, err := tokens.UserTokenFromContext(ctx)
+		if err != nil {
+			unauthorizedHandler(w, r)
+			return
+		}
+
+		workoutID64, err := strconv.ParseInt(chi.URLParam(r, "workoutid"), 10, 32)
+		if err != nil {
+			notFoundHandler(w, r)
+			return
+		}
+
+		found, err := m.WorkoutWeather(ctx, int32(workoutID64), userToken)
+		switch {
+		case models.IsNotFound(err):
+			notFoundHandler(w, r)
+		case errors.Is(err, models.ErrNoWeather):
+			http.Error(w, err.Error(), http.StatusNotFound)
+		case err != nil:
+			serverError(w, err)
+		default:
+			writeJSON(w, found)
 		}
 	}
 }
