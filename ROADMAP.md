@@ -429,7 +429,7 @@ Nothing is built; this is what would need deciding.
 
 Open questions:
 
-- Whether the model holds away from home: the first look below is one flat, inland place.
+- Whether the dew point can be trusted on hot afternoons in dry country, where the second look below found ERA5 far too humid. That is where a heat adjustment would lean on it.
 - Whether the outbound request is acceptable from the homelab at all, or the lookup should be something `taco` does from a laptop and uploads.
 - Where the units live: the API speaks miles today, so Fahrenheit and mph would match, but the stored values should be metric.
 
@@ -442,7 +442,18 @@ Is a model close enough to what it was like on the ground? Open-Meteo's archive 
 - **Wind: direction yes, speed roughly.** Direction is within 45° of the station in 94–95% of hours with 8 km/h of wind or more. Speed is typically 4.2 km/h off on a mean of 13, and the two stations differ by the same, so no single source says better.
 - **Rain by the hour: no.** Of 581 workout hours with measured precipitation at the airport, the default blend called 39 wet (0.2mm or more) and the station agreed on 11. Across all hours the station agrees on about 60% of the model's wet hours. Keep precipitation as a coarse flag (a wet day), not as "it rained on this run".
 - **So:** one provider, Open-Meteo, and no station matching. ERA5 stops about five days short of today, so a new run gets the default blend first and ERA5 as a second source once it's there, preferred by rule and not by overwriting.
-- **What this doesn't show.** ERA5 is built partly from station observations, quite possibly that airport's, so some of the agreement is circular; the airfield is the fairer test, and ERA5 is typically 1.0°C from it. It's one flat, inland place: nothing here speaks for the 44 workouts elsewhere, for hills or for a coast. And a station kilometres away isn't the weather on the route either.
+- **What this doesn't show.** ERA5 is built partly from station observations, quite possibly that airport's, so some of the agreement is circular; the airfield is the fairer test, and ERA5 is typically 1.0°C from it. It's one flat, inland place; the second look below is the coast, the hills and the desert. And a station kilometres away isn't the weather on the route either.
+
+### Second look (2026-11-20): away from home
+
+Does it hold on a coast, in hills, in a desert? The same comparison at the middle of 72 activities from the Google Fit export (not on the server), each against the nearest station with measurements: 38 on a coast (Bay Area, San Diego, Yucatán), 18 in hills (Black Hills, Salt Lake City), 16 in a desert (Las Vegas). Each place is one short trip, mostly walks. Throwaway code again.
+
+- **Temperature: yes, loosest in the hills.** ERA5 is typically 0.7°C (1.3°F) from the station on the coast and 0.8°C in the desert, unbiased in both. In the hills it is 1.4°C off and 1.6°C cool, worst 3.9°C (7°F): on Black Hills afternoons at 38–42°C it read 2–4°C low.
+- **Dew point: yes where the air is humid, no where it is dry.** On the coast ERA5 is typically 0.6°C off, and 0.7°C in Yucatán at dew points of 21–24°C. In Las Vegas it is typically 4.1°C (7.3°F) too humid, worst 10.6°C (19°F), though both it and the station say the air is dry. The Black Hills are the case that matters: in four activities over two hot days ERA5 gave a dew point of 14–19°C where the station measured 7–9°C, which is the difference between a muggy run and a dry one.
+- **The default blend isn't the fix.** It is closer on dew point in Las Vegas (2.3°C typically) and no better in the Black Hills, where it missed by as much in other activities (worst 12°C, 22°F). On temperature it is worse than ERA5 on the coast and in the hills and about the same in the desert.
+- **Wind: direction mostly, speed roughly**, as at home. Direction is within 45° of the station in 38 of 48 activities with ERA5 and 31 of 48 with the default blend. Speed is typically 3–7 km/h off, and 13 km/h in the Bay Area, where the station is an airport on the water.
+- **So:** the ranking stays one list with ERA5 first; nothing here argues for ranking each variable separately. A heat adjustment shouldn't take a single dew point on trust in dry country on a hot day.
+- **What this doesn't show.** The samples are small and each is a few days of one season. The station is up to 52km from the activity (Yucatán), and in the Black Hills up to 230m higher or lower than the cell.
 
 ## Later
 
