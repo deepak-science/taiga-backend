@@ -76,6 +76,10 @@ func TestLocate(t *testing.T) {
 	assert.Equal(t, offset(-6), run.Summary.UTCOffsetSeconds)
 	assert.Equal(t, "Madison evening run", run.Summary.Name())
 
+	junk := &Run{Summary: RunSummary{StartTime: start}, Records: []*RecordData{{Latitude: 91, Longitude: -89.3842}, {Latitude: 43.0747, Longitude: 181}, {Latitude: 43.0747, Longitude: -89.3842}}}
+	junk.locate()
+	assert.Equal(t, "Madison", junk.Summary.Place, "a fix off the globe is passed over")
+
 	summer := &Run{Summary: RunSummary{StartTime: start.AddDate(0, -5, 0)}, Records: []*RecordData{{Latitude: 43.0747, Longitude: -89.3842}}}
 	summer.locate()
 	assert.Equal(t, offset(-5), summer.Summary.UTCOffsetSeconds, "daylight time")

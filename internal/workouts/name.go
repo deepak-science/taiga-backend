@@ -1,6 +1,7 @@
 package workouts
 
 import (
+	"math"
 	"strings"
 	"time"
 	"unicode"
@@ -13,7 +14,8 @@ import (
 // A run with no fix keeps whatever offset its file stated, and has no place.
 func (r *Run) locate() {
 	for _, rec := range r.Records {
-		if !finite(rec.Latitude) || !finite(rec.Longitude) {
+		// A TCX or Endomondo file can carry a fix that's off the globe; the next good one still says where it was.
+		if !(math.Abs(rec.Latitude) <= 90) || !(math.Abs(rec.Longitude) <= 180) {
 			continue
 		}
 		place := places.Lookup(rec.Latitude, rec.Longitude)
