@@ -38,7 +38,7 @@ func healthFunc(m models.Model) http.HandlerFunc {
 				"status":  dbStatus,
 				"healthy": dbHealthy,
 			},
-			"service": "trygo-template",
+			"service": "taiga",
 		}
 
 		status := http.StatusOK

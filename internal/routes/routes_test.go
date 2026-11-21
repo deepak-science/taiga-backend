@@ -124,7 +124,7 @@ func TestHello(t *testing.T) {
 
 	assert.Equal(t, "Hello, World!", response["message"])
 	assert.Equal(t, "success", response["status"])
-	assert.Equal(t, "trygo-template", response["service"])
+	assert.Equal(t, "taiga", response["service"])
 }
 
 func TestPing(t *testing.T) {
@@ -161,7 +161,7 @@ func TestHealthWithNilStore(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "degraded", response["status"])
-	assert.Equal(t, "trygo-template", response["service"])
+	assert.Equal(t, "taiga", response["service"])
 
 	database, ok := response["database"].(map[string]interface{})
 	require.True(t, ok)
@@ -188,7 +188,7 @@ func TestHealthWithHealthyStore(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "ok", response["status"])
-	assert.Equal(t, "trygo-template", response["service"])
+	assert.Equal(t, "taiga", response["service"])
 
 	database, ok := response["database"].(map[string]interface{})
 	require.True(t, ok)
@@ -216,7 +216,7 @@ func TestHealthWithUnhealthyStore(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "degraded", response["status"])
-	assert.Equal(t, "trygo-template", response["service"])
+	assert.Equal(t, "taiga", response["service"])
 
 	database, ok := response["database"].(map[string]interface{})
 	require.True(t, ok)
