@@ -397,30 +397,30 @@ Frontend:
 - Whether the account-page token belongs in this milestone or the next.
 - Whether a signed-in `taco` should be able to approve another machine's login (`taco approve WDJB-MJHT`), for setting up a second box from the first without a browser.
 
-## M15 — Weather (exploration)
+## M15 — Weather
 
 A run's pace says little without the day it was run on: the same route is a different effort at 30°C and humid than at 5°C, and into a headwind than with it.
 The goal: every workout that has a place and a time knows what the weather was, so the workout page can show it and comparisons can take it into account.
-Nothing is built; this is what would need deciding.
+The backend half is built (`docs/weather.md`): the lookups, the rows and `GET /workouts/{id}/weather`. Showing it and using it are what's left.
 
-- [ ] **Where the weather comes from.** A historical service that answers for a point and an hour, going back to the oldest workouts, some ten years.
+- [x] **Where the weather comes from.** A historical service that answers for a point and an hour, going back to the oldest workouts, some ten years.
   - Open-Meteo's archive is the first to try: reanalysis by the hour for any coordinates, decades back, no key for personal use. Check its terms and request limits before building on it, and how many days it lags behind today (a run from this morning needs its forecast endpoint, or a second look later).
   - Station observations (NOAA, Meteostat) are what was measured rather than modelled, but mean finding the nearest station and living with its gaps.
   - The files themselves don't have it (checked 2026-11-20). The Endomondo export has no weather field in any of its 405 workouts. The COROS files have no weather message either, though the app shows conditions for a run: only the watch's own average temperature per lap (262 of 269 files) and per session (146), nothing per record.
   - The watch's temperature isn't the weather: worn on the wrist it reads body heat. Five runs from late October to mid-November 2026 all average 22–25°C (72–77°F), starting warm from indoors (24–27°C) and settling to 19–23°C whatever the day was like. It isn't read from the file today, and at best it could flag a provider's answer that is far off on a hot day.
   - Behind an interface with one implementation, so the provider is a config choice (`weather.provider`, off by default) and tests use a fake.
-- [ ] **What's kept**, in a `workout_weather` row per workout and source: temperature, dew point (what makes heat hard, more than humidity as a percentage), wind speed and direction, precipitation, cloud cover.
+- [x] **What's kept**, in a `workout_weather` row per workout and source: temperature, dew point (what makes heat hard), relative humidity (what forecasts and other apps quote, so the figure to check against them), wind speed and direction, precipitation, cloud cover.
   - Each row carries where it came from: the source (`openmeteo-era5`, `openmeteo-default`), when it was fetched, and what was asked (the rounded coordinates and the hours). A later fetch from another source adds a row; it doesn't overwrite one.
   - A workout's weather is the row from the source that ranks highest among those it has. The ranking is a list in one place (ERA5 ahead of the default blend); a new source, or a change of mind about which is better, is an edit to that list and not a rewrite of the rows.
   - Kept rows also mean the sources can be compared over the user's own runs, which is the First look below done continuously.
   - Twice over, at the start and at the end, each interpolated between the hours either side: a long summer run that starts at 18°C and ends at 30°C isn't one that sat at 24°C throughout, and the day's hours are already in the response. Adding the end later would mean fetching everything again.
   - The mean of the two is what labels, filters and groups go by. The page shows one figure unless the run moved more than about 1.5°C, which is how far the sources disagree with each other anyway, and a range when it did.
   - Nothing finer: no weather per record, and no pace against temperature within a run. The data is hourly on a grid some 10km wide.
-- [ ] **Fetched by a job, not by processing.** The file is the source of truth for everything processing derives, and reprocessing rebuilds it all; the weather comes from outside, is slow, and can fail, so it gets its own job kind (`fetch_weather`) queued when a workout first has a track, retried by the queue, and left alone by reprocessing unless the start or place changed.
-  - Twice for a new run: the default blend as soon as it answers (about a day behind), so the workout page has something, and the same job queued again a week out (`run_at`) for ERA5. The second fetch adds its own row beside the first, and the ranking then prefers it.
-  - A backfill for the workouts already there, paced to the provider's limits: about 800 workouts, many from the same few places, so one request per place and month rather than one per workout.
-  - Hand-entered workouts and ones without GPS have no place. Either no weather, or a home location on the account to stand in.
-- [ ] **What leaves the server.** Each lookup tells a third party where and when the user ran. Round the coordinates first (0.1° is about 10km, finer than the weather model's own grid), send the hour and not the minute, and say in the docs that turning weather on does this.
+- [x] **Fetched by a job, not by processing.** The file is the source of truth for everything processing derives, and reprocessing rebuilds it all; the weather comes from outside, is slow, and can fail, so it gets its own job kind (`fetch_weather`) queued when a workout first has a track, retried by the queue, and left alone by reprocessing unless the start or place changed.
+  - Twice for a new run: the default blend a day after it, so the workout page has something, and ERA5 a week after. The second fetch adds its own row beside the first, and the ranking then prefers it. A job can't queue its own later pass (the queue allows one pending job per kind and workout), so an hourly sweep queues a fetch for every tracked workout that a source should have by now and doesn't.
+  - The same sweep is the backfill for the workouts already there, a hundred per source each hour, one request per workout and source: about 1,300 requests for the 630 tracked workouts, well inside the provider's limits, so grouping requests by place and month wasn't needed.
+  - Only workouts with a stored track get weather. Hand-entered ones and ones without GPS have no place, and rides and excluded runs are left out too; a home location on the account could stand in for the first two.
+- [x] **What leaves the server.** Each lookup tells a third party where and when the user ran. Round the coordinates first (0.1° is about 10km, finer than the weather model's own grid), send the days and not the time, and say in the docs that turning weather on does this.
 - [ ] **Showing it**: on the workout page and as an optional column in the list and `taco workouts`; a wind arrow on the map, since direction only means something against the route.
 - [ ] **Using it**, which is the point:
   - Filter and group by conditions: best 5k above 25°C, this route on cold days.
@@ -430,7 +430,6 @@ Nothing is built; this is what would need deciding.
 Open questions:
 
 - Whether the dew point can be trusted on hot afternoons in dry country, where the second look below found ERA5 far too humid. That is where a heat adjustment would lean on it.
-- Whether the outbound request is acceptable from the homelab at all, or the lookup should be something `taco` does from a laptop and uploads.
 - Where the units live: the API speaks miles today, so Fahrenheit and mph would match, but the stored values should be metric.
 
 ### First look (2026-11-20)

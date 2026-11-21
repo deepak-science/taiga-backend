@@ -73,12 +73,21 @@ type OIDCProvider struct {
 	LinkByVerifiedEmail bool `mapstructure:"link_by_verified_email" json:"link_by_verified_email"`
 }
 
+// WeatherConfig turns on looking up the weather for workouts, which tells the provider roughly where and on which days the user ran (docs/weather.md).
+type WeatherConfig struct {
+	// "open-meteo", or empty for off.
+	Provider string `mapstructure:"provider"`
+	// Where to reach it; empty means the provider's own address.
+	BaseURL string `mapstructure:"base_url"`
+}
+
 type Config struct {
 	App      AppConfig      `mapstructure:"app"`
 	Auth     AuthConfig     `mapstructure:"auth"`
 	Db       DBConfig       `mapstructure:"db"`
 	Tokens   TokensConfig   `mapstructure:"tokens"`
 	FileRepo FileRepoConfig `mapstructure:"file_repo"`
+	Weather  WeatherConfig  `mapstructure:"weather"`
 }
 
 // Load reads configuration from environment variables and config files

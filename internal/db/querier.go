@@ -69,13 +69,18 @@ type Querier interface {
 	DeleteWorkoutRoutesByUser(ctx context.Context, userID int32) error
 	DeleteWorkoutSeries(ctx context.Context, arg *DeleteWorkoutSeriesParams) error
 	DeleteWorkoutTrack(ctx context.Context, arg *DeleteWorkoutTrackParams) error
+	DeleteWorkoutWeather(ctx context.Context, arg *DeleteWorkoutWeatherParams) error
 	DenyDeviceAuthorization(ctx context.Context, arg *DenyDeviceAuthorizationParams) (int64, error)
 	// One pending detection per user (idx_jobs_pending), however many workouts change before it runs.
 	EnqueueDetectRoutes(ctx context.Context, arg *EnqueueDetectRoutesParams) error
+	EnqueueFetchWeather(ctx context.Context, arg *EnqueueFetchWeatherParams) error
 	EnqueueProcessWorkout(ctx context.Context, arg *EnqueueProcessWorkoutParams) error
 	// Every user's file-backed workouts not built by the current processor; one already queued is skipped by idx_jobs_pending.
 	EnqueueStaleWorkouts(ctx context.Context, arg *EnqueueStaleWorkoutsParams) (int64, error)
 	EnqueueUserWorkouts(ctx context.Context, arg *EnqueueUserWorkoutsParams) (int64, error)
+	// Every user's tracked workouts that ended by the cutoff and have no reading from the source, newest first.
+	// One whose last fetch died waits for a retry through /jobs, so an outage doesn't queue it again every sweep.
+	EnqueueWeatherDue(ctx context.Context, arg *EnqueueWeatherDueParams) (int64, error)
 	FinishJob(ctx context.Context, arg *FinishJobParams) error
 	// The earliest start in [window_from, window_to), excluded workouts included since they're still listed; no rows when the window is empty.
 	FirstWorkoutStartInWindow(ctx context.Context, arg *FirstWorkoutStartInWindowParams) (pgtype.Timestamptz, error)
@@ -143,6 +148,7 @@ type Querier interface {
 	ListWorkoutTracksByUser(ctx context.Context, userID int32) ([]*ListWorkoutTracksByUserRow, error)
 	// The workouts a new stretch is matched against: tracked (so scored, with GPS) and not a copy of another.
 	ListWorkoutTracksByUserAndSport(ctx context.Context, arg *ListWorkoutTracksByUserAndSportParams) ([]*ListWorkoutTracksByUserAndSportRow, error)
+	ListWorkoutWeather(ctx context.Context, arg *ListWorkoutWeatherParams) ([]*WorkoutWeather, error)
 	ListWorkoutsByUser(ctx context.Context, userID int32) ([]*Workout, error)
 	// Starting in [window_from, window_to); callers pass far-off bounds for an open end, so the same SQL runs on SQLite.
 	ListWorkoutsByUserInWindow(ctx context.Context, arg *ListWorkoutsByUserInWindowParams) ([]*Workout, error)
@@ -169,6 +175,7 @@ type Querier interface {
 	UpsertRouteOverride(ctx context.Context, arg *UpsertRouteOverrideParams) error
 	UpsertWorkoutSeries(ctx context.Context, arg *UpsertWorkoutSeriesParams) error
 	UpsertWorkoutTrack(ctx context.Context, arg *UpsertWorkoutTrackParams) error
+	UpsertWorkoutWeather(ctx context.Context, arg *UpsertWorkoutWeatherParams) error
 	UserHasPassword(ctx context.Context, id int32) (bool, error)
 	// Per sport, for workouts starting in [window_from, window_to) that count; an excluded workout stays out of stats.
 	WorkoutTotalsByUser(ctx context.Context, arg *WorkoutTotalsByUserParams) ([]*WorkoutTotalsByUserRow, error)

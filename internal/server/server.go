@@ -21,6 +21,7 @@ import (
 	"gitea.deepak.science/deepak/taiga/internal/oidc"
 	"gitea.deepak.science/deepak/taiga/internal/routes"
 	"gitea.deepak.science/deepak/taiga/internal/tokens"
+	"gitea.deepak.science/deepak/taiga/internal/weather"
 )
 
 // Server represents the HTTP server
@@ -123,11 +124,21 @@ func New(cfg *config.Config) (*Server, error) {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	worker := jobs.NewWorker(m, fileRepo)
+	switch cfg.Weather.Provider {
+	case "":
+	case "open-meteo":
+		worker.Weather = weather.NewOpenMeteo(cfg.Weather.BaseURL)
+		log.Printf("Weather: open-meteo")
+	default:
+		return nil, fmt.Errorf("weather.provider must be \"open-meteo\" or empty, got %q", cfg.Weather.Provider)
+	}
+
 	return &Server{
 		config: cfg,
 		model:  m,
 		server: server,
-		worker: jobs.NewWorker(m, fileRepo),
+		worker: worker,
 	}, nil
 }
 

@@ -13,6 +13,7 @@ import (
 	"gitea.deepak.science/deepak/taiga/internal/filerepo"
 	"gitea.deepak.science/deepak/taiga/internal/store"
 	"gitea.deepak.science/deepak/taiga/internal/tokens"
+	"gitea.deepak.science/deepak/taiga/internal/weather"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -128,6 +129,11 @@ type Model interface {
 	RetryJobLater(ctx context.Context, id int32, runAt time.Time, jobErr error, now time.Time) error
 	KillJob(ctx context.Context, id int32, jobErr error, now time.Time) error
 	PruneJobs(ctx context.Context, cutoff time.Time) (int64, error)
+	// Weather comes from outside (weather.Provider), fetched by fetch_weather jobs and never by processing.
+	EnqueueWeatherDue(ctx context.Context, now time.Time) (int64, error)
+	EnqueueFetchWeather(ctx context.Context, workoutID int32, now time.Time, userToken *tokens.UserToken) error
+	FetchWeather(ctx context.Context, workoutID int32, provider weather.Provider, now time.Time, userToken *tokens.UserToken) error
+	WorkoutWeather(ctx context.Context, workoutID int32, userToken *tokens.UserToken) (*WorkoutWeather, error)
 }
 
 type storeModel struct {

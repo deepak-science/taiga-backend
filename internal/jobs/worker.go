@@ -11,6 +11,7 @@ import (
 	"gitea.deepak.science/deepak/taiga/internal/filerepo"
 	"gitea.deepak.science/deepak/taiga/internal/models"
 	"gitea.deepak.science/deepak/taiga/internal/tokens"
+	"gitea.deepak.science/deepak/taiga/internal/weather"
 	"gitea.deepak.science/deepak/taiga/internal/workouts"
 )
 
@@ -28,6 +29,8 @@ const (
 type Worker struct {
 	m        models.Model
 	fileRepo filerepo.FileRepo
+	// Weather is where fetch_weather jobs ask; nil turns weather off.
+	Weather weather.Provider
 	// Now is the clock, swappable in tests.
 	Now func() time.Time
 }
@@ -53,6 +56,7 @@ func (w *Worker) Run(ctx context.Context) {
 			if err := w.m.PruneCLIAuth(ctx, w.Now()); err != nil {
 				log.Printf("jobs: could not prune CLI sign-ins and sessions: %v", err)
 			}
+			w.SweepWeather(ctx)
 			lastPrune = w.Now()
 		}
 		// Drain what's due before sleeping.
@@ -71,6 +75,18 @@ func (w *Worker) Run(ctx context.Context) {
 			return
 		case <-time.After(pollInterval):
 		}
+	}
+}
+
+// SweepWeather queues a fetch for every workout a weather source should have by now and doesn't; Run does it hourly.
+func (w *Worker) SweepWeather(ctx context.Context) {
+	if w.Weather == nil {
+		return
+	}
+	if n, err := w.m.EnqueueWeatherDue(ctx, w.Now()); err != nil {
+		log.Printf("jobs: could not queue weather fetches: %v", err)
+	} else if n > 0 {
+		log.Printf("jobs: queued %d weather fetches", n)
 	}
 }
 
@@ -120,8 +136,22 @@ func (w *Worker) run(ctx context.Context, job *models.Job) error {
 		if _, err := w.m.ReprocessWorkout(ctx, *job.WorkoutID, user, w.fileRepo); err != nil {
 			return err
 		}
+		if w.Weather != nil {
+			// A reprocessed workout whose start moved needs a fresh look; one that has its weather costs no request.
+			if err := w.m.EnqueueFetchWeather(ctx, *job.WorkoutID, w.Now(), user); err != nil {
+				return err
+			}
+		}
 		// Queued behind any reprocessing still due, so a bulk reprocess regroups routes once at the end.
 		return w.m.EnqueueDetectRoutes(ctx, w.Now(), user)
+	case models.JobFetchWeather:
+		if job.WorkoutID == nil {
+			return fmt.Errorf("%w: %s job without a workout", errUnknownKind, job.Kind)
+		}
+		if w.Weather == nil {
+			return nil
+		}
+		return w.m.FetchWeather(ctx, *job.WorkoutID, w.Weather, w.Now(), user)
 	case models.JobDetectRoutes:
 		if err := w.m.DetectDuplicates(ctx, w.Now(), user); err != nil {
 			return err

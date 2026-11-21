@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -15,6 +16,7 @@ import (
 	"gitea.deepak.science/deepak/taiga/internal/models"
 	"gitea.deepak.science/deepak/taiga/internal/testsupport"
 	"gitea.deepak.science/deepak/taiga/internal/tokens"
+	"gitea.deepak.science/deepak/taiga/internal/weather"
 	"gitea.deepak.science/deepak/taiga/internal/workouts"
 )
 
@@ -355,4 +357,64 @@ func TestWorkoutCorrections(t *testing.T) {
 	require.NoError(t, json.Unmarshal(body, &workout))
 	status, _ = alice.put(fmt.Sprintf("/workouts/%d/corrections", workout.ID), `{"sport": "walking"}`)
 	assert.Equal(t, http.StatusUnprocessableEntity, status, "a hand-entered workout is edited directly")
+}
+
+func TestWorkoutWeather(t *testing.T) {
+	srv, m, toker := newAPI(t)
+	alice := newUserClient(t, srv, m, toker, "alice@example.com")
+	bob := newUserClient(t, srv, m, toker, "bob@example.com")
+	_, workoutID := alice.uploadWorkout(fourKFIT(t))
+	path := fmt.Sprintf("/workouts/%d/weather", workoutID)
+
+	status, body := alice.get(path)
+	assert.Equal(t, http.StatusNotFound, status)
+	assert.Contains(t, string(body), "no weather")
+
+	fake := testsupport.NewFakeWeather(t)
+	workout, err := m.Workout(t.Context(), workoutID, &tokens.UserToken{ID: 1})
+	require.NoError(t, err)
+	fetched := workout.EndTime.Time.Add(30 * 24 * time.Hour)
+	require.NoError(t, m.FetchWeather(t.Context(), workoutID, weather.NewOpenMeteo(fake.URL()), fetched, &tokens.UserToken{ID: 1}))
+
+	status, body = alice.get(path)
+	require.Equal(t, http.StatusOK, status, string(body))
+	var found struct {
+		Source    string    `json:"source"`
+		FetchedAt time.Time `json:"fetched_at"`
+		Start     struct {
+			TemperatureC *float64 `json:"temperature_c"`
+			DewPointC    *float64 `json:"dew_point_c"`
+			HumidityPct  *float64 `json:"humidity_pct"`
+			WindSpeedMPS *float64 `json:"wind_speed_mps"`
+			WindFrom     *float64 `json:"wind_direction_deg"`
+			CloudCover   *float64 `json:"cloud_cover_pct"`
+		} `json:"start"`
+		End struct {
+			TemperatureC *float64 `json:"temperature_c"`
+		} `json:"end"`
+		PrecipitationMM *float64 `json:"precipitation_mm"`
+		Sources         []struct {
+			Source string `json:"source"`
+		} `json:"sources"`
+	}
+	require.NoError(t, json.Unmarshal(body, &found))
+	assert.Equal(t, weather.SourceERA5, found.Source)
+	assert.True(t, found.FetchedAt.Equal(fetched))
+	for name, v := range map[string]*float64{
+		"temperature": found.Start.TemperatureC, "dew point": found.Start.DewPointC, "humidity": found.Start.HumidityPct,
+		"wind speed": found.Start.WindSpeedMPS, "wind direction": found.Start.WindFrom, "cloud cover": found.Start.CloudCover,
+		"end temperature": found.End.TemperatureC, "precipitation": found.PrecipitationMM,
+	} {
+		assert.NotNil(t, v, name)
+	}
+	require.Len(t, found.Sources, 2)
+	assert.Equal(t, weather.SourceERA5, found.Sources[0].Source, "best first")
+	assert.Equal(t, weather.SourceDefault, found.Sources[1].Source)
+
+	status, _ = bob.get(path)
+	assert.Equal(t, http.StatusNotFound, status)
+
+	require.NoError(t, m.DeleteWorkout(t.Context(), workoutID, &tokens.UserToken{ID: 1}))
+	status, _ = alice.get(path)
+	assert.Equal(t, http.StatusNotFound, status)
 }
