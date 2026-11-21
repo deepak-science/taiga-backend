@@ -142,6 +142,12 @@ func ReadActivity(activity *filedef.Activity) (*Run, error) {
 		// log.Printf("record: %+v", summary)
 	}
 
+	// The watch's own clock stands in where there's no fix to look a zone up from, as on a treadmill.
+	if activity.Activity != nil {
+		run.Summary.UTCOffsetSeconds = statedOffset(activity.Activity.Timestamp, activity.Activity.LocalTimestamp)
+	}
+	run.locate()
+
 	return &run, nil
 }
 func ReadFitFile(r io.Reader) (*Run, error) {

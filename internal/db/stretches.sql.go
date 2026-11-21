@@ -209,7 +209,8 @@ func (q *Queries) GetStretch(ctx context.Context, arg *GetStretchParams) (*Stret
 const listStretchEffortsByStretch = `-- name: ListStretchEffortsByStretch :many
 SELECT
   stretch_efforts.id, stretch_efforts.stretch_id, stretch_efforts.workout_id, stretch_efforts.user_id, stretch_efforts.start_offset_seconds, stretch_efforts.end_offset_seconds, stretch_efforts.duration_seconds, stretch_efforts.start_meters, stretch_efforts.distance_meters, stretch_efforts.walked_fraction,
-  workouts.start_time
+  workouts.start_time,
+  workouts.name AS workout_name
 FROM
   stretch_efforts
   JOIN workouts ON workouts.id = stretch_efforts.workout_id
@@ -238,6 +239,7 @@ type ListStretchEffortsByStretchRow struct {
 	DistanceMeters     float64            `json:"distance_meters"`
 	WalkedFraction     *float64           `json:"walked_fraction"`
 	StartTime          pgtype.Timestamptz `json:"start_time"`
+	WorkoutName        string             `json:"workout_name"`
 }
 
 func (q *Queries) ListStretchEffortsByStretch(ctx context.Context, arg *ListStretchEffortsByStretchParams) ([]*ListStretchEffortsByStretchRow, error) {
@@ -261,6 +263,7 @@ func (q *Queries) ListStretchEffortsByStretch(ctx context.Context, arg *ListStre
 			&i.DistanceMeters,
 			&i.WalkedFraction,
 			&i.StartTime,
+			&i.WorkoutName,
 		); err != nil {
 			return nil, err
 		}
@@ -275,7 +278,8 @@ func (q *Queries) ListStretchEffortsByStretch(ctx context.Context, arg *ListStre
 const listStretchEffortsByUser = `-- name: ListStretchEffortsByUser :many
 SELECT
   stretch_efforts.id, stretch_efforts.stretch_id, stretch_efforts.workout_id, stretch_efforts.user_id, stretch_efforts.start_offset_seconds, stretch_efforts.end_offset_seconds, stretch_efforts.duration_seconds, stretch_efforts.start_meters, stretch_efforts.distance_meters, stretch_efforts.walked_fraction,
-  workouts.start_time
+  workouts.start_time,
+  workouts.name AS workout_name
 FROM
   stretch_efforts
   JOIN workouts ON workouts.id = stretch_efforts.workout_id
@@ -298,6 +302,7 @@ type ListStretchEffortsByUserRow struct {
 	DistanceMeters     float64            `json:"distance_meters"`
 	WalkedFraction     *float64           `json:"walked_fraction"`
 	StartTime          pgtype.Timestamptz `json:"start_time"`
+	WorkoutName        string             `json:"workout_name"`
 }
 
 // Every effort with when its workout started, newest first; the stretch list sums them per stretch.
@@ -322,6 +327,7 @@ func (q *Queries) ListStretchEffortsByUser(ctx context.Context, userID int32) ([
 			&i.DistanceMeters,
 			&i.WalkedFraction,
 			&i.StartTime,
+			&i.WorkoutName,
 		); err != nil {
 			return nil, err
 		}

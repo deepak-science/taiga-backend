@@ -6,6 +6,7 @@ import (
 
 	"gitea.deepak.science/deepak/taiga/internal/db"
 	"gitea.deepak.science/deepak/taiga/internal/tokens"
+	"gitea.deepak.science/deepak/taiga/internal/workouts"
 )
 
 type Workout = db.Workout
@@ -47,6 +48,8 @@ func (m *storeModel) AddWorkout(ctx context.Context, workout *Workout, userToken
 		UserID:         userToken.ID,
 		Sport:          workout.Sport,
 		SubSport:       workout.SubSport,
+		// Entered by hand there's no zone to say what part of the day it was, so it goes by its sport alone.
+		Name: (&workouts.RunSummary{Sport: workout.Sport, SubSport: workout.SubSport}).Name(),
 	}
 	log.Printf("Adding workout %v", createWorkoutParams)
 	returnWorkout, err := querier.CreateWorkout(ctx, createWorkoutParams)

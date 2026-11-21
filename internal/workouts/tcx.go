@@ -173,6 +173,8 @@ func ReadTCXFile(r io.Reader) (*Run, error) {
 			run.Summary.ExcludedReason = ExcludedPointsDisagree
 		}
 	}
+	// Before the points go: ones too poor to measure with still say where it was.
+	run.locate()
 	if run.Summary.ExcludedReason != "" {
 		run.Records = nil
 	}

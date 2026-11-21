@@ -35,7 +35,8 @@ ORDER BY
 -- A distance segment ranks by time, a duration segment by distance covered; only workouts of one sport starting in [window_from, window_to) compete.
 SELECT
   workout_segments.*,
-  workouts.start_time AS workout_start_time
+  workouts.start_time AS workout_start_time,
+  workouts.name AS workout_name
 FROM
   workout_segments
   JOIN workouts ON workouts.id = workout_segments.workout_id
@@ -63,7 +64,8 @@ WHERE
 -- Every segment of the user's workouts of one sport, for picking each year's best at each segment in Go.
 SELECT
   workout_segments.*,
-  workouts.start_time AS workout_start_time
+  workouts.start_time AS workout_start_time,
+  workouts.name AS workout_name
 FROM
   workout_segments
   JOIN workouts ON workouts.id = workout_segments.workout_id

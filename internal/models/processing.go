@@ -64,6 +64,10 @@ func (m *storeModel) CreateWorkoutFromActivityFile(ctx context.Context, activity
 			SubSport:         s.SubSport,
 			ExcludedReason:   s.ExcludedReason,
 			Source:           s.Source,
+			Name:             s.Name(),
+			Place:            s.Place,
+			Timezone:         s.Timezone,
+			UtcOffsetSeconds: s.UTCOffsetSeconds,
 		})
 		if err != nil {
 			return err
@@ -158,6 +162,11 @@ func (m *storeModel) rebuild(ctx context.Context, workout *Workout, corrections 
 			Source:             s.Source,
 			SportOverride:      corrections.Sport,
 			UserExcludedReason: corrections.ExcludedReason,
+			// Named after the corrections, so a run corrected to a walk is called one.
+			Name:             s.Name(),
+			Place:            s.Place,
+			Timezone:         s.Timezone,
+			UtcOffsetSeconds: s.UTCOffsetSeconds,
 		})
 		if err != nil {
 			return err

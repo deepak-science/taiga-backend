@@ -92,7 +92,8 @@ WHERE
 -- Every effort with when its workout started, newest first; the stretch list sums them per stretch.
 SELECT
   stretch_efforts.*,
-  workouts.start_time
+  workouts.start_time,
+  workouts.name AS workout_name
 FROM
   stretch_efforts
   JOIN workouts ON workouts.id = stretch_efforts.workout_id
@@ -105,7 +106,8 @@ ORDER BY
 -- name: ListStretchEffortsByStretch :many
 SELECT
   stretch_efforts.*,
-  workouts.start_time
+  workouts.start_time,
+  workouts.name AS workout_name
 FROM
   stretch_efforts
   JOIN workouts ON workouts.id = stretch_efforts.workout_id

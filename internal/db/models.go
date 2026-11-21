@@ -141,6 +141,10 @@ type Workout struct {
 	SportOverride      string             `json:"sport_override"`
 	UserExcludedReason string             `json:"user_excluded_reason"`
 	DuplicateOf        *int32             `json:"duplicate_of"`
+	Name               string             `json:"name"`
+	Place              string             `json:"place"`
+	Timezone           string             `json:"timezone"`
+	UtcOffsetSeconds   *int32             `json:"utc_offset_seconds"`
 }
 
 type WorkoutRoute struct {

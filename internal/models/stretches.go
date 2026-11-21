@@ -27,7 +27,8 @@ type NewStretch struct {
 
 // StretchEffort is one pass of a workout over a stretch.
 type StretchEffort struct {
-	WorkoutID int32 `json:"workout_id"`
+	WorkoutID   int32  `json:"workout_id"`
+	WorkoutName string `json:"workout_name"`
 	// StartTime is when the workout started; the pass begins StartOffsetSeconds into it.
 	StartTime          pgtype.Timestamptz `json:"start_time"`
 	StartOffsetSeconds float64            `json:"start_offset_seconds"`
@@ -103,7 +104,7 @@ func (m *storeModel) Stretches(ctx context.Context, window Window, userToken *to
 	for _, r := range rows {
 		if window.Contains(r.StartTime.Time) {
 			efforts[r.StretchID] = append(efforts[r.StretchID], &StretchEffort{
-				WorkoutID: r.WorkoutID, StartTime: r.StartTime, StartOffsetSeconds: r.StartOffsetSeconds, EndOffsetSeconds: r.EndOffsetSeconds,
+				WorkoutID: r.WorkoutID, WorkoutName: r.WorkoutName, StartTime: r.StartTime, StartOffsetSeconds: r.StartOffsetSeconds, EndOffsetSeconds: r.EndOffsetSeconds,
 				DurationSeconds: r.DurationSeconds, StartMeters: r.StartMeters, DistanceMeters: r.DistanceMeters, WalkedFraction: r.WalkedFraction,
 			})
 		}
@@ -136,7 +137,7 @@ func stretchDetail(ctx context.Context, q db.Querier, id int32, window Window, u
 	for _, r := range rows {
 		if window.Contains(r.StartTime.Time) {
 			efforts = append(efforts, &StretchEffort{
-				WorkoutID: r.WorkoutID, StartTime: r.StartTime, StartOffsetSeconds: r.StartOffsetSeconds, EndOffsetSeconds: r.EndOffsetSeconds,
+				WorkoutID: r.WorkoutID, WorkoutName: r.WorkoutName, StartTime: r.StartTime, StartOffsetSeconds: r.StartOffsetSeconds, EndOffsetSeconds: r.EndOffsetSeconds,
 				DurationSeconds: r.DurationSeconds, StartMeters: r.StartMeters, DistanceMeters: r.DistanceMeters, WalkedFraction: r.WalkedFraction,
 			})
 		}
@@ -320,7 +321,7 @@ func (m *storeModel) WorkoutStretchEfforts(ctx context.Context, workoutID int32,
 	out := make([]*WorkoutStretchEffort, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, &WorkoutStretchEffort{StretchID: r.StretchID, Name: r.Name, StretchMeters: r.Meters, StretchEffort: StretchEffort{
-			WorkoutID: r.WorkoutID, StartTime: workout.StartTime, StartOffsetSeconds: r.StartOffsetSeconds, EndOffsetSeconds: r.EndOffsetSeconds,
+			WorkoutID: r.WorkoutID, WorkoutName: workout.Name, StartTime: workout.StartTime, StartOffsetSeconds: r.StartOffsetSeconds, EndOffsetSeconds: r.EndOffsetSeconds,
 			DurationSeconds: r.DurationSeconds, StartMeters: r.StartMeters, DistanceMeters: r.DistanceMeters, WalkedFraction: r.WalkedFraction,
 		}})
 	}

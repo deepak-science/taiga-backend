@@ -58,11 +58,16 @@ This is the taiga API: upload FIT files (or Endomondo export JSON, or TCX such a
   - `Provider` with one implementation, Open-Meteo's archive API; `Sources` is the ranked list of answers it can give
   - Off unless `weather.provider` is set, since a lookup tells the provider roughly where and when the user ran
 
+- **internal/places**: The town a point is in or beside, and its timezone
+  - GeoNames' cities5000 cut down to `cities.tsv.gz` and embedded (`go run ./internal/places/gen cities5000.zip internal/places/cities.tsv.gz` rebuilds it), so no lookup leaves the server
+  - `Lookup` has centres and populations, not outlines: a town's reach grows with its size, and a point goes to the town it's deepest inside
+
 - **internal/workouts**: Activity file processing
   - FIT, Endomondo JSON and TCX parsing (`ReadActivityFile` tells them apart by content) and workout data extraction
   - Segment analysis and activity processing
   - `BuildSeries` (per-record columns, thinned to `MaxSeriesPoints`) and `ProcessorVersion`
   - `DetectWalking` (a run's walking breaks, warm-up and cool-down) and `Stretch` (a named piece of ground and the passes over it)
+  - `RunSummary.Name` (what to call a workout, e.g. "Madison afternoon run")
 
 - **internal/models**: The model layer handlers call; processing a file into a workout (`processing.go`) and the job queue (`jobs.go`)
 
@@ -325,6 +330,7 @@ weather:
 - `GET /activity_files/{id}/download` - Download the actual file content
 
 ### Workouts and Segments API (requires JWT token)
+- Every workout carries `name` (e.g. `Madison afternoon run`; see Reprocessing below), `place`, `timezone` (IANA) and `utc_offset_seconds` (null when unknown) beside `start_time`, which stays UTC; a best effort and a stretch effort carry their workout's as `workout_name`
 - `GET /workouts` - List workouts (newest first); `?from=&to=` keeps those starting in that window (from inclusive, to exclusive; RFC3339, or a bare date as UTC midnight; either end optional), `?limit=` (1–1000) and `?offset=` page through it, and without a limit it returns the whole window; `GET /workouts/{id}`, `POST`, `PUT /workouts/{id}`, `DELETE /workouts/{id}` for CRUD. `PUT` only edits hand-entered workouts; one from a file is `422`, since reprocessing owns its summary (correct its sport or exclusion instead)
 - `POST /workouts/from-activity-file/{id}` - Parse an uploaded FIT, Endomondo JSON or TCX file into a workout and store its segments; `201` when new, `200` with the existing workout if the file already has one, `404` for an unknown file, `422` with the reason for an unreadable or multi-session file
 - `GET /workouts/{id}/segments` - Fastest effort at each standard distance the workout covers, shortest distance first, then the farthest effort for each standard duration it lasts (`kind` is `distance` or `duration`)
@@ -342,7 +348,7 @@ weather:
 ### Stretches API (requires JWT token)
 - `GET /stretches` - The user's stretches, named pieces of ground timed across workouts: `{id, name, sport, meters, source_workout_id, created_at, effort_count, workout_count, best_seconds, best_workout_id, latest_start_time}`; `?from=&to=` (as on `GET /workouts`) counts only efforts by workouts starting in the window
 - `POST /stretches` - Cut a stretch from a workout with `{"name": "...", "workout_id": N, "start_m": 500, "end_m": 1500}` (distances along the workout, as its series' `distance_m` counts) and time every workout of that sport over it; `201` with the stretch as `GET /stretches/{id}` gives it. `400` without a name (trimmed, at most 100 characters) or range, `422` for an unknown, hand-entered or uncounted workout, one with no GPS or too little for a track (under 200m), or a range outside its track or not between 100m and 20km
-- `GET /stretches/{id}` - A stretch with its `points` (`[lat, lon]` every 10m, first at the start) and `efforts`, newest first: `{workout_id, start_time, start_offset_seconds, end_offset_seconds, duration_seconds, start_meters, distance_meters, walked_fraction}` (`walked_fraction` null when the workout can't tell walking from running); `?from=&to=` keeps efforts in the window, and the figures follow
+- `GET /stretches/{id}` - A stretch with its `points` (`[lat, lon]` every 10m, first at the start) and `efforts`, newest first: `{workout_id, workout_name, start_time, start_offset_seconds, end_offset_seconds, duration_seconds, start_meters, distance_meters, walked_fraction}` (`walked_fraction` null when the workout can't tell walking from running); `?from=&to=` keeps efforts in the window, and the figures follow
 - `PUT /stretches/{id}` - Rename with `{"name": "..."}`
 - `DELETE /stretches/{id}` - Delete the stretch and its efforts; `204`
 - `GET /workouts/{id}/stretches` - The workout's passes over the user's stretches in the order it ran them, each effort with `stretch_id`, `name` and `stretch_meters`
@@ -472,6 +478,7 @@ The application provides a comprehensive API for managing activity files (primar
 - `ProcessorVersion` combines `extractorVersion` (bump it in `internal/workouts/processor.go` whenever extraction changes) with a hash of `StandardDistances` and `StandardDurations`, so adding or removing one reprocesses old workouts on its own
 - Each workout keeps its `source`, what recorded it: the FIT `file_id` product name (`COROS PACE 3`), else the manufacturer plus Garmin product (`Garmin fr965`), `Endomondo`, or a TCX file's author (`Google Fit`); empty for hand-entered workouts
 - Each workout keeps the FIT session's `sport` and `sub_sport` (e.g. `running` / `indoor_running`). Only outdoor runs and walks (`workouts.ScoredSports`, less the indoor sub-sports `treadmill`, `indoor_running` and `indoor_walking`; `RunSummary.Scored`) get segments and tracks, and each sport is ranked and grouped on its own; rides, generic sessions and treadmill runs are stored and listed but never scored. A workout with an `excluded_reason` (set by processing, or by the user as a correction) never counts either: it stays out of best efforts, routes and any stats. An effort faster than its sport's cap (`maxSpeedMps` beside `ScoredSports`: about the 1k world record running, the mile race-walking record walking) isn't stored as a segment either
+- Each workout keeps where and in what zone it started, and a name built from them. Processing looks its first GPS fix up in `internal/places` for `place` (the town, empty when none is in reach) and `timezone`, and `utc_offset_seconds` is that zone's offset at the start, or for a FIT file with no fix the one its activity message states (`local_timestamp`); a file dropped for bad points is located before they go. `name` (`RunSummary.Name`) is the place, or the local weekday without one, then the part of the day by the local hour (`partsOfDay`) and the sport's noun as corrected (`sportNouns`, `subSportNouns`): "Madison afternoon run", "Saturday morning treadmill run". With no offset at all it's the noun alone ("Treadmill run"), which is also how a hand-entered workout is named. Changing the rule needs an `extractorVersion` bump
 - Corrections (`sport_override`, `user_excluded_reason`, set by `PUT /workouts/{id}/corrections`) are applied over the file on every reprocess (`models.Corrections`), so `sport` and `excluded_reason` always hold the effective values and queries never look at the override columns. A corrected sport keeps the file's `sub_sport`; processing's own `excluded_reason` wins over the user's
 - Processing also stores the run's GPS track resampled every 20m by distance (`workout_tracks`, `workouts.BuildTrack`); a run without GPS gets none
 - Each record keeps its cadence where the FIT file has one, and the series has it as a column: steps a minute counting both feet for a run or walk, going by the sport as corrected, and revolutions otherwise. A run's series also carries `walking` (`workouts.DetectWalking`): its warm-up before the first 30 seconds of steady running, its cool-down after the last, and the walking breaks between (10 seconds or more, ones under 5 seconds apart joined). Walking is told by cadence (under 125 steps a minute), or without cadence by the run's own speeds when they have two clear modes; a run with neither has no `walking`, which means unknown, not none
