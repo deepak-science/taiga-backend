@@ -397,6 +397,64 @@ Frontend:
 - Whether the account-page token belongs in this milestone or the next.
 - Whether a signed-in `taco` should be able to approve another machine's login (`taco approve WDJB-MJHT`), for setting up a second box from the first without a browser.
 
+## M15 — Weather (exploration)
+
+A run's pace says little without the day it was run on: the same route is a different effort at 30°C and humid than at 5°C, and into a headwind than with it.
+The goal: every workout that has a place and a time knows what the weather was, so the workout page can show it and comparisons can take it into account.
+Nothing is built; this is what would need deciding.
+
+- [ ] **Where the weather comes from.** A historical service that answers for a point and an hour, going back to the oldest workouts, some ten years.
+  - Open-Meteo's archive is the first to try: reanalysis by the hour for any coordinates, decades back, no key for personal use. Check its terms and request limits before building on it, and how many days it lags behind today (a run from this morning needs its forecast endpoint, or a second look later).
+  - Station observations (NOAA, Meteostat) are what was measured rather than modelled, but mean finding the nearest station and living with its gaps.
+  - The files themselves don't have it (checked 2026-11-20). The Endomondo export has no weather field in any of its 405 workouts. The COROS files have no weather message either, though the app shows conditions for a run: only the watch's own average temperature per lap (262 of 269 files) and per session (146), nothing per record.
+  - The watch's temperature isn't the weather: worn on the wrist it reads body heat. Five runs from late October to mid-November 2026 all average 22–25°C (72–77°F), starting warm from indoors (24–27°C) and settling to 19–23°C whatever the day was like. It isn't read from the file today, and at best it could flag a provider's answer that is far off on a hot day.
+  - Behind an interface with one implementation, so the provider is a config choice (`weather.provider`, off by default) and tests use a fake.
+- [ ] **What's kept**, in a `workout_weather` row per workout and source: temperature, dew point (what makes heat hard, more than humidity as a percentage), wind speed and direction, precipitation, cloud cover.
+  - Each row carries where it came from: the source (`openmeteo-era5`, `openmeteo-default`), when it was fetched, and what was asked (the rounded coordinates and the hours). A later fetch from another source adds a row; it doesn't overwrite one.
+  - A workout's weather is the row from the source that ranks highest among those it has. The ranking is a list in one place (ERA5 ahead of the default blend); a new source, or a change of mind about which is better, is an edit to that list and not a rewrite of the rows.
+  - Kept rows also mean the sources can be compared over the user's own runs, which is the First look below done continuously.
+  - Twice over, at the start and at the end, each interpolated between the hours either side: a long summer run that starts at 18°C and ends at 30°C isn't one that sat at 24°C throughout, and the day's hours are already in the response. Adding the end later would mean fetching everything again.
+  - The mean of the two is what labels, filters and groups go by. The page shows one figure unless the run moved more than about 1.5°C, which is how far the sources disagree with each other anyway, and a range when it did.
+  - Nothing finer: no weather per record, and no pace against temperature within a run. The data is hourly on a grid some 10km wide.
+- [ ] **Fetched by a job, not by processing.** The file is the source of truth for everything processing derives, and reprocessing rebuilds it all; the weather comes from outside, is slow, and can fail, so it gets its own job kind (`fetch_weather`) queued when a workout first has a track, retried by the queue, and left alone by reprocessing unless the start or place changed.
+  - Twice for a new run: the default blend as soon as it answers (about a day behind), so the workout page has something, and the same job queued again a week out (`run_at`) for ERA5. The second fetch adds its own row beside the first, and the ranking then prefers it.
+  - A backfill for the workouts already there, paced to the provider's limits: about 800 workouts, many from the same few places, so one request per place and month rather than one per workout.
+  - Hand-entered workouts and ones without GPS have no place. Either no weather, or a home location on the account to stand in.
+- [ ] **What leaves the server.** Each lookup tells a third party where and when the user ran. Round the coordinates first (0.1° is about 10km, finer than the weather model's own grid), send the hour and not the minute, and say in the docs that turning weather on does this.
+- [ ] **Showing it**: on the workout page and as an optional column in the list and `taco workouts`; a wind arrow on the map, since direction only means something against the route.
+- [ ] **Using it**, which is the point:
+  - Filter and group by conditions: best 5k above 25°C, this route on cold days.
+  - Headwind and tailwind along the track: the wind against each piece of the run's heading, which matters for an out-and-back and for a stretch run one way.
+  - A temperature-adjusted pace, so a summer run and a winter one can be compared. There are published adjustments by dew point; whether one fits these runs is something the data can answer first (pace against dew point on the same route, walking taken out).
+
+Open questions:
+
+- Whether the dew point can be trusted on hot afternoons in dry country, where the second look below found ERA5 far too humid. That is where a heat adjustment would lean on it.
+- Whether the outbound request is acceptable from the homelab at all, or the lookup should be something `taco` does from a laptop and uploads.
+- Where the units live: the API speaks miles today, so Fahrenheit and mph would match, but the stored values should be metric.
+
+### First look (2026-11-20)
+
+Is a model close enough to what it was like on the ground? Open-Meteo's archive against two stations (through Meteostat's hourly files, its forecast-filled values dropped) at the start hours of the 627 workouts in the one 0.1° cell most of them start in, 2016 to 2026. Throwaway code, not in the repo.
+
+- **Temperature: yes, with ERA5 asked for by name.** With `models=era5` it is typically 0.8°C (1.4°F) from the regional airport, within 1.7°C nine times in ten, and unbiased. A small airfield 3km from the cell's centre differs from that airport by 0.9°C, so the model is as close to a station as two stations are to each other. Open-Meteo's default blend is worse here: 1.3°C typically, about 0.5°C cool.
+- **Dew point: yes.** ERA5 is typically 0.95°C from the airport, within 2.1°C nine times in ten. It looks twice as far from the airfield, but the two stations disagree by as much, which points at the airfield's sensor.
+- **Wind: direction yes, speed roughly.** Direction is within 45° of the station in 94–95% of hours with 8 km/h of wind or more. Speed is typically 4.2 km/h off on a mean of 13, and the two stations differ by the same, so no single source says better.
+- **Rain by the hour: no.** Of 581 workout hours with measured precipitation at the airport, the default blend called 39 wet (0.2mm or more) and the station agreed on 11. Across all hours the station agrees on about 60% of the model's wet hours. Keep precipitation as a coarse flag (a wet day), not as "it rained on this run".
+- **So:** one provider, Open-Meteo, and no station matching. ERA5 stops about five days short of today, so a new run gets the default blend first and ERA5 as a second source once it's there, preferred by rule and not by overwriting.
+- **What this doesn't show.** ERA5 is built partly from station observations, quite possibly that airport's, so some of the agreement is circular; the airfield is the fairer test, and ERA5 is typically 1.0°C from it. It's one flat, inland place; the second look below is the coast, the hills and the desert. And a station kilometres away isn't the weather on the route either.
+
+### Second look (2026-11-20): away from home
+
+Does it hold on a coast, in hills, in a desert? The same comparison at the middle of 72 activities from the Google Fit export (not on the server), each against the nearest station with measurements: 38 on a coast (Bay Area, San Diego, Yucatán), 18 in hills (Black Hills, Salt Lake City), 16 in a desert (Las Vegas). Each place is one short trip, mostly walks. Throwaway code again.
+
+- **Temperature: yes, loosest in the hills.** ERA5 is typically 0.7°C (1.3°F) from the station on the coast and 0.8°C in the desert, unbiased in both. In the hills it is 1.4°C off and 1.6°C cool, worst 3.9°C (7°F): on Black Hills afternoons at 38–42°C it read 2–4°C low.
+- **Dew point: yes where the air is humid, no where it is dry.** On the coast ERA5 is typically 0.6°C off, and 0.7°C in Yucatán at dew points of 21–24°C. In Las Vegas it is typically 4.1°C (7.3°F) too humid, worst 10.6°C (19°F), though both it and the station say the air is dry. The Black Hills are the case that matters: in four activities over two hot days ERA5 gave a dew point of 14–19°C where the station measured 7–9°C, which is the difference between a muggy run and a dry one.
+- **The default blend isn't the fix.** It is closer on dew point in Las Vegas (2.3°C typically) and no better in the Black Hills, where it missed by as much in other activities (worst 12°C, 22°F). On temperature it is worse than ERA5 on the coast and in the hills and about the same in the desert.
+- **Wind: direction mostly, speed roughly**, as at home. Direction is within 45° of the station in 38 of 48 activities with ERA5 and 31 of 48 with the default blend. Speed is typically 3–7 km/h off, and 13 km/h in the Bay Area, where the station is an airport on the water.
+- **So:** the ranking stays one list with ERA5 first; nothing here argues for ranking each variable separately. A heat adjustment shouldn't take a single dew point on trust in dry country on a hot day.
+- **What this doesn't show.** The samples are small and each is a few days of one season. The station is up to 52km from the activity (Yucatán), and in the Black Hills up to 230m higher or lower than the cell.
+
 ## Later
 
 - **Faster CI.** Backend runs took 12–14½ minutes (November 2026): the flake check, a second build of the binary, the image publish and a binary-cache upload of everything. Now a branch run takes about 2 minutes with the dependency cache restored (3¼ when the dependencies changed), plus a minute to publish on master. What's left:
