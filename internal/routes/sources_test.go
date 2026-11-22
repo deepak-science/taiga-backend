@@ -760,3 +760,55 @@ func TestARegistrationSealedUnderAnOldKeyIsReplaced(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 2, registrations())
 }
+
+func TestAWindowTooFullForOneListIsTakenInPieces(t *testing.T) {
+	a := newSourcesAPI(t)
+	alice := a.user("alice@example.com")
+	// More in the week than COROS lists at once, an activity every 45 minutes.
+	const listed = 210
+	for n := range listed {
+		a.fake.Add(a.junk(n, time.Duration(n+1)*45*time.Minute))
+	}
+	a.connect(alice)
+	a.sync()
+	conn := a.sources(alice).Connections[0]
+	assert.Empty(t, conn.LastError, "a full list is asked for again in shorter stretches, not failed on for good")
+	assert.Equal(t, int64(models.SourceDailyFiles), conn.Activities)
+}
+
+func TestAnActivityWithNoStartDoesNotWalkTheCursorBack(t *testing.T) {
+	a := newSourcesAPI(t)
+	alice := a.user("alice@example.com")
+	a.connect(alice)
+	a.sync()
+	conn, user := a.connection(alice)
+	through := conn.SyncedThrough.Time
+
+	// Still being recorded, and listed without its times.
+	src := &stubSource{activities: []coros.Activity{{ID: "1", SportType: 100}}, files: func(coros.Activity) ([][]byte, error) {
+		return nil, coros.ErrInProgress
+	}}
+	for range 3 {
+		_, err := a.m.SyncSource(t.Context(), conn, src, testsupport.NewFileRepo(t), a.now, user)
+		require.NoError(t, err)
+		conn, _ = a.connection(alice)
+		assert.True(t, conn.SyncedThrough.Time.Equal(through), "each sync would otherwise start a day before the last: %v", conn.SyncedThrough.Time)
+	}
+}
+
+func TestASyncAfterTheKeyChangedAsksToReconnect(t *testing.T) {
+	a := newSourcesAPI(t)
+	alice := a.user("alice@example.com")
+	a.connect(alice)
+	a.sync()
+
+	rotated, err := sources.New(a.m, a.fake.Endpoint(), "https://"+frontendHost, a.srv.URL, []byte("another secret"))
+	require.NoError(t, err)
+	rotated.Now = func() time.Time { return a.now }
+	a.worker.Sources = rotated
+	a.syncAgain(alice)
+	conn := a.sources(alice).Connections[0]
+	assert.True(t, conn.NeedsReconnect, "retrying can't read what's stored; connecting again is the way out")
+	_, body := alice.get("/jobs?state=dead")
+	assert.JSONEq(t, "[]", string(body))
+}

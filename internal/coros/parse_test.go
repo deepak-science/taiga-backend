@@ -2,11 +2,14 @@ package coros
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/oauth2"
 )
 
 // The testdata files are what COROS's server sent on 2026-11-21, byte for byte but for the ids, places and coordinates, which are made up.
@@ -72,4 +75,33 @@ func TestAnActivityNamedLikeTheEmptyReplyIsStillListed(t *testing.T) {
 	activities, err = parseActivities("No sport records found from 2024-01-01 to 2026-11-21.")
 	require.NoError(t, err)
 	assert.Empty(t, activities)
+}
+
+func TestBriefCutsBetweenCharacters(t *testing.T) {
+	// Two bytes each, and an odd one first so the cut would fall inside one.
+	cut := brief("a" + strings.Repeat("é", 300))
+	assert.True(t, utf8.ValidString(cut))
+	assert.True(t, strings.HasSuffix(cut, "…"))
+
+	assert.True(t, utf8.ValidString(brief("caf\xc3")), "what COROS sends broken is mended too")
+}
+
+func TestEveryEndpointHasToBeAsProtectedAsTheServer(t *testing.T) {
+	s := New("https://mcp.example.com/mcp", "https://taiga.example.com/api/sources/coros/callback")
+	client := Client{
+		AuthURL:         "https://mcp.example.com/oauth2/authorize",
+		TokenURL:        "https://mcp.example.com/oauth2/token",
+		RevocationURL:   "https://mcp.example.com/oauth2/revoke",
+		RegistrationURL: "https://mcp.example.com/connect/register",
+	}
+	require.NoError(t, s.checkEndpoints(&client))
+
+	// The SDK lets this one through, and it's sent the refresh token.
+	client.RevocationURL = "http://mcp.example.com/oauth2/revoke"
+	require.Error(t, s.checkEndpoints(&client))
+	assert.Error(t, s.Revoke(t.Context(), &client, &oauth2.Token{RefreshToken: "refresh"}), "nor is a registration kept from before the check sent one")
+
+	// A server with no revocation endpoint is fine.
+	client.RevocationURL = ""
+	assert.NoError(t, s.checkEndpoints(&client))
 }

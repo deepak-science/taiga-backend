@@ -64,6 +64,8 @@ type FakeActivity struct {
 	End       time.Time
 	// File is what its link downloads.
 	File []byte
+	// Parts is how many files it was recorded in; 0 is one.
+	Parts int
 	// InProgress makes the file tool say the activity hasn't finished.
 	InProgress bool
 }
@@ -333,6 +335,7 @@ func (f *FakeCOROS) list(_ context.Context, _ *mcp.CallToolRequest, args fakeLis
 type fakeFileArgs struct {
 	LabelID   string `json:"labelId"`
 	SportType int    `json:"sportType"`
+	Limit     int    `json:"limit"`
 }
 
 func (f *FakeCOROS) fileURLs(_ context.Context, _ *mcp.CallToolRequest, args fakeFileArgs) (*mcp.CallToolResult, any, error) {
@@ -350,9 +353,20 @@ func (f *FakeCOROS) fileURLs(_ context.Context, _ *mcp.CallToolRequest, args fak
 			result.IsError = true
 			return result, nil, nil
 		}
-		f.FileRequests++
-		name := a.ID + "_f2935eeb1f.fit"
-		return text(fmt.Sprintf("Activity FIT file download URL(s):\n1. %s\n   %s/fit/%s", name, f.Server.URL, name)), nil, nil
+		parts, limit := max(a.Parts, 1), args.Limit
+		if limit <= 0 {
+			limit = 5
+		}
+		// COROS gives 5 unless asked for more, and never over 10.
+		parts = min(parts, limit, 10)
+		f.FileRequests += parts
+		var b strings.Builder
+		b.WriteString("Activity FIT file download URL(s):")
+		for n := range parts {
+			name := fmt.Sprintf("%s_f2935eeb%02d.fit", a.ID, n)
+			fmt.Fprintf(&b, "\n%d. %s\n   %s/fit/%s", n+1, name, f.Server.URL, name)
+		}
+		return text(b.String()), nil, nil
 	}
 	result := text("No activity found for labelId " + args.LabelID + ".")
 	result.IsError = true

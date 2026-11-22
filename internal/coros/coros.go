@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
@@ -30,6 +32,8 @@ const (
 
 	// More than a window should ever hold; a full page means some were left out.
 	listLimit = 200
+	// The most files the file tool gives for one call; it gives 5 unless asked.
+	fileLimit = 10
 	// The size an upload may be.
 	maxFileBytes = 32 << 20
 	timeout      = 30 * time.Second
@@ -44,6 +48,8 @@ var (
 	ErrInProgress = errors.New("the activity is still in progress")
 	// ErrUnexpectedReply means a tool answered in words this package can't read: its replies are prose, so this is what a change of wording looks like.
 	ErrUnexpectedReply = errors.New("COROS answered in a form taiga doesn't know how to read")
+	// ErrTooMany means a list came back full, so there may be more than it holds: ask for a shorter window.
+	ErrTooMany = errors.New("COROS listed as many activities as it was asked for, so there may be more")
 )
 
 // SpentError is a failure after COROS had issued file links, which is when its daily limit counts them.
@@ -120,7 +126,7 @@ func (s *Service) Discover(ctx context.Context) (*Client, error) {
 	if meta.RegistrationEndpoint == "" {
 		return nil, errors.New("the authorization server doesn't register clients")
 	}
-	return &Client{
+	client := &Client{
 		Resource:      resource.Resource,
 		Issuer:        meta.Issuer,
 		AuthURL:       meta.AuthorizationEndpoint,
@@ -128,7 +134,21 @@ func (s *Service) Discover(ctx context.Context) (*Client, error) {
 		RevocationURL: meta.RevocationEndpoint,
 
 		RegistrationURL: meta.RegistrationEndpoint,
-	}, nil
+	}
+	return client, s.checkEndpoints(client)
+}
+
+// checkEndpoints applies checkURL to every address the metadata gave: each is sent a code, a token or the registration.
+func (s *Service) checkEndpoints(c *Client) error {
+	for _, u := range []string{c.AuthURL, c.TokenURL, c.RevocationURL, c.RegistrationURL} {
+		if u == "" {
+			continue
+		}
+		if err := s.checkURL(u); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // resourceMetadataURL asks the endpoint without a token, which it answers with where its metadata is.
@@ -246,6 +266,10 @@ func (s *Service) Exchange(ctx context.Context, c *Client, code, verifier string
 func (s *Service) Revoke(ctx context.Context, c *Client, token *oauth2.Token) error {
 	if c.RevocationURL == "" || token.RefreshToken == "" {
 		return nil
+	}
+	// Checked here too: a registration stored before Discover checked it is still used.
+	if err := s.checkURL(c.RevocationURL); err != nil {
+		return err
 	}
 	form := url.Values{"token": {token.RefreshToken}, "token_type_hint": {"refresh_token"}}
 	if c.ClientSecret == "" {
@@ -368,7 +392,7 @@ func (s *Session) List(ctx context.Context, from, to time.Time) ([]Activity, err
 		return nil, err
 	}
 	if len(all) >= listLimit {
-		return nil, fmt.Errorf("COROS listed %d activities, as many as it was asked for, so there may be more; ask for a shorter window", len(all))
+		return nil, fmt.Errorf("%w (%d)", ErrTooMany, len(all))
 	}
 	var within []Activity
 	for _, a := range all {
@@ -383,7 +407,7 @@ func (s *Session) List(ctx context.Context, from, to time.Time) ([]Activity, err
 // Files downloads the activity's FIT files: one, except for an activity recorded in parts.
 // Each counts against COROS's daily limit, whether or not it was fetched before.
 func (s *Session) Files(ctx context.Context, a Activity) ([][]byte, error) {
-	text, failed, err := s.call(ctx, toolFileURLs, map[string]any{"labelId": a.ID, "sportType": a.SportType})
+	text, failed, err := s.call(ctx, toolFileURLs, map[string]any{"labelId": a.ID, "sportType": a.SportType, "limit": fileLimit})
 	if err != nil {
 		return nil, err
 	}
@@ -400,6 +424,10 @@ func (s *Session) Files(ctx context.Context, a Activity) ([][]byte, error) {
 	links := fileURLs(text)
 	if len(links) == 0 {
 		return nil, fmt.Errorf("%w: no download link for activity %s in %q", ErrUnexpectedReply, a.ID, brief(text))
+	}
+	// Imported all the same: failing would hold every later activity behind one that can never be had whole.
+	if len(links) >= fileLimit {
+		log.Printf("coros: activity %s came with %d files, as many as one call gives, so it may have more", a.ID, len(links))
 	}
 	var files [][]byte
 	for _, link := range links {
@@ -446,9 +474,14 @@ func (s *Session) download(ctx context.Context, link string) ([]byte, error) {
 
 // brief is a reply cut short enough to put in an error.
 func brief(text string) string {
-	text = strings.Join(strings.Fields(linkPattern.ReplaceAllString(text, "[link]")), " ")
+	text = strings.ToValidUTF8(strings.Join(strings.Fields(linkPattern.ReplaceAllString(text, "[link]")), " "), "?")
 	if len(text) > 200 {
-		text = text[:200] + "…"
+		// Not through the middle of a character: PostgreSQL turns away text that isn't UTF-8, and this is stored as the sync's error.
+		cut := 200
+		for !utf8.RuneStart(text[cut]) {
+			cut--
+		}
+		text = text[:cut] + "…"
 	}
 	return text
 }

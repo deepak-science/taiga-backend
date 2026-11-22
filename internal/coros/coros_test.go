@@ -2,6 +2,7 @@ package coros_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"testing"
@@ -312,4 +313,33 @@ func TestRefreshBeforeOpening(t *testing.T) {
 	fake.RevokeAll()
 	_, err = svc.Refresh(ctx, client, &spent)
 	assert.ErrorIs(t, err, coros.ErrAuthorization)
+}
+
+func TestAnActivityInPartsComesWhole(t *testing.T) {
+	fake := testsupport.NewFakeCOROS(t)
+	// More parts than COROS hands over unless asked.
+	fake.Add(testsupport.FakeActivity{ID: "1", SportType: 10000, Start: day, End: day.Add(time.Hour), File: []byte("a leg"), Parts: 7})
+	svc, client, token := signIn(t, fake)
+	ctx := context.Background()
+	session, err := svc.Open(ctx, client, token)
+	require.NoError(t, err)
+	defer session.Close()
+
+	files, err := session.Files(ctx, coros.Activity{ID: "1", SportType: 10000})
+	require.NoError(t, err)
+	assert.Len(t, files, 7)
+}
+
+func TestAFullListSaysSo(t *testing.T) {
+	fake := testsupport.NewFakeCOROS(t)
+	for n := range 200 {
+		fake.Add(testsupport.FakeActivity{ID: fmt.Sprint(n + 1), SportType: 100, Start: day.Add(time.Duration(n) * time.Minute), End: day.Add(time.Duration(n+1) * time.Minute)})
+	}
+	svc, client, token := signIn(t, fake)
+	session, err := svc.Open(context.Background(), client, token)
+	require.NoError(t, err)
+	defer session.Close()
+
+	_, err = session.List(context.Background(), day.AddDate(0, 0, -1), day.AddDate(0, 0, 1))
+	assert.ErrorIs(t, err, coros.ErrTooMany, "a list cut off at what was asked for can't be taken as all there is")
 }

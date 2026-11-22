@@ -35,7 +35,7 @@ A connection is the user's own. No one else's syncs use it, and `GET /sources` s
 ## What a sync does
 
 A `sync_source` job runs when a user connects, every hour after, and when they ask (`POST /sources/{id}/sync`):
-
+ A long gap is asked for 30 days at a time, and a stretch with more activities than one list holds (200) is asked for again in halves, down to a day.
 1. Ask COROS for the activities since the last sync, less a day in case the watch uploaded one late. A new connection starts a week back.
 2. Skip every activity already dealt with.
 3. For each of the rest, oldest first, ask for its FIT file and put it through the same path as an upload.
@@ -158,7 +158,7 @@ taiga reads four things from each entry: the heading, `startTimestamp`, `endTime
 
 ### `queryActivityFitFileDownloadUrls`
 
-Asked with `{"labelId": "…", "sportType": 100}`. The reply is plain text, not a JSON string:
+Asked with `{"labelId": "…", "sportType": 100, "limit": 10}`: `limit` is how many files it may name, 5 unless asked and never more than 10. The reply is plain text, not a JSON string:
 
 ```
 Activity FIT file download URL(s):
@@ -197,4 +197,4 @@ So the list should be expected to change under taiga, and the design is for that
 - **Whether a client that isn't an AI assistant is welcome.** COROS's docs assume one throughout, though registration turned nothing away. Read their terms before turning this on for anyone but yourself.
 - **How the limit resets**, what COROS says when it's reached, and whether listing is limited at all.
 - **How to take a registration back.** Disconnecting revokes the user's tokens; the client taiga registered stays at COROS.
-- **Activities recorded in parts** (a triathlon). The file tool can return several links for one; taiga fetches and stores each, and keeps the first as the activity's file.
+- **Activities recorded in parts** (a triathlon). The file tool can return several links for one; taiga fetches and stores each, and keeps the first as the activity's file. Whether `limit` applies to one activity's parts hasn't been seen; taiga asks for the most, 10, and logs a warning when exactly that many come back, since there may be more.

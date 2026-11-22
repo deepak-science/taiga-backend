@@ -297,6 +297,10 @@ func (g *Manager) sync(ctx context.Context, conn *models.SourceConnection, fileR
 		return nil, err
 	}
 	client, err := g.openClient(row)
+	// Like the tokens below: retrying can't help, and connecting again is what registers anew.
+	if errors.Is(err, secretbox.ErrOpen) {
+		return nil, fmt.Errorf("the stored COROS registration can't be read (was the token signing key changed?): %w", coros.ErrAuthorization)
+	}
 	if err != nil {
 		return nil, err
 	}

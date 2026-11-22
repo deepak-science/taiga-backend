@@ -32,6 +32,8 @@ const (
 	sourceOverlap = 24 * time.Hour
 	// A connection that hasn't synced in a long while catches up a month at a time, so no one list is too long for the source to give whole.
 	sourceWindow = 30 * 24 * time.Hour
+	// The shortest a window is cut to when a list comes back full.
+	minSourceWindow = 24 * time.Hour
 )
 
 // ActivitySource is a signed-in source of activities; a *coros.Session is one.
@@ -238,11 +240,12 @@ func (m *storeModel) SyncSource(ctx context.Context, conn *SourceConnection, src
 	}()
 	// The earliest activity left for next time, which is as far as the connection can say it has synced.
 	var held time.Time
-	hold := func(a coros.Activity, windowStart time.Time) {
+	hold := func(a coros.Activity) {
 		res.Waiting++
 		at := a.Start
 		if at.IsZero() {
-			at = windowStart
+			// Where the cursor already is: anything earlier would have each sync look further back than the last.
+			at = conn.SyncedThrough.Time
 		}
 		if held.IsZero() || at.Before(held) {
 			held = at
@@ -250,13 +253,19 @@ func (m *storeModel) SyncSource(ctx context.Context, conn *SourceConnection, src
 	}
 
 	from := conn.SyncedThrough.Time.Add(-sourceOverlap)
+	width := sourceWindow
 windows:
-	for start := from; start.Before(now); start = start.Add(sourceWindow) {
-		end := start.Add(sourceWindow)
+	for start := from; start.Before(now); {
+		end := start.Add(width)
 		if end.After(now) {
 			end = now
 		}
 		activities, err := src.List(ctx, start, end)
+		// More in the window than one list holds: the same stretch again in halves, down to a day.
+		if errors.Is(err, coros.ErrTooMany) && width > minSourceWindow {
+			width /= 2
+			continue
+		}
 		if err != nil {
 			return res, err
 		}
@@ -287,7 +296,7 @@ windows:
 				}
 				switch {
 				case errors.Is(err, coros.ErrInProgress):
-					hold(a, start)
+					hold(a)
 					continue
 				case errors.Is(err, coros.ErrDailyLimit):
 					res.LimitReached = true
@@ -297,7 +306,7 @@ windows:
 			}
 			if res.LimitReached {
 				// Oldest first, so this is the earliest one left; the rest wait behind it.
-				hold(a, start)
+				hold(a)
 				break windows
 			}
 
@@ -338,6 +347,7 @@ windows:
 				return res, err
 			}
 		}
+		start = end
 	}
 
 	through := now
