@@ -57,6 +57,14 @@ This is the taiga API: upload FIT files (or Endomondo export JSON, or TCX such a
   - `Provider` with one implementation, Open-Meteo's archive API; `Sources` is the ranked list of answers it can give
   - Off unless `weather.provider` is set, since a lookup tells the provider roughly where and when the user ran
 
+- **internal/coros**: COROS as a source of activities, through its MCP server (`docs/sources.md`)
+  - OAuth from the server's own metadata (discovery, client registration, authorization code with PKCE, refresh), then two read tools: one lists activities, one hands over their FIT files
+  - The tools answer in prose, so `parseActivities` reads ids and times by pattern and fails (`ErrUnexpectedReply`) on anything that doesn't add up
+
+- **internal/sources**: Connecting a user's COROS account and syncing it
+  - `Manager` holds the keys between `internal/coros` and the model: the link flow's encrypted cookie, and the registration and tokens sealed with `internal/secretbox` (AES-256-GCM under a key derived from the token signing key)
+  - Off unless `sources.coros.enabled` is set
+
 - **internal/places**: The town a point is in or beside, and its timezone
   - GeoNames' cities5000 cut down to `cities.tsv.gz` and embedded (`go run ./internal/places/gen cities5000.zip internal/places/cities.tsv.gz` rebuilds it), so no lookup leaves the server
   - `Lookup` has centres and populations, not outlines: a town's reach grows with its size, and a point goes to the town it's deepest inside
@@ -279,6 +287,11 @@ file_repo:
 
 weather:
   provider: ""                       # "open-meteo" looks up each tracked workout's weather; off by default (docs/weather.md)
+
+sources:
+  coros:
+    enabled: false                   # true lets users connect their COROS accounts, synced hourly; needs auth.public_base_url (docs/sources.md)
+    endpoint: ""                     # the MCP server; empty means https://mcp.coros.com/mcp
 ```
 
 ### Environment Variables
@@ -347,6 +360,13 @@ weather:
 
 ### Weather API (requires JWT token; `docs/weather.md`)
 - `GET /workouts/{id}/weather` - `{source, fetched_at, start, end, precipitation_mm, sources}`: the reading from the best source the workout has, `start` and `end` each `{temperature_c, dew_point_c, humidity_pct, wind_speed_mps, wind_direction_deg, cloud_cover_pct}`, and every source's reading under `sources`, best first; `404` when no source has answered (weather off, no track, or not fetched yet)
+
+### Sources API (requires JWT token; `docs/sources.md`)
+- `GET /sources` - `{kinds, connections}`: what can be connected (`[{kind, name}]`, empty when sources are off), and the user's connections, `{id, kind, name, created_at, last_synced_at, last_error, needs_reconnect, activities}` (`activities` is how many of the source's activities have been dealt with)
+- `POST /sources/coros` - Start connecting the user's COROS account: `{url}` to send the browser to, which comes back through the callback; `404` when sources are off, `502` when COROS can't be reached
+- `GET /sources/coros/callback` (no token; a cookie) - Where COROS sends the browser back; keeps the tokens, queues the first sync, and redirects to the frontend's `#/account?source=coros` (or `?source_error=…`)
+- `POST /sources/{id}/sync` - Queue a sync now, in place of one waiting or dead; `202`, `409` when the connection needs connecting again
+- `DELETE /sources/{id}` - Forget the connection and revoke its tokens at COROS; what it imported stays; `204`
 
 ### Routes API (requires JWT token)
 - `GET /routes` - The user's routes, most recently run first; `?from=&to=` (as on `GET /workouts`) keeps routes run in the window, and counts only those runs: `{id, name, sport, representative_workout_id, run_count, distance_miles, best_time_seconds, best_workout_id, latest_start_time}`
@@ -480,10 +500,11 @@ The application provides a comprehensive API for managing activity files (primar
 - The user's say over routes (`route_overrides`, one row per workout) is applied by that same regrouping, so it survives it: a run moved onto a route (`route_id`), kept off every route (null `route_id`), or carrying a merge (`with_group`: the whole group detection puts it in goes to `route_id`, and every run of that group is given the row, so the merge outlives the runs it was made with). Groups are still formed from every tracked run, so moving one away leaves the rest as it was; the representative is never a run that was moved in. A route that is named, merged into or moved onto is kept down to one run, and deleted only when it has none. Changing an override regroups in the request itself, not through the queue; every regrouping, the job's included, first takes the user's row lock (`routesTx`), so two never rebuild the memberships at once
 - The same `detect_routes` job first finds cross-source duplicates (`DetectDuplicates`, `workouts.FindDuplicates`): two workouts from files with different `source`s, any sport, sharing at least half the shorter one's span are one workout recorded twice. The richer source is kept (a watch's FIT, then Endomondo, then Google Fit; between equals the first uploaded), and the other gets `duplicate_of`, the kept one's id. Reprocessing turns that into `excluded_reason` "duplicate of the COROS PACE 3 recording", which outranks any other reason. A changed mark queues the workout for reprocessing; `duplicate_of` has no foreign key, so a deleted original leaves a dangling id that the next detection clears, and the copy counts again. Copies from one source are left alone, since a recorder can't record a workout twice
 - Weather (`workout_weather`, one row per workout and source, with what was asked and when) is not derived from the file, so processing never touches it: `fetch_weather` jobs fill it from `weather.Provider` when `weather.provider` is set. Each hour the worker queues one for every tracked workout that a source in `weather.Sources` should have by now (`MinAge` after it ended) and doesn't, 100 per source, which is the first fetch, the later ERA5 one and the backfill alike; a job can't queue its own second pass, since `idx_jobs_pending` allows one pending job per kind and workout. The job asks with the track's first point rounded to 0.1° and keeps start and end conditions; a source with nothing yet (`weather.ErrNotYet`) leaves no row and no failure, and a workout whose last fetch died is skipped until the job is retried. A reprocessed workout queues a fetch too, which only asks again if its span moved; a rebuild that changes the span drops the readings (on every path, the synchronous ones included) so the sweep asks again. A workout that later loses its track keeps the weather it has
+- Sources (`source_clients`, `source_connections`, `source_activities`) bring new activities in from COROS when `sources.coros.enabled` is set. A `sync_source` job (one per user; queued on connecting, hourly by the worker, and by `POST /sources/{id}/sync`) lists the activities since the connection's `synced_through` less a day, skips those in `source_activities`, and puts each other one's FIT file through `AddActivityFile` and `CreateWorkoutFromActivityFile`, as an upload goes; the file is the one a manual export gives, so the content hash catches a run that arrives both ways. `source_activities` is keyed by user and COROS id, not connection, so a deleted workout stays deleted and reconnecting fetches nothing twice. At most `models.SourceDailyFiles` (45) files in 24 hours, under COROS's 50; at either limit the sync stops without failing and `synced_through` stays at the first activity left. A grant COROS has ended sets `needs_reconnect` and finishes the job, since retrying can't help; other failures retry and then die, and the sweep skips a user with a dead sync until it's asked for again. Refresh tokens work once, so the new one is saved as soon as a session opens, and a sync is held under the job's lease (`syncTimeout`) so two never spend the same one
 - `internal/jobs` runs a worker goroutine in the server: on boot it queues a `process_workout` job for every workout whose version isn't current, then polls the `jobs` table
 - The claim query runs unchanged on both databases (no `SKIP LOCKED`); a claimed job holds a 5-minute lease, so a crashed worker's job is picked up again
 - Failures retry with exponential backoff from 30s, up to 5 attempts; errors that can't succeed on retry (unreadable file, missing workout) go straight to `dead`
 - Store writes that must land together go through `store.InTx`; SQLite opens transactions `IMMEDIATE` so concurrent writers wait on `busy_timeout` instead of failing
 
 ### Testing
-- `internal/testsupport` provides real dependencies for integration tests: a migrated file-backed SQLite model, a local file repo, a throwaway RSA toker, and `EncodeFIT` / `EncodeMultiSessionFIT` / `NewEndomondo` / `NewTCX` for synthetic activity files
+- `internal/testsupport` provides real dependencies for integration tests: a migrated file-backed SQLite model, a local file repo, a throwaway RSA toker, `NewFakeCOROS` (COROS's OAuth and MCP servers, answering as COROS was recorded to; the recordings are in `internal/coros/testdata`), and `EncodeFIT` / `EncodeMultiSessionFIT` / `NewEndomondo` / `NewTCX` for synthetic activity files

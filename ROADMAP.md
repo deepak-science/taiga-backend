@@ -181,9 +181,9 @@ The goal is new runs showing up on their own. Each option still needs checking a
   - **COROS's MCP server** (`https://mcp.coros.com/mcp`, [coroslab/coros-mcp](https://github.com/coroslab/coros-mcp)). This is the self-service access: no application, and each authorisation covers one COROS account. See the first look below; it is the route to build on.
   - **COROS Partner API.** Webhook push and FIT downloads, but it needs an application to api@coros.com and is aimed at established platforms. Probably not worth it for personal use.
   - **No API:** a bulk import of a COROS data export (t.coros.com), and possibly a watched folder that a phone or desktop sync drops files into.
-- [ ] **A source abstraction.** Each user connection (kind, credentials, cursor) gets a periodic `sync_source` job on the M5 queue that fetches new activities and feeds them through the normal upload path.
+- [x] **A source abstraction.** Each user connection (kind, credentials, cursor) gets a periodic `sync_source` job on the M5 queue that fetches new activities and feeds them through the normal upload path. Built for COROS, below; the tables carry a `kind`, and the rest is COROS's until there is a second source to generalise from.
   Content-hash dedupe already makes re-fetching harmless. Also store the source's activity ID, to skip downloads that would only dedupe.
-- [ ] Credentials stored encrypted at rest, revocable per connection, and never logged.
+- [x] Credentials stored encrypted at rest, revocable per connection, and never logged.
 
 ### First look (2026-11-21): COROS's MCP server
 
@@ -200,10 +200,17 @@ Tried through a connected MCP client and by reading the server's own metadata; n
 
 What this makes of the plan:
 
-- [ ] **A COROS connection**, the first source. Linking is the authorization code flow taiga already runs for OIDC (state and verifier in the signed cookie, callback under `{api_base_url}`), after registering itself as a client once per deployment. The tokens are the credentials to encrypt.
-- [ ] **`sync_source` job**, hourly per connection: refresh the token if it's near its end, list from the newest activity already fetched (less a day, for late uploads from the watch) to today, skip `labelId`s already held, and put each new file through the normal upload and `process_workout` path. Stop at the daily limit and carry on next time. A new table keeps `(connection, labelId)` against the activity file, which is also what lets a deleted workout stay deleted.
-- [ ] **A minimal MCP client** in Go: `initialize` and `tools/call` over HTTP with a bearer token is all this needs (the server's current flow is stateless), so it may not be worth a dependency. Check the official Go SDK first.
-- [ ] Before building: read the terms, and try registering a client and one full sign-in by hand, since registration is the step nothing here exercised.
+- [x] **A COROS connection**, the first source (`docs/sources.md`). Linking is the authorization code flow taiga already runs for OIDC, after the server registers itself as a client the first time anyone connects. The registration and each user's tokens are sealed under a key derived from the token signing key. `GET /sources`, `POST /sources/coros`, `DELETE /sources/{id}`.
+- [x] **`sync_source` job**, on connecting, hourly, and on `POST /sources/{id}/sync`: lists from the last sync less a day, skips ids already dealt with (`source_activities`, which is also what keeps a deleted workout deleted), and puts each new file through the upload path. Stops at 45 files in 24 hours and carries on next time. A grant COROS has ended marks the connection `needs_reconnect` and stops asking.
+- [x] **The MCP client** is the official Go SDK (`modelcontextprotocol/go-sdk`), which also serves the stand-in the tests run against (`testsupport.NewFakeCOROS`).
+- [x] **Tried against COROS** (2026-11-21, from `localhost`): it registered with no approval, signed in, imported the week's six activities and fetched nothing on the next sync. What it sent is written down in `docs/sources.md` and kept as the parser's test files. Two things it turned up: the list arrives as a JSON string, quotes and all, and COROS registers taiga with no client secret whatever is asked for.
+- [x] **Refreshing works** (same day): with the stored token treated as expired, three syncs in a row each refreshed, got a new token pair, and saved it for the next. So a client with no secret is refreshed, and the rotation is kept.
+- [ ] COROS promises nothing about its replies, and reworded the FIT tools' five days before that run (`docs/sources.md`, "How much of this will hold"). The terms are still unread.
+- [ ] Pickleball arrives as FIT sport `racket`, so it is named "Madison evening racket"; `sportNouns` has no better word for it.
+- [ ] **Frontend**: a "Sources" part of the account page (connect, last synced, the error or "connect again", sync now, disconnect), and landing on `#/account?source=coros` or `?source_error=`.
+- [ ] **History.** A new connection starts a week back, since older runs are already here from exports and each file asked for counts against the 50 a day. To backfill a fresh account: walk back in windows, and match on start time first so a run already held costs no request.
+- [ ] **Which sports.** Everything comes across, as an export does. A per-connection list of sport codes (100–103 running, 900 walking) would keep the rest out.
+- [ ] Not handled: connecting again while a sync is running can leave the old session's refreshed tokens saved over the new ones, which shows as "connect again" once more.
 - [x] **Endomondo archive import.** Endomondo shut down in 2020; its export has a `.tcx` and a `.json` per workout. Surveyed on a 405-workout export (2016–2020):
   - **Sport needs the JSON.** TCX says `Running` for 202 runs, `Biking` for 1 ride and `Other` for everything else, walks (83) and treadmill runs (23) included. The JSON's `sport` (`RUNNING`, `WALKING`, `TREADMILL_RUNNING`, `CYCLING_SPORT`, `SPINNING`, `STAIR_CLIMBING`, `WEIGHT_TRAINING`, …) maps onto FIT names, e.g. `TREADMILL_RUNNING` → running / treadmill.
   - **Points are in both.** Time, position, cumulative distance and altitude every 1–5s, and heart rate (`heart_rate_bpm`) where a strap was worn. TCX times are ISO UTC; JSON point timestamps switch between `"Thu Jul 23 22:20:14 UTC 2020"` and `"2020-12-07 20:44:46.0"`.
