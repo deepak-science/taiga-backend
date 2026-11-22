@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Checks commit subjects against conventional commits (https://www.conventionalcommits.org).
 # Usage: check-commits.sh <rev-range>   e.g. origin/master..HEAD (merge commits are skipped)
-#        check-commits.sh --file <path>  a commit message file, as the commit-msg hook passes it
+#        check-commits.sh --file <path>  a commit message file, as the commit-msg hook passes it (a merge being committed is skipped)
 set -euo pipefail
 
 types='feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert'
@@ -19,6 +19,10 @@ check() {
 }
 
 if [[ ${1:-} == --file ]]; then
+  # MERGE_HEAD is there exactly while a merge is being committed, whatever its message says.
+  if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
+    exit 0
+  fi
   check "" "$(grep -v '^#' "$2" | grep -m1 -v '^[[:space:]]*$' || true)"
 else
   while IFS=$'\t' read -r sha subject; do
