@@ -105,6 +105,7 @@ type SourceActivity struct {
 	Files          int32              `json:"files"`
 	FetchedAt      pgtype.Timestamptz `json:"fetched_at"`
 	SportType      *int32             `json:"sport_type"`
+	DetailTriedAt  pgtype.Timestamptz `json:"detail_tried_at"`
 }
 
 type SourceClient struct {

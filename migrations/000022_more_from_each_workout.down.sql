@@ -1,6 +1,9 @@
 DROP TABLE IF EXISTS coros_metadata;
 
 ALTER TABLE source_activities
+DROP COLUMN detail_tried_at;
+
+ALTER TABLE source_activities
 DROP COLUMN sport_type;
 
 DROP TABLE IF EXISTS workout_laps;

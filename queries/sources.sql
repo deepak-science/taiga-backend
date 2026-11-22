@@ -220,7 +220,8 @@ WHERE
   AND state IN ('queued', 'dead');
 
 -- name: ListSourceActivitiesWithoutMetadata :many
--- The source's activities whose workout has none of the source's own figures yet, newest first. An activity recorded in parts is matched by its first file.
+-- The source's activities whose workout has none of the source's own figures yet: those never tried first, newest first, then the ones whose reply couldn't be read, longest since first, so a run of unreadable ones can't keep the rest from being asked for.
+-- An activity recorded in parts is matched by its first file.
 SELECT
   source_activities.external_id,
   source_activities.sport_type,
@@ -242,6 +243,8 @@ WHERE
       coros_metadata.workout_id = workouts.id
   )
 ORDER BY
+  (source_activities.detail_tried_at IS NOT NULL),
+  source_activities.detail_tried_at,
   source_activities.start_time DESC,
   workouts.id DESC
 LIMIT
@@ -332,6 +335,32 @@ SELECT
   *
 FROM
   coros_metadata
+WHERE
+  workout_id = $1
+  AND user_id = $2;
+
+-- name: MarkSourceDetailTried :exec
+UPDATE source_activities
+SET
+  detail_tried_at = $4
+WHERE
+  user_id = $1
+  AND kind = $2
+  AND external_id = $3;
+
+-- name: SetSourceActivitySportType :exec
+-- For an activity dealt with before the sport code was kept.
+UPDATE source_activities
+SET
+  sport_type = $4
+WHERE
+  user_id = $1
+  AND kind = $2
+  AND external_id = $3
+  AND sport_type IS NULL;
+
+-- name: DeleteCOROSMetadata :exec
+DELETE FROM coros_metadata
 WHERE
   workout_id = $1
   AND user_id = $2;

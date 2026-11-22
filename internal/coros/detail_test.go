@@ -93,3 +93,13 @@ func TestWhatIsNotKnownIsPassedOver(t *testing.T) {
 	assert.Nil(t, d.AvgPowerWatts, "the later line says COROS has none")
 	assert.Contains(t, d.Reply, "Running Economy", "kept, for the day it is read")
 }
+
+func TestAnEmptyValueDoesNotTakeTheNextLine(t *testing.T) {
+	d, err := parseDetail("Outdoor Run Activity Details\n====\n\nAverage Power:\nTraining Focus:\nPerformance: Best\nTraining Load:   \nAerobic TE: 3.6\n")
+	require.NoError(t, err)
+	assert.Empty(t, d.TrainingFocus)
+	assert.Equal(t, "Best", d.Performance)
+	assert.Nil(t, d.AvgPowerWatts)
+	assert.Nil(t, d.TrainingLoad)
+	assert.Equal(t, 3.6, *d.AerobicTE)
+}

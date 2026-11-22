@@ -100,6 +100,12 @@ func (m *storeModel) DeleteWorkout(ctx context.Context, id int32, userToken *tok
 		if err := q.DeleteWorkoutWeather(ctx, &db.DeleteWorkoutWeatherParams{WorkoutID: id, UserID: userToken.ID}); err != nil {
 			return err
 		}
+		if err := q.DeleteWorkoutLaps(ctx, &db.DeleteWorkoutLapsParams{WorkoutID: id, UserID: userToken.ID}); err != nil {
+			return err
+		}
+		if err := q.DeleteCOROSMetadata(ctx, &db.DeleteCOROSMetadataParams{WorkoutID: id, UserID: userToken.ID}); err != nil {
+			return err
+		}
 		if err := q.DeleteWorkoutTrack(ctx, &db.DeleteWorkoutTrackParams{WorkoutID: id, UserID: userToken.ID}); err != nil {
 			return err
 		}

@@ -113,6 +113,10 @@ func (m *storeModel) fetchSourceDetails(ctx context.Context, conn *SourceConnect
 			if problem == "" {
 				problem = err.Error()
 			}
+			// So the ones not yet tried come before it next time.
+			if err := q.MarkSourceDetailTried(ctx, &db.MarkSourceDetailTriedParams{UserID: userToken.ID, Kind: conn.Kind, ExternalID: row.ExternalID, DetailTriedAt: timestamptz(now)}); err != nil {
+				return stored, "", err
+			}
 			continue
 		// Anything else is COROS being unreachable or slow, and the rest would go the same way.
 		case err != nil:

@@ -59,6 +59,10 @@ CREATE TABLE workout_laps (
 ALTER TABLE source_activities
 ADD COLUMN sport_type INTEGER;
 
+-- When COROS's own figures for it were last asked for and couldn't be read, so the ones not yet tried go first.
+ALTER TABLE source_activities
+ADD COLUMN detail_tried_at DATETIME;
+
 -- COROS's own figures for a workout (its activity detail tool), kept for tracking beside what taiga works out; asked of COROS and not derived from the file, so reprocessing leaves it alone.
 -- Every figure is null where COROS didn't give it, which depends on the sport.
 CREATE TABLE coros_metadata (

@@ -654,6 +654,7 @@ func TestARefreshIsKeptWhenCOROSThenFails(t *testing.T) {
 type stubSource struct {
 	activities []coros.Activity
 	files      func(coros.Activity) ([][]byte, error)
+	detail     func(context.Context, coros.Activity) (*coros.Detail, error)
 	asked      int
 }
 
@@ -666,7 +667,10 @@ func (s *stubSource) Files(_ context.Context, a coros.Activity) ([][]byte, error
 	return s.files(a)
 }
 
-func (s *stubSource) Detail(context.Context, coros.Activity) (*coros.Detail, error) {
+func (s *stubSource) Detail(ctx context.Context, a coros.Activity) (*coros.Detail, error) {
+	if s.detail != nil {
+		return s.detail(ctx, a)
+	}
 	return &coros.Detail{Reply: "Activity Details"}, nil
 }
 

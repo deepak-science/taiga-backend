@@ -1,6 +1,7 @@
 package routes_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"gitea.deepak.science/deepak/taiga/internal/coros"
 	"gitea.deepak.science/deepak/taiga/internal/models"
 )
 
@@ -141,4 +143,55 @@ func TestFiguresThatCannotBeReadDoNotStopTheImport(t *testing.T) {
 		require.Equal(t, http.StatusOK, status)
 		assert.Equal(t, 120.0, figures["training_load"])
 	}
+}
+
+func TestFiguresThatTimeOutDoNotFailTheSync(t *testing.T) {
+	a := newSourcesAPI(t)
+	alice := a.user("alice@example.com")
+	a.connect(alice)
+	a.sync()
+	conn, user := a.connection(alice)
+
+	// The sync's deadline passes while COROS is being asked for the figures.
+	ctx, cancel := context.WithCancel(t.Context())
+	activity := a.run(1, time.Hour)
+	src := &stubSource{
+		activities: []coros.Activity{{ID: activity.ID, SportType: 100, Start: activity.Start}},
+		files:      func(coros.Activity) ([][]byte, error) { return [][]byte{activity.File}, nil },
+		detail: func(ctx context.Context, _ coros.Activity) (*coros.Detail, error) {
+			cancel()
+			return nil, ctx.Err()
+		},
+	}
+	res, err := a.m.SyncSource(ctx, conn, src, a.repo, a.now, user)
+	require.NoError(t, err, "the activity came in, and a failed job would stop the hourly syncs")
+	assert.Equal(t, 1, res.Imported)
+	assert.Contains(t, a.sources(alice).Connections[0].LastError, "couldn't be fetched")
+}
+
+func TestUnreadableFiguresDoNotKeepTheRestWaiting(t *testing.T) {
+	a := newSourcesAPI(t)
+	alice := a.user("alice@example.com")
+	// The twenty newest answer in words taiga can't read, which is as many as one sync asks for; an older one answers as usual.
+	for n := 1; n <= 20; n++ {
+		run := a.run(n, time.Duration(n)*time.Hour)
+		run.Detail = "Outdoor Run Activity Details\n====\n\nTraining Load: plenty"
+		a.fake.Add(run)
+	}
+	a.fake.Add(a.run(21, 30*time.Hour))
+	a.connect(alice)
+	a.sync()
+	require.Len(t, a.workouts(alice), 21)
+	assert.Equal(t, 20, a.fake.Details())
+
+	a.now = a.now.Add(time.Hour)
+	a.syncAgain(alice)
+	assert.Equal(t, 40, a.fake.Details(), "the one not yet tried, then the longest untried again")
+	had := 0
+	for _, w := range a.workouts(alice) {
+		if status, _ := alice.corosFigures(w.ID); status == http.StatusOK {
+			had++
+		}
+	}
+	assert.Equal(t, 1, had)
 }

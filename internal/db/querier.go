@@ -49,6 +49,7 @@ type Querier interface {
 	CreateWorkout(ctx context.Context, arg *CreateWorkoutParams) (*Workout, error)
 	CreateWorkoutSegment(ctx context.Context, arg *CreateWorkoutSegmentParams) (*WorkoutSegment, error)
 	DeleteActivityFile(ctx context.Context, arg *DeleteActivityFileParams) error
+	DeleteCOROSMetadata(ctx context.Context, arg *DeleteCOROSMetadataParams) error
 	DeleteCliSession(ctx context.Context, arg *DeleteCliSessionParams) (int64, error)
 	DeleteCliSessionByHash(ctx context.Context, tokenHash string) error
 	DeleteDeviceAuthorization(ctx context.Context, id int32) (int64, error)
@@ -154,7 +155,8 @@ type Querier interface {
 	ListSegmentEffortsBySport(ctx context.Context, arg *ListSegmentEffortsBySportParams) ([]*ListSegmentEffortsBySportRow, error)
 	// Distance segments shortest first, then duration segments shortest first.
 	ListSegmentsByWorkout(ctx context.Context, arg *ListSegmentsByWorkoutParams) ([]*WorkoutSegment, error)
-	// The source's activities whose workout has none of the source's own figures yet, newest first. An activity recorded in parts is matched by its first file.
+	// The source's activities whose workout has none of the source's own figures yet: those never tried first, newest first, then the ones whose reply couldn't be read, longest since first, so a run of unreadable ones can't keep the rest from being asked for.
+	// An activity recorded in parts is matched by its first file.
 	ListSourceActivitiesWithoutMetadata(ctx context.Context, arg *ListSourceActivitiesWithoutMetadataParams) ([]*ListSourceActivitiesWithoutMetadataRow, error)
 	ListSourceConnections(ctx context.Context, userID int32) ([]*SourceConnection, error)
 	ListStretchEffortsByStretch(ctx context.Context, arg *ListStretchEffortsByStretchParams) ([]*ListStretchEffortsByStretchRow, error)
@@ -176,6 +178,7 @@ type Querier interface {
 	ListWorkoutsByUserInWindow(ctx context.Context, arg *ListWorkoutsByUserInWindowParams) ([]*Workout, error)
 	// Takes the user row's write lock for the rest of the transaction, so checks across their rows (e.g. their last way to sign in) can't race; works the same on both databases.
 	LockUser(ctx context.Context, id int32) error
+	MarkSourceDetailTried(ctx context.Context, arg *MarkSourceDetailTriedParams) error
 	MoveWorkoutRoutes(ctx context.Context, arg *MoveWorkoutRoutesParams) error
 	RecordSourceFileRequest(ctx context.Context, arg *RecordSourceFileRequestParams) error
 	RenameRoute(ctx context.Context, arg *RenameRouteParams) (*Route, error)
@@ -190,6 +193,8 @@ type Querier interface {
 	// This query is useful for auth only and for nothing else, which should discourage misuse
 	SelectEmailPasswordForAuth(ctx context.Context, email string) (*SelectEmailPasswordForAuthRow, error)
 	SetRouteRepresentative(ctx context.Context, arg *SetRouteRepresentativeParams) error
+	// For an activity dealt with before the sport code was kept.
+	SetSourceActivitySportType(ctx context.Context, arg *SetSourceActivitySportTypeParams) error
 	SetSourceCredentials(ctx context.Context, arg *SetSourceCredentialsParams) error
 	SetWorkoutDuplicateOf(ctx context.Context, arg *SetWorkoutDuplicateOfParams) error
 	// What the file states for the whole workout; part of what reprocessing rebuilds.

@@ -48,6 +48,12 @@ func RepoRoot() string {
 // A file rather than :memory: because each pooled connection would otherwise get its own empty database.
 func NewModel(t *testing.T) models.Model {
 	t.Helper()
+	return models.NewFromStore(NewStore(t))
+}
+
+// NewStore is the database under NewModel, for a test that has to look at rows no model call shows; models.NewFromStore puts a model on it.
+func NewStore(t *testing.T) store.Store {
+	t.Helper()
 	cfg := &config.Config{
 		Db: config.DBConfig{
 			Driver:        "sqlite",
@@ -60,9 +66,8 @@ func NewModel(t *testing.T) models.Model {
 	if err != nil {
 		t.Fatalf("opening test store: %v", err)
 	}
-	m := models.NewFromStore(s)
-	t.Cleanup(func() { _ = m.Close() })
-	return m
+	t.Cleanup(func() { _ = s.Close() })
+	return s
 }
 
 func NewFileRepo(t *testing.T) filerepo.FileRepo {

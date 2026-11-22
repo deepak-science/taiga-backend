@@ -283,7 +283,14 @@ windows:
 		}
 		for _, a := range activities {
 			res.Listed++
-			if _, err := q.GetSourceActivity(ctx, &db.GetSourceActivityParams{UserID: userToken.ID, Kind: conn.Kind, ExternalID: a.ID}); err == nil {
+			sportType := int32(a.SportType)
+			if known, err := q.GetSourceActivity(ctx, &db.GetSourceActivityParams{UserID: userToken.ID, Kind: conn.Kind, ExternalID: a.ID}); err == nil {
+				// One dealt with before the sport code was kept: without it COROS can't be asked for its figures.
+				if known.SportType == nil {
+					if err := q.SetSourceActivitySportType(ctx, &db.SetSourceActivitySportTypeParams{UserID: userToken.ID, Kind: conn.Kind, ExternalID: a.ID, SportType: &sportType}); err != nil {
+						return res, err
+					}
+				}
 				continue
 			} else if !IsNotFound(err) {
 				return res, err
@@ -347,7 +354,6 @@ windows:
 			}
 			startTime := timestamptz(a.Start)
 			startTime.Valid = !a.Start.IsZero()
-			sportType := int32(a.SportType)
 			if err := q.CreateSourceActivity(ctx, &db.CreateSourceActivityParams{
 				UserID:         userToken.ID,
 				Kind:           conn.Kind,
@@ -379,7 +385,8 @@ windows:
 	}
 	if res.DetailProblem != "" {
 		// Said on the connection without failing the job: a job that dies stops the hourly syncs, and the activities themselves are coming in.
-		if err := q.FailSourceSync(ctx, &db.FailSourceSyncParams{ID: conn.ID, UserID: userToken.ID, LastError: res.DetailProblem}); err != nil {
+		// Past the deadline, which may be what kept the figures from coming.
+		if err := q.FailSourceSync(context.WithoutCancel(ctx), &db.FailSourceSyncParams{ID: conn.ID, UserID: userToken.ID, LastError: res.DetailProblem}); err != nil {
 			return res, err
 		}
 	}

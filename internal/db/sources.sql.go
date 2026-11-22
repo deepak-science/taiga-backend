@@ -138,6 +138,23 @@ func (q *Queries) CreateSourceClient(ctx context.Context, arg *CreateSourceClien
 	return &i, err
 }
 
+const deleteCOROSMetadata = `-- name: DeleteCOROSMetadata :exec
+DELETE FROM coros_metadata
+WHERE
+  workout_id = $1
+  AND user_id = $2
+`
+
+type DeleteCOROSMetadataParams struct {
+	WorkoutID int32 `json:"workout_id"`
+	UserID    int32 `json:"user_id"`
+}
+
+func (q *Queries) DeleteCOROSMetadata(ctx context.Context, arg *DeleteCOROSMetadataParams) error {
+	_, err := q.db.Exec(ctx, deleteCOROSMetadata, arg.WorkoutID, arg.UserID)
+	return err
+}
+
 const deleteSourceConnection = `-- name: DeleteSourceConnection :execrows
 DELETE FROM source_connections
 WHERE
@@ -347,7 +364,7 @@ func (q *Queries) GetCOROSMetadata(ctx context.Context, arg *GetCOROSMetadataPar
 
 const getSourceActivity = `-- name: GetSourceActivity :one
 SELECT
-  user_id, kind, external_id, activity_file_id, start_time, files, fetched_at, sport_type
+  user_id, kind, external_id, activity_file_id, start_time, files, fetched_at, sport_type, detail_tried_at
 FROM
   source_activities
 WHERE
@@ -374,6 +391,7 @@ func (q *Queries) GetSourceActivity(ctx context.Context, arg *GetSourceActivityP
 		&i.Files,
 		&i.FetchedAt,
 		&i.SportType,
+		&i.DetailTriedAt,
 	)
 	return &i, err
 }
@@ -520,6 +538,8 @@ WHERE
       coros_metadata.workout_id = workouts.id
   )
 ORDER BY
+  (source_activities.detail_tried_at IS NOT NULL),
+  source_activities.detail_tried_at,
   source_activities.start_time DESC,
   workouts.id DESC
 LIMIT
@@ -538,7 +558,8 @@ type ListSourceActivitiesWithoutMetadataRow struct {
 	WorkoutID  int32  `json:"workout_id"`
 }
 
-// The source's activities whose workout has none of the source's own figures yet, newest first. An activity recorded in parts is matched by its first file.
+// The source's activities whose workout has none of the source's own figures yet: those never tried first, newest first, then the ones whose reply couldn't be read, longest since first, so a run of unreadable ones can't keep the rest from being asked for.
+// An activity recorded in parts is matched by its first file.
 func (q *Queries) ListSourceActivitiesWithoutMetadata(ctx context.Context, arg *ListSourceActivitiesWithoutMetadataParams) ([]*ListSourceActivitiesWithoutMetadataRow, error) {
 	rows, err := q.db.Query(ctx, listSourceActivitiesWithoutMetadata, arg.UserID, arg.Kind, arg.AtMost)
 	if err != nil {
@@ -601,6 +622,33 @@ func (q *Queries) ListSourceConnections(ctx context.Context, userID int32) ([]*S
 	return items, nil
 }
 
+const markSourceDetailTried = `-- name: MarkSourceDetailTried :exec
+UPDATE source_activities
+SET
+  detail_tried_at = $4
+WHERE
+  user_id = $1
+  AND kind = $2
+  AND external_id = $3
+`
+
+type MarkSourceDetailTriedParams struct {
+	UserID        int32              `json:"user_id"`
+	Kind          string             `json:"kind"`
+	ExternalID    string             `json:"external_id"`
+	DetailTriedAt pgtype.Timestamptz `json:"detail_tried_at"`
+}
+
+func (q *Queries) MarkSourceDetailTried(ctx context.Context, arg *MarkSourceDetailTriedParams) error {
+	_, err := q.db.Exec(ctx, markSourceDetailTried,
+		arg.UserID,
+		arg.Kind,
+		arg.ExternalID,
+		arg.DetailTriedAt,
+	)
+	return err
+}
+
 const recordSourceFileRequest = `-- name: RecordSourceFileRequest :exec
 INSERT INTO
   source_file_requests (user_id, kind, external_id, files, requested_at)
@@ -657,6 +705,35 @@ func (q *Queries) ReplaceSourceClient(ctx context.Context, arg *ReplaceSourceCli
 		&i.CreatedAt,
 	)
 	return &i, err
+}
+
+const setSourceActivitySportType = `-- name: SetSourceActivitySportType :exec
+UPDATE source_activities
+SET
+  sport_type = $4
+WHERE
+  user_id = $1
+  AND kind = $2
+  AND external_id = $3
+  AND sport_type IS NULL
+`
+
+type SetSourceActivitySportTypeParams struct {
+	UserID     int32  `json:"user_id"`
+	Kind       string `json:"kind"`
+	ExternalID string `json:"external_id"`
+	SportType  *int32 `json:"sport_type"`
+}
+
+// For an activity dealt with before the sport code was kept.
+func (q *Queries) SetSourceActivitySportType(ctx context.Context, arg *SetSourceActivitySportTypeParams) error {
+	_, err := q.db.Exec(ctx, setSourceActivitySportType,
+		arg.UserID,
+		arg.Kind,
+		arg.ExternalID,
+		arg.SportType,
+	)
+	return err
 }
 
 const setSourceCredentials = `-- name: SetSourceCredentials :exec

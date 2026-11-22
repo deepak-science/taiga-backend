@@ -53,7 +53,8 @@ type Detail struct {
 // Which lines there are goes by the sport, so none is required, and a label not known here is passed over (the reply is kept whole).
 // A known label with a value that can't be read is ErrUnexpectedReply, and so is a reply with no known label at all.
 var (
-	detailLine   = regexp.MustCompile(`(?m)^\s*([A-Za-z][A-Za-z /]*?)\s*:\s*(.*?)\s*$`)
+	// Spaces and tabs only around the colon: \s would run an empty value on into the next line.
+	detailLine   = regexp.MustCompile(`(?m)^[ \t]*([A-Za-z][A-Za-z /]*?)[ \t]*:[ \t]*(.*?)[ \t]*$`)
 	clockPattern = regexp.MustCompile(`^(?:(\d+):)?(\d{1,2}):(\d{2})$`)
 	amount       = regexp.MustCompile(`^(-?\d+(?:\.\d+)?)\s*(\S*)$`)
 )
