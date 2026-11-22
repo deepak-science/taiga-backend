@@ -3,7 +3,7 @@ module gitea.deepak.science/deepak/taiga
 go 1.26.0
 
 require (
-	github.com/aws/aws-sdk-go-v2 v1.47.8
+	github.com/aws/aws-sdk-go-v2 v1.48.0
 	github.com/aws/aws-sdk-go-v2/config v1.33.17
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.9
 	github.com/coreos/go-oidc/v3 v3.21.0
