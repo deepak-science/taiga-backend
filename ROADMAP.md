@@ -280,7 +280,7 @@ Years of history (an Endomondo archive goes back to 2016) make an all-time list 
 - [x] **Best efforts per year or window.** The same `from`/`to` on `GET /segments/{name}/best`. The best page picks all time, the last 12 months, the last 90 days or a year, and under all time shows every distance's best in each year from one call, `GET /segments/yearly-bests`.
 - [x] **Route pages take the same window**, so a route's best can be this year's: `?from=&to=` on `GET /routes` and `GET /routes/{id}`, and a period picker on both pages.
 - [x] **Longest run** (feedback 2026-11-21): the longest by distance and the longest by time, per sport, counted workouts only; the two can be different runs. Every sport of `GET /workouts/totals` carries `longest_by_distance` and `longest_by_time` (each with its workout's id, name, start, distance and time), so any window the best page offers has them, and `GET /workouts/totals/year` gives the same per local year, as the yearly bests are; the weekly and monthly totals carry them too, which is each week's long run. Time is start to end (`time_seconds`), as the totals sum it, so a long pause makes a run longer.
-  - [ ] Frontend: show them with the workout list's totals and on the best page, per year under all time.
+  - [x] Frontend (taiga-frontend#32): Farthest and Longest columns in the workout list's totals, and a "Longest runs" card on the best page, with each year's under all time.
 
 ## M12 — Workout names
 
