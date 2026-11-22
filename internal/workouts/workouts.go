@@ -42,6 +42,8 @@ type RunSummary struct {
 	Timezone string `json:"timezone"`
 	// UTCOffsetSeconds is the local offset at the start: the zone's, or else the one the file states; nil when neither is known.
 	UTCOffsetSeconds *int32 `json:"utc_offset_seconds"`
+	// Figures are the file's own totals and averages, uncounted (Figures.Counted); empty for a format that states none.
+	Figures Figures `json:"figures"`
 }
 
 // RecordData is one FIT record; fields the device didn't record are NaN.
@@ -56,11 +58,15 @@ type RecordData struct {
 	Latitude          float64       `json:"-"`
 	Longitude         float64       `json:"-"`
 	DurationFromStart time.Duration `json:"duration_from_start"`
+	// Form is nil for a format that records none of it.
+	Form *Form `json:"-"`
 }
 
 type Run struct {
 	Summary RunSummary    `json:"summary"`
 	Records []*RecordData `json:"records"`
+	// Laps are as the file has them, uncounted (BuildLaps).
+	Laps []Lap `json:"laps"`
 }
 
 func (r *Run) String() string {

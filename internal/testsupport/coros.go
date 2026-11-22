@@ -18,7 +18,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// FakeCOROS is an in-process stand-in for COROS's MCP server and the OAuth server in front of it: metadata, client registration, an authorize endpoint that signs in at once, tokens that rotate on refresh, the two tools taiga calls answering in COROS's own wording, and the links its files download from.
+// FakeCOROS is an in-process stand-in for COROS's MCP server and the OAuth server in front of it: metadata, client registration, an authorize endpoint that signs in at once, tokens that rotate on refresh, the three tools taiga calls answering in COROS's own wording, and the links its files download from.
 type FakeCOROS struct {
 	Server *httptest.Server
 
@@ -53,6 +53,10 @@ type FakeCOROS struct {
 	FileRequests int
 	Downloads    int
 	Revocations  int
+	// DetailCalls counts the times an activity's own figures were asked for.
+	DetailCalls int
+	// DetailReply, when set, is what the detail tool says for every activity.
+	DetailReply string
 }
 
 // FakeActivity is one entry of the fake account's history.
@@ -68,7 +72,14 @@ type FakeActivity struct {
 	Parts int
 	// InProgress makes the file tool say the activity hasn't finished.
 	InProgress bool
+	// Detail is what the detail tool says of it; empty for FakeRunDetail.
+	Detail string
+	// NoDetail makes the detail tool say it has nothing for the activity.
+	NoDetail bool
 }
+
+// FakeRunDetail is the detail tool's reply for a run, in the wording COROS's server used in November 2026.
+const FakeRunDetail = "🏃 Outdoor Run Activity Details\n========================================\n\nWorkout Time: 51:40\nDistance: 7.63 km\nTotal Time: 52:05\nAverage Pace: 6:47 /km\nMoving Average Pace: 6:38 /km\nAdjusted Pace: 6:43 /km\nBest Kilometer: 6:20 /km\nAverage Heart Rate: 150 bpm\nAverage Cadence: 170 spm\nAverage Stride Length: 1.05 m\nAverage Power: 250 W\nElevation Gain / Loss: 54 m / 51 m\nCalories: 300 kcal\nTraining Load: 120\nAerobic TE: 3.6\nAnaerobic TE: 0.9\nTraining Focus: Threshold\nPerformance: Best"
 
 type fakeCode struct {
 	client    string
@@ -88,6 +99,7 @@ func NewFakeCOROS(t *testing.T) *FakeCOROS {
 	server := mcp.NewServer(&mcp.Implementation{Name: "fake-coros", Version: "1"}, nil)
 	mcp.AddTool(server, &mcp.Tool{Name: "querySportRecords"}, f.list)
 	mcp.AddTool(server, &mcp.Tool{Name: "queryActivityFitFileDownloadUrls"}, f.fileURLs)
+	mcp.AddTool(server, &mcp.Tool{Name: "getActivityDetail"}, f.detail)
 	tools := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true})
 
 	mux := http.NewServeMux()
@@ -373,6 +385,35 @@ func (f *FakeCOROS) fileURLs(_ context.Context, _ *mcp.CallToolRequest, args fak
 	return result, nil, nil
 }
 
+type fakeDetailArgs struct {
+	LabelID   string `json:"labelId"`
+	SportType int    `json:"sportType"`
+}
+
+// detail answers as a JSON string, the way COROS sends it.
+func (f *FakeCOROS) detail(_ context.Context, _ *mcp.CallToolRequest, args fakeDetailArgs) (*mcp.CallToolResult, any, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.DetailCalls++
+	for _, a := range f.activities {
+		if a.ID != args.LabelID || a.SportType != args.SportType || a.NoDetail {
+			continue
+		}
+		reply := FakeRunDetail
+		if a.Detail != "" {
+			reply = a.Detail
+		}
+		if f.DetailReply != "" {
+			reply = f.DetailReply
+		}
+		quoted, _ := json.Marshal(reply)
+		return text(string(quoted)), nil, nil
+	}
+	result := text("No activity found for labelId " + args.LabelID + ".")
+	result.IsError = true
+	return result, nil, nil
+}
+
 func (f *FakeCOROS) download(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -420,4 +461,11 @@ func (f *FakeCOROS) Finish(id string) {
 			f.activities[i].InProgress = false
 		}
 	}
+}
+
+// Details is how many times an activity's own figures were asked for, read under the lock.
+func (f *FakeCOROS) Details() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.DetailCalls
 }

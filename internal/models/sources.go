@@ -42,6 +42,8 @@ type ActivitySource interface {
 	List(ctx context.Context, from, to time.Time) ([]coros.Activity, error)
 	// Files returns the activity's files, or coros.ErrInProgress or coros.ErrDailyLimit when there are none to have yet.
 	Files(ctx context.Context, a coros.Activity) ([][]byte, error)
+	// Detail returns the source's own figures for the activity.
+	Detail(ctx context.Context, a coros.Activity) (*coros.Detail, error)
 }
 
 // SyncResult is what one sync did.
@@ -58,6 +60,10 @@ type SyncResult struct {
 	Waiting int
 	// LimitReached says the sync stopped at the source's daily limit on files.
 	LimitReached bool
+	// Detailed is how many workouts got the source's own figures.
+	Detailed int
+	// DetailProblem is why some didn't, which the connection shows as its error though the sync itself finished; empty when all did.
+	DetailProblem string
 }
 
 func (m *storeModel) SourceClient(ctx context.Context, kind, issuer, redirectURI string) (*SourceClient, error) {
@@ -277,7 +283,14 @@ windows:
 		}
 		for _, a := range activities {
 			res.Listed++
-			if _, err := q.GetSourceActivity(ctx, &db.GetSourceActivityParams{UserID: userToken.ID, Kind: conn.Kind, ExternalID: a.ID}); err == nil {
+			sportType := int32(a.SportType)
+			if known, err := q.GetSourceActivity(ctx, &db.GetSourceActivityParams{UserID: userToken.ID, Kind: conn.Kind, ExternalID: a.ID}); err == nil {
+				// One dealt with before the sport code was kept: without it COROS can't be asked for its figures.
+				if known.SportType == nil {
+					if err := q.SetSourceActivitySportType(ctx, &db.SetSourceActivitySportTypeParams{UserID: userToken.ID, Kind: conn.Kind, ExternalID: a.ID, SportType: &sportType}); err != nil {
+						return res, err
+					}
+				}
 				continue
 			} else if !IsNotFound(err) {
 				return res, err
@@ -349,6 +362,7 @@ windows:
 				StartTime:      startTime,
 				Files:          int32(len(files)),
 				FetchedAt:      timestamptz(now),
+				SportType:      &sportType,
 			}); err != nil {
 				return res, err
 			}
@@ -362,6 +376,19 @@ windows:
 	}
 	if err := q.FinishSourceSync(ctx, &db.FinishSourceSyncParams{ID: conn.ID, UserID: userToken.ID, SyncedThrough: timestamptz(through), LastSyncedAt: timestamptz(now)}); err != nil {
 		return res, err
+	}
+
+	// After the cursor is saved: COROS's figures are extra, and failing to get them shouldn't have the next sync list all this again.
+	res.Detailed, res.DetailProblem, err = m.fetchSourceDetails(ctx, conn, src, now, userToken)
+	if err != nil {
+		return res, err
+	}
+	if res.DetailProblem != "" {
+		// Said on the connection without failing the job: a job that dies stops the hourly syncs, and the activities themselves are coming in.
+		// Past the deadline, which may be what kept the figures from coming.
+		if err := q.FailSourceSync(context.WithoutCancel(ctx), &db.FailSourceSyncParams{ID: conn.ID, UserID: userToken.ID, LastError: res.DetailProblem}); err != nil {
+			return res, err
+		}
 	}
 	return res, nil
 }

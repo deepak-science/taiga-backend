@@ -1,4 +1,4 @@
-// Package coros reads a user's activities from COROS through its MCP server (docs/sources.md): OAuth to sign the user in, then two of the server's tools, one to list activities and one to hand over their FIT files.
+// Package coros reads a user's activities from COROS through its MCP server (docs/sources.md): OAuth to sign the user in, then three of the server's tools, one to list activities, one to hand over their FIT files and one for COROS's own figures on each.
 package coros
 
 import (
@@ -26,9 +26,10 @@ const (
 	// DefaultEndpoint sends each account on to its region's server.
 	DefaultEndpoint = "https://mcp.coros.com/mcp"
 
-	// The server's tools also write to the account (training plans, scheduled workouts); these two reads are the only ones this package may call.
+	// The server's tools also write to the account (training plans, scheduled workouts); these three reads are the only ones this package may call.
 	toolList     = "querySportRecords"
 	toolFileURLs = "queryActivityFitFileDownloadUrls"
+	toolDetail   = "getActivityDetail"
 
 	// More than a window should ever hold; a full page means some were left out.
 	listLimit = 200
@@ -46,6 +47,8 @@ var (
 	ErrDailyLimit = errors.New("COROS's daily limit on FIT files is used up")
 	// ErrInProgress means the activity hasn't finished, so it has no file yet.
 	ErrInProgress = errors.New("the activity is still in progress")
+	// ErrNoDetail means COROS answered that it has no figures to give for an activity, which says nothing about the next one.
+	ErrNoDetail = errors.New("COROS couldn't describe the activity")
 	// ErrUnexpectedReply means a tool answered in words this package can't read: its replies are prose, so this is what a change of wording looks like.
 	ErrUnexpectedReply = errors.New("COROS answered in a form taiga doesn't know how to read")
 	// ErrTooMany means a list came back full, so there may be more than it holds: ask for a shorter window.
@@ -370,7 +373,7 @@ func (s *Session) Token() (*oauth2.Token, error) {
 
 func (s *Session) Close() { _ = s.mcp.Close() }
 
-// call runs one of the two tools and returns what it said.
+// call runs one of the three tools and returns what it said.
 func (s *Session) call(ctx context.Context, tool string, args map[string]any) (string, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()

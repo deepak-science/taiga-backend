@@ -40,6 +40,13 @@ type Series struct {
 	Longitude      Values `json:"lon,omitempty"`
 	// Cadence is steps a minute for a run or walk, revolutions a minute otherwise.
 	Cadence Values `json:"cadence,omitempty"`
+	// What a running watch records of each stride; EffortPaceMPS is COROS's grade-adjusted pace, as a speed.
+	PowerWatts            Values `json:"power_w,omitempty"`
+	EffortPaceMPS         Values `json:"effort_pace_mps,omitempty"`
+	StepLengthMeters      Values `json:"step_length_m,omitempty"`
+	VerticalOscillationMM Values `json:"vertical_oscillation_mm,omitempty"`
+	GroundContactMS       Values `json:"ground_contact_ms,omitempty"`
+	VerticalRatioPct      Values `json:"vertical_ratio_pct,omitempty"`
 	// Walking is a run's walking breaks, warm-up and cool-down; nil when the records can't tell walking from running, or it isn't a run.
 	Walking *Walking `json:"walking,omitempty"`
 }
@@ -92,6 +99,21 @@ func BuildSeries(run *Run, maxPoints int) *Series {
 		Latitude:  column(func(r *RecordData) float64 { return r.Latitude }, 6),
 		Longitude: column(func(r *RecordData) float64 { return r.Longitude }, 6),
 		Cadence:   column(func(r *RecordData) float64 { return r.Cadence * stepsPerStride }, 0),
+
+		PowerWatts:            column(form(func(f *Form) float64 { return f.PowerWatts }), 0),
+		EffortPaceMPS:         column(form(func(f *Form) float64 { return f.EffortPaceMPS }), 3),
+		StepLengthMeters:      column(form(func(f *Form) float64 { return f.StepLengthMeters }), 2),
+		VerticalOscillationMM: column(form(func(f *Form) float64 { return f.VerticalOscillationMM }), 1),
+		GroundContactMS:       column(form(func(f *Form) float64 { return f.GroundContactMS }), 0),
+		VerticalRatioPct:      column(form(func(f *Form) float64 { return f.VerticalRatioPct }), 1),
+	}
+	// A watch that measures no power in a sport writes 0 throughout, which is no column; a stop in a run that does have it is a real 0.
+	// It goes by every record, since the ones kept may all be stops.
+	if !anyPositive(run.Records, func(f *Form) float64 { return f.PowerWatts }) {
+		s.PowerWatts = nil
+	}
+	if !anyPositive(run.Records, func(f *Form) float64 { return f.EffortPaceMPS }) {
+		s.EffortPaceMPS = nil
 	}
 	// Time and distance are the x axes, so keep them present even when empty.
 	if s.TimeSeconds == nil {
@@ -107,6 +129,25 @@ func BuildSeries(run *Run, maxPoints int) *Series {
 		s.Walking = DetectWalking(s)
 	}
 	return s
+}
+
+func anyPositive(records []*RecordData, get func(*Form) float64) bool {
+	for _, r := range records {
+		if r.Form != nil && get(r.Form) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// form reads a column out of the records' stride data, which only some formats have.
+func form(get func(*Form) float64) func(*RecordData) float64 {
+	return func(r *RecordData) float64 {
+		if r.Form == nil {
+			return math.NaN()
+		}
+		return get(r.Form)
+	}
 }
 
 func round(x float64, decimals int) float64 {

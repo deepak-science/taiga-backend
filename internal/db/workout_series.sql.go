@@ -9,6 +9,23 @@ import (
 	"context"
 )
 
+const deleteWorkoutLaps = `-- name: DeleteWorkoutLaps :exec
+DELETE FROM workout_laps
+WHERE
+  workout_id = $1
+  AND user_id = $2
+`
+
+type DeleteWorkoutLapsParams struct {
+	WorkoutID int32 `json:"workout_id"`
+	UserID    int32 `json:"user_id"`
+}
+
+func (q *Queries) DeleteWorkoutLaps(ctx context.Context, arg *DeleteWorkoutLapsParams) error {
+	_, err := q.db.Exec(ctx, deleteWorkoutLaps, arg.WorkoutID, arg.UserID)
+	return err
+}
+
 const deleteWorkoutSeries = `-- name: DeleteWorkoutSeries :exec
 DELETE FROM workout_series
 WHERE
@@ -24,6 +41,28 @@ type DeleteWorkoutSeriesParams struct {
 func (q *Queries) DeleteWorkoutSeries(ctx context.Context, arg *DeleteWorkoutSeriesParams) error {
 	_, err := q.db.Exec(ctx, deleteWorkoutSeries, arg.WorkoutID, arg.UserID)
 	return err
+}
+
+const getWorkoutLaps = `-- name: GetWorkoutLaps :one
+SELECT
+  laps
+FROM
+  workout_laps
+WHERE
+  workout_id = $1
+  AND user_id = $2
+`
+
+type GetWorkoutLapsParams struct {
+	WorkoutID int32 `json:"workout_id"`
+	UserID    int32 `json:"user_id"`
+}
+
+func (q *Queries) GetWorkoutLaps(ctx context.Context, arg *GetWorkoutLapsParams) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getWorkoutLaps, arg.WorkoutID, arg.UserID)
+	var laps []byte
+	err := row.Scan(&laps)
+	return laps, err
 }
 
 const getWorkoutSeries = `-- name: GetWorkoutSeries :one
@@ -46,6 +85,27 @@ func (q *Queries) GetWorkoutSeries(ctx context.Context, arg *GetWorkoutSeriesPar
 	var series []byte
 	err := row.Scan(&series)
 	return series, err
+}
+
+const upsertWorkoutLaps = `-- name: UpsertWorkoutLaps :exec
+INSERT INTO
+  workout_laps (workout_id, user_id, laps)
+VALUES
+  ($1, $2, $3)
+ON CONFLICT (workout_id) DO UPDATE
+SET
+  laps = excluded.laps
+`
+
+type UpsertWorkoutLapsParams struct {
+	WorkoutID int32  `json:"workout_id"`
+	UserID    int32  `json:"user_id"`
+	Laps      []byte `json:"laps"`
+}
+
+func (q *Queries) UpsertWorkoutLaps(ctx context.Context, arg *UpsertWorkoutLapsParams) error {
+	_, err := q.db.Exec(ctx, upsertWorkoutLaps, arg.WorkoutID, arg.UserID, arg.Laps)
+	return err
 }
 
 const upsertWorkoutSeries = `-- name: UpsertWorkoutSeries :exec

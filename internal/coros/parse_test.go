@@ -13,7 +13,7 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// The testdata files are what COROS's server sent on 2026-11-21, byte for byte but for the ids, places and coordinates, which are made up.
+// The testdata files are what COROS's server sent on 2026-11-21, byte for byte but for the ids, places and coordinates, which are made up, as are some of the figures in the activity details.
 
 func TestParseTheListAsCOROSSendsIt(t *testing.T) {
 	raw, err := os.ReadFile("testdata/sport-records.txt")

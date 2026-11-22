@@ -67,3 +67,24 @@ func TestBuildSeriesOmitsUnrecordedColumns(t *testing.T) {
 		t.Errorf("distance column: %s", got)
 	}
 }
+
+func TestPowerMeasuredBetweenTheKeptRecordsKeepsItsColumn(t *testing.T) {
+	// Thinned to two points, only the stops at either end are kept.
+	run := recordsRun(3, false)
+	for i, watts := range []float64{0, 250, 0} {
+		run.Records[i].Form = &Form{PowerWatts: watts, EffortPaceMPS: math.NaN(), StepLengthMeters: math.NaN(), VerticalOscillationMM: math.NaN(), GroundContactMS: math.NaN(), VerticalRatioPct: math.NaN()}
+	}
+	s := BuildSeries(run, 2)
+	if len(s.PowerWatts) != 2 || s.PowerWatts[0] != 0 || s.PowerWatts[1] != 0 {
+		t.Errorf("power is %v, want the two stops", s.PowerWatts)
+	}
+	if s.EffortPaceMPS != nil {
+		t.Errorf("effort pace is %v, want no column", s.EffortPaceMPS)
+	}
+
+	// A watch that wrote 0 throughout measured none.
+	run.Records[1].Form.PowerWatts = 0
+	if s := BuildSeries(run, 2); s.PowerWatts != nil {
+		t.Errorf("power is %v, want no column", s.PowerWatts)
+	}
+}

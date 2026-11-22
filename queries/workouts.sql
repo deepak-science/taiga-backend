@@ -208,3 +208,28 @@ SET
 WHERE
   id = $1
   AND user_id = $2;
+
+-- name: SetWorkoutFigures :one
+-- What the file states for the whole workout; part of what reprocessing rebuilds.
+UPDATE workouts
+SET
+  timer_seconds = $3,
+  avg_heart_rate = $4,
+  max_heart_rate = $5,
+  min_heart_rate = $6,
+  ascent_meters = $7,
+  descent_meters = $8,
+  calories = $9,
+  total_steps = $10,
+  avg_cadence = $11,
+  avg_power_watts = $12,
+  avg_effort_pace_mps = $13,
+  avg_step_length_m = $14,
+  avg_vertical_oscillation_mm = $15,
+  avg_ground_contact_ms = $16,
+  avg_vertical_ratio_pct = $17
+WHERE
+  id = $1
+  AND user_id = $2
+RETURNING
+  *;
