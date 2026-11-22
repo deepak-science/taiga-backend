@@ -364,3 +364,55 @@ DELETE FROM coros_metadata
 WHERE
   workout_id = $1
   AND user_id = $2;
+
+-- name: ListWorkoutsToMatchToSource :many
+-- The user's workouts from files the source's devices recorded that no activity of the source is tied to and that haven't been looked for, newest first.
+SELECT
+  workouts.id,
+  workouts.activity_file_id,
+  workouts.start_time
+FROM
+  workouts
+WHERE
+  workouts.user_id = sqlc.arg(user_id)
+  AND workouts.activity_file_id IS NOT NULL
+  AND workouts.start_time IS NOT NULL
+  AND workouts.start_time >= sqlc.arg(since)
+  AND workouts.source LIKE sqlc.arg(source_like)
+  AND NOT EXISTS (
+    SELECT
+      1
+    FROM
+      source_activities
+    WHERE
+      source_activities.user_id = workouts.user_id
+      AND source_activities.kind = sqlc.arg(kind)
+      AND source_activities.activity_file_id = workouts.activity_file_id
+  )
+  AND NOT EXISTS (
+    SELECT
+      1
+    FROM
+      source_match_attempts
+    WHERE
+      source_match_attempts.workout_id = workouts.id
+      AND source_match_attempts.kind = sqlc.arg(kind)
+  )
+ORDER BY
+  workouts.start_time DESC,
+  workouts.id DESC
+LIMIT
+  sqlc.arg(at_most);
+
+-- name: MarkSourceMatchTried :exec
+INSERT INTO
+  source_match_attempts (workout_id, kind, user_id, tried_at)
+VALUES
+  ($1, $2, $3, $4)
+ON CONFLICT DO NOTHING;
+
+-- name: DeleteSourceMatchAttempts :exec
+DELETE FROM source_match_attempts
+WHERE
+  workout_id = $1
+  AND user_id = $2;

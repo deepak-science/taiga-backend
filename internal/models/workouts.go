@@ -106,6 +106,9 @@ func (m *storeModel) DeleteWorkout(ctx context.Context, id int32, userToken *tok
 		if err := q.DeleteCOROSMetadata(ctx, &db.DeleteCOROSMetadataParams{WorkoutID: id, UserID: userToken.ID}); err != nil {
 			return err
 		}
+		if err := q.DeleteSourceMatchAttempts(ctx, &db.DeleteSourceMatchAttemptsParams{WorkoutID: id, UserID: userToken.ID}); err != nil {
+			return err
+		}
 		if err := q.DeleteWorkoutTrack(ctx, &db.DeleteWorkoutTrackParams{WorkoutID: id, UserID: userToken.ID}); err != nil {
 			return err
 		}

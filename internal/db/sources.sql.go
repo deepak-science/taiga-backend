@@ -194,6 +194,23 @@ func (q *Queries) DeleteSourceFileRequestsBefore(ctx context.Context, arg *Delet
 	return err
 }
 
+const deleteSourceMatchAttempts = `-- name: DeleteSourceMatchAttempts :exec
+DELETE FROM source_match_attempts
+WHERE
+  workout_id = $1
+  AND user_id = $2
+`
+
+type DeleteSourceMatchAttemptsParams struct {
+	WorkoutID int32 `json:"workout_id"`
+	UserID    int32 `json:"user_id"`
+}
+
+func (q *Queries) DeleteSourceMatchAttempts(ctx context.Context, arg *DeleteSourceMatchAttemptsParams) error {
+	_, err := q.db.Exec(ctx, deleteSourceMatchAttempts, arg.WorkoutID, arg.UserID)
+	return err
+}
+
 const deleteSyncSourceJobs = `-- name: DeleteSyncSourceJobs :exec
 DELETE FROM jobs
 WHERE
@@ -622,6 +639,86 @@ func (q *Queries) ListSourceConnections(ctx context.Context, userID int32) ([]*S
 	return items, nil
 }
 
+const listWorkoutsToMatchToSource = `-- name: ListWorkoutsToMatchToSource :many
+SELECT
+  workouts.id,
+  workouts.activity_file_id,
+  workouts.start_time
+FROM
+  workouts
+WHERE
+  workouts.user_id = $1
+  AND workouts.activity_file_id IS NOT NULL
+  AND workouts.start_time IS NOT NULL
+  AND workouts.start_time >= $2
+  AND workouts.source LIKE $3
+  AND NOT EXISTS (
+    SELECT
+      1
+    FROM
+      source_activities
+    WHERE
+      source_activities.user_id = workouts.user_id
+      AND source_activities.kind = $4
+      AND source_activities.activity_file_id = workouts.activity_file_id
+  )
+  AND NOT EXISTS (
+    SELECT
+      1
+    FROM
+      source_match_attempts
+    WHERE
+      source_match_attempts.workout_id = workouts.id
+      AND source_match_attempts.kind = $4
+  )
+ORDER BY
+  workouts.start_time DESC,
+  workouts.id DESC
+LIMIT
+  $5
+`
+
+type ListWorkoutsToMatchToSourceParams struct {
+	UserID     int32              `json:"user_id"`
+	Since      pgtype.Timestamptz `json:"since"`
+	SourceLike string             `json:"source_like"`
+	Kind       string             `json:"kind"`
+	AtMost     int32              `json:"at_most"`
+}
+
+type ListWorkoutsToMatchToSourceRow struct {
+	ID             int32              `json:"id"`
+	ActivityFileID *int32             `json:"activity_file_id"`
+	StartTime      pgtype.Timestamptz `json:"start_time"`
+}
+
+// The user's workouts from files the source's devices recorded that no activity of the source is tied to and that haven't been looked for, newest first.
+func (q *Queries) ListWorkoutsToMatchToSource(ctx context.Context, arg *ListWorkoutsToMatchToSourceParams) ([]*ListWorkoutsToMatchToSourceRow, error) {
+	rows, err := q.db.Query(ctx, listWorkoutsToMatchToSource,
+		arg.UserID,
+		arg.Since,
+		arg.SourceLike,
+		arg.Kind,
+		arg.AtMost,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*ListWorkoutsToMatchToSourceRow{}
+	for rows.Next() {
+		var i ListWorkoutsToMatchToSourceRow
+		if err := rows.Scan(&i.ID, &i.ActivityFileID, &i.StartTime); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markSourceDetailTried = `-- name: MarkSourceDetailTried :exec
 UPDATE source_activities
 SET
@@ -645,6 +742,31 @@ func (q *Queries) MarkSourceDetailTried(ctx context.Context, arg *MarkSourceDeta
 		arg.Kind,
 		arg.ExternalID,
 		arg.DetailTriedAt,
+	)
+	return err
+}
+
+const markSourceMatchTried = `-- name: MarkSourceMatchTried :exec
+INSERT INTO
+  source_match_attempts (workout_id, kind, user_id, tried_at)
+VALUES
+  ($1, $2, $3, $4)
+ON CONFLICT DO NOTHING
+`
+
+type MarkSourceMatchTriedParams struct {
+	WorkoutID int32              `json:"workout_id"`
+	Kind      string             `json:"kind"`
+	UserID    int32              `json:"user_id"`
+	TriedAt   pgtype.Timestamptz `json:"tried_at"`
+}
+
+func (q *Queries) MarkSourceMatchTried(ctx context.Context, arg *MarkSourceMatchTriedParams) error {
+	_, err := q.db.Exec(ctx, markSourceMatchTried,
+		arg.WorkoutID,
+		arg.Kind,
+		arg.UserID,
+		arg.TriedAt,
 	)
 	return err
 }

@@ -139,6 +139,13 @@ type SourceFileRequest struct {
 	RequestedAt pgtype.Timestamptz `json:"requested_at"`
 }
 
+type SourceMatchAttempt struct {
+	WorkoutID int32              `json:"workout_id"`
+	Kind      string             `json:"kind"`
+	UserID    int32              `json:"user_id"`
+	TriedAt   pgtype.Timestamptz `json:"tried_at"`
+}
+
 type Stretch struct {
 	ID              int32              `json:"id"`
 	UserID          int32              `json:"user_id"`
