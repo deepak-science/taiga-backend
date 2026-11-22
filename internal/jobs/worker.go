@@ -10,6 +10,7 @@ import (
 
 	"gitea.deepak.science/deepak/taiga/internal/filerepo"
 	"gitea.deepak.science/deepak/taiga/internal/models"
+	"gitea.deepak.science/deepak/taiga/internal/sources"
 	"gitea.deepak.science/deepak/taiga/internal/tokens"
 	"gitea.deepak.science/deepak/taiga/internal/weather"
 	"gitea.deepak.science/deepak/taiga/internal/workouts"
@@ -29,6 +30,8 @@ const (
 type Worker struct {
 	m        models.Model
 	fileRepo filerepo.FileRepo
+	// Sources runs sync_source jobs; nil turns importing from sources off.
+	Sources *sources.Manager
 	// Weather is where fetch_weather jobs ask; nil turns weather off.
 	Weather weather.Provider
 	// Now is the clock, swappable in tests.
@@ -57,6 +60,7 @@ func (w *Worker) Run(ctx context.Context) {
 				log.Printf("jobs: could not prune CLI sign-ins and sessions: %v", err)
 			}
 			w.SweepWeather(ctx)
+			w.SweepSources(ctx)
 			lastPrune = w.Now()
 		}
 		// Drain what's due before sleeping.
@@ -152,6 +156,12 @@ func (w *Worker) run(ctx context.Context, job *models.Job) error {
 			return nil
 		}
 		return w.m.FetchWeather(ctx, *job.WorkoutID, w.Weather, w.Now(), user)
+	case models.JobSyncSource:
+		if w.Sources == nil {
+			return nil
+		}
+		_, err := w.Sources.Sync(ctx, w.fileRepo, user)
+		return err
 	case models.JobDetectRoutes:
 		if err := w.m.DetectDuplicates(ctx, w.Now(), user); err != nil {
 			return err
@@ -170,4 +180,16 @@ func permanent(err error) bool {
 		errors.Is(err, workouts.ErrUnsupportedActivity) ||
 		errors.Is(err, models.ErrNoFileContent) ||
 		errors.Is(err, models.ErrNoActivityFile)
+}
+
+// SweepSources queues a sync for every connected source; Run does it hourly.
+func (w *Worker) SweepSources(ctx context.Context) {
+	if w.Sources == nil {
+		return
+	}
+	if n, err := w.m.EnqueueSourceSyncsDue(ctx, w.Now()); err != nil {
+		log.Printf("jobs: could not queue source syncs: %v", err)
+	} else if n > 0 {
+		log.Printf("jobs: queued %d source syncs", n)
+	}
 }

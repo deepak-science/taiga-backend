@@ -61,6 +61,21 @@ type Model interface {
 	CLISessions(ctx context.Context, userToken *tokens.UserToken) ([]*CLISession, error)
 	RevokeCLISession(ctx context.Context, id int32, userToken *tokens.UserToken) error
 	PruneCLIAuth(ctx context.Context, now time.Time) error
+	// Sources: accounts elsewhere that new activities are read from (docs/sources.md).
+	SourceClient(ctx context.Context, kind, issuer, redirectURI string) (*SourceClient, error)
+	SourceClientByID(ctx context.Context, id int32) (*SourceClient, error)
+	SaveSourceClient(ctx context.Context, kind, issuer, redirectURI, registration string) (*SourceClient, error)
+	ReplaceSourceClient(ctx context.Context, id int32, was, registration string) (*SourceClient, error)
+	ConnectSource(ctx context.Context, kind string, clientID int32, credentials string, now time.Time, userToken *tokens.UserToken) (*SourceConnection, error)
+	SourceConnections(ctx context.Context, userToken *tokens.UserToken) ([]SourceConnectionInfo, error)
+	SourceConnection(ctx context.Context, id int32, userToken *tokens.UserToken) (*SourceConnection, error)
+	SourceConnectionByKind(ctx context.Context, kind string, userToken *tokens.UserToken) (*SourceConnection, error)
+	DisconnectSource(ctx context.Context, id int32, userToken *tokens.UserToken) error
+	SetSourceCredentials(ctx context.Context, id int32, credentials string, userToken *tokens.UserToken) error
+	FailSourceSync(ctx context.Context, id int32, reason string, needsReconnect bool, userToken *tokens.UserToken) error
+	EnqueueSyncSource(ctx context.Context, now time.Time, userToken *tokens.UserToken) error
+	EnqueueSourceSyncsDue(ctx context.Context, now time.Time) (int64, error)
+	SyncSource(ctx context.Context, conn *SourceConnection, src ActivitySource, fileRepo filerepo.FileRepo, now time.Time, userToken *tokens.UserToken) (*SyncResult, error)
 	ActivityFile(ctx context.Context, id int32, userToken *tokens.UserToken) (*ActivityFile, error)
 	ActivityFiles(ctx context.Context, userToken *tokens.UserToken) ([]*ActivityFile, error)
 	ActivityFilesWithoutWorkout(ctx context.Context, userToken *tokens.UserToken) ([]*ActivityFile, error)

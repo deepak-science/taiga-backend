@@ -48,7 +48,20 @@ func (m *storeModel) CreateWorkoutFromActivityFile(ctx context.Context, activity
 	}
 
 	var saved *Workout
+	created := true
 	err = m.store.InTx(ctx, func(q db.Querier) error {
+		// The check above ran outside the transaction, and a sync and an upload can be making the same file's workout at once: under the user's lock, look again.
+		if err := q.LockUser(ctx, userToken.ID); err != nil {
+			return err
+		}
+		already, err := q.GetWorkoutsByActivityFile(ctx, &db.GetWorkoutsByActivityFileParams{ActivityFileID: &activityFileID, UserID: userToken.ID})
+		if err != nil {
+			return err
+		}
+		if len(already) > 0 {
+			saved, created = already[0], false
+			return nil
+		}
 		s := run.Summary
 		saved, err = q.CreateWorkout(ctx, &db.CreateWorkoutParams{
 			DistanceMiles:    finiteOrNil(s.DistanceMiles),
@@ -78,7 +91,7 @@ func (m *storeModel) CreateWorkoutFromActivityFile(ctx context.Context, activity
 		log.Printf("Could not create workout from activity file %d: %v", activityFileID, err)
 		return nil, false, err
 	}
-	return saved, true, nil
+	return saved, created, nil
 }
 
 // Corrections are the user's fixes to what an activity file says; reprocessing applies them over the file, so they survive it.

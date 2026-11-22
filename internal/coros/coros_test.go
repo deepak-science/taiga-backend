@@ -1,0 +1,371 @@
+package coros_test
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/oauth2"
+
+	"gitea.deepak.science/deepak/taiga/internal/coros"
+	"gitea.deepak.science/deepak/taiga/internal/testsupport"
+)
+
+const redirectURL = "http://taiga.test/api/sources/coros/callback"
+
+var day = time.Date(2026, 11, 19, 21, 51, 32, 0, time.UTC)
+
+// signIn registers with the fake and takes a user through its sign-in, as the link flow does.
+func signIn(t *testing.T, fake *testsupport.FakeCOROS) (*coros.Service, *coros.Client, *oauth2.Token) {
+	t.Helper()
+	ctx := context.Background()
+	svc := coros.New(fake.Endpoint(), redirectURL)
+	client, err := svc.Discover(ctx)
+	require.NoError(t, err)
+	require.NoError(t, svc.Register(ctx, client))
+
+	verifier := oauth2.GenerateVerifier()
+	// The browser's part: follow the authorize URL as far as the redirect back.
+	browser := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := browser.Get(svc.AuthCodeURL(client, "state-1", verifier))
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	back, err := url.Parse(resp.Header.Get("Location"))
+	require.NoError(t, err)
+	require.Equal(t, "state-1", back.Query().Get("state"))
+
+	token, err := svc.Exchange(ctx, client, back.Query().Get("code"), verifier)
+	require.NoError(t, err)
+	return svc, client, token
+}
+
+func TestDiscoverAndRegister(t *testing.T) {
+	fake := testsupport.NewFakeCOROS(t)
+	_, client, token := signIn(t, fake)
+
+	assert.Equal(t, fake.Endpoint(), client.Resource)
+	assert.Equal(t, fake.Server.URL, client.Issuer)
+	assert.NotEmpty(t, client.ClientID)
+	assert.Empty(t, client.ClientSecret, "COROS registers a client with no secret, and the fake does as it does")
+	assert.NotEmpty(t, token.AccessToken)
+	assert.NotEmpty(t, token.RefreshToken)
+}
+
+func TestExchangeNeedsTheVerifier(t *testing.T) {
+	fake := testsupport.NewFakeCOROS(t)
+	ctx := context.Background()
+	svc := coros.New(fake.Endpoint(), redirectURL)
+	client, err := svc.Discover(ctx)
+	require.NoError(t, err)
+	require.NoError(t, svc.Register(ctx, client))
+
+	browser := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := browser.Get(svc.AuthCodeURL(client, "s", oauth2.GenerateVerifier()))
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	back, err := url.Parse(resp.Header.Get("Location"))
+	require.NoError(t, err)
+
+	_, err = svc.Exchange(ctx, client, back.Query().Get("code"), oauth2.GenerateVerifier())
+	assert.Error(t, err)
+}
+
+func TestListAndFiles(t *testing.T) {
+	fake := testsupport.NewFakeCOROS(t)
+	fake.Add(
+		testsupport.FakeActivity{ID: "481875557710070260", SportType: 100, Start: day, End: day.Add(20 * time.Minute), File: []byte("the run")},
+		testsupport.FakeActivity{ID: "481854916634116197", SportType: 1004, Name: "Pickleball", Start: day.Add(-26 * time.Hour), End: day.Add(-25 * time.Hour), File: []byte("the game")},
+		testsupport.FakeActivity{ID: "481000000000000000", SportType: 100, Start: day.AddDate(0, 0, -30), End: day.AddDate(0, 0, -30).Add(time.Hour), File: []byte("last month")},
+	)
+	svc, client, token := signIn(t, fake)
+	ctx := context.Background()
+
+	for name, plain := range map[string]bool{"as a JSON string, the way COROS sends it": false, "plain": true} {
+		t.Run(name, func(t *testing.T) {
+			fake.PlainList = plain
+			session, err := svc.Open(ctx, client, token)
+			require.NoError(t, err)
+			defer session.Close()
+
+			activities, err := session.List(ctx, day.AddDate(0, 0, -7), day.Add(time.Hour))
+			require.NoError(t, err)
+			require.Len(t, activities, 2, "last month's is outside the window")
+			assert.Equal(t, coros.Activity{ID: "481854916634116197", SportType: 1004, Name: "Pickleball — 2026-11-18", Start: day.Add(-26 * time.Hour), End: day.Add(-25 * time.Hour)}, activities[0], "oldest first")
+			assert.Equal(t, "481875557710070260", activities[1].ID)
+
+			files, err := session.Files(ctx, activities[1])
+			require.NoError(t, err)
+			assert.Equal(t, [][]byte{[]byte("the run")}, files)
+		})
+	}
+}
+
+func TestListCutsToTheWindow(t *testing.T) {
+	fake := testsupport.NewFakeCOROS(t)
+	// COROS is asked for whole days either side, so it returns these; the window is to the second.
+	fake.Add(
+		testsupport.FakeActivity{ID: "1", SportType: 100, Start: day.Add(-time.Second), End: day},
+		testsupport.FakeActivity{ID: "2", SportType: 100, Start: day, End: day.Add(time.Minute)},
+		testsupport.FakeActivity{ID: "3", SportType: 100, Start: day.Add(time.Hour + time.Second), End: day.Add(2 * time.Hour)},
+	)
+	svc, client, token := signIn(t, fake)
+	session, err := svc.Open(context.Background(), client, token)
+	require.NoError(t, err)
+	defer session.Close()
+
+	activities, err := session.List(context.Background(), day, day.Add(time.Hour))
+	require.NoError(t, err)
+	require.Len(t, activities, 1)
+	assert.Equal(t, "2", activities[0].ID)
+}
+
+func TestNothingListed(t *testing.T) {
+	fake := testsupport.NewFakeCOROS(t)
+	svc, client, token := signIn(t, fake)
+	session, err := svc.Open(context.Background(), client, token)
+	require.NoError(t, err)
+	defer session.Close()
+
+	activities, err := session.List(context.Background(), day.AddDate(0, 0, -7), day)
+	require.NoError(t, err)
+	assert.Empty(t, activities)
+}
+
+func TestNewWordingIsAnErrorNotAnEmptyList(t *testing.T) {
+	fake := testsupport.NewFakeCOROS(t)
+	svc, client, token := signIn(t, fake)
+	session, err := svc.Open(context.Background(), client, token)
+	require.NoError(t, err)
+	defer session.Close()
+
+	for name, reply := range map[string]string{
+		"reworded":                "Here are your recent workouts! You ran twice this week.",
+		"no ids":                  "Sport Records — 2026-11-15 to 2026-11-21 (1 records)\n\n1. Outdoor Run — 2026-11-21\n   Duration: 51:40\n",
+		"fewer than it says":      "Sport Records — 2026-11-15 to 2026-11-21 (2 records)\n\n1. Outdoor Run — 2026-11-21\n   LabelId: 5 | SportType: 100\n",
+		"temporarily unavailable": "Sorry, COROS API is temporarily unavailable. Please try again later.",
+	} {
+		t.Run(name, func(t *testing.T) {
+			fake.ListReply = reply
+			_, err := session.List(context.Background(), day.AddDate(0, 0, -7), day)
+			assert.ErrorIs(t, err, coros.ErrUnexpectedReply)
+		})
+	}
+}
+
+func TestFilesThatCannotBeHad(t *testing.T) {
+	fake := testsupport.NewFakeCOROS(t)
+	fake.DailyLimit = 1
+	fake.Add(
+		testsupport.FakeActivity{ID: "1", SportType: 100, Start: day, End: day.Add(time.Minute), File: []byte("one")},
+		testsupport.FakeActivity{ID: "2", SportType: 100, Start: day, End: day.Add(time.Minute), File: []byte("two")},
+		testsupport.FakeActivity{ID: "3", SportType: 100, Start: day, InProgress: true},
+	)
+	svc, client, token := signIn(t, fake)
+	ctx := context.Background()
+	session, err := svc.Open(ctx, client, token)
+	require.NoError(t, err)
+	defer session.Close()
+
+	_, err = session.Files(ctx, coros.Activity{ID: "3", SportType: 100})
+	assert.ErrorIs(t, err, coros.ErrInProgress)
+
+	_, err = session.Files(ctx, coros.Activity{ID: "1", SportType: 100})
+	require.NoError(t, err)
+	_, err = session.Files(ctx, coros.Activity{ID: "2", SportType: 100})
+	assert.ErrorIs(t, err, coros.ErrDailyLimit)
+
+	_, err = session.Files(ctx, coros.Activity{ID: "nope", SportType: 100})
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, coros.ErrDailyLimit)
+}
+
+func TestRefreshedTokensAreHandedBack(t *testing.T) {
+	fake := testsupport.NewFakeCOROS(t)
+	// Tokens this short are spent on arrival, so every session has to refresh.
+	fake.AccessTTL = time.Second
+	svc, client, token := signIn(t, fake)
+	ctx := context.Background()
+
+	for range 3 {
+		session, err := svc.Open(ctx, client, token)
+		require.NoError(t, err)
+		_, err = session.List(ctx, day.AddDate(0, 0, -1), day)
+		require.NoError(t, err)
+		fresh, err := session.Token()
+		require.NoError(t, err)
+		session.Close()
+
+		assert.NotEqual(t, token.RefreshToken, fresh.RefreshToken, "COROS issues a new refresh token each time, and the old one is spent")
+		token = fresh
+	}
+
+	// Carrying on with a refresh token already used is what losing a save looks like.
+	stale := *token
+	session, err := svc.Open(ctx, client, token)
+	require.NoError(t, err)
+	_, err = session.Token()
+	require.NoError(t, err)
+	session.Close()
+	_, err = svc.Open(ctx, client, &stale)
+	assert.ErrorIs(t, err, coros.ErrAuthorization)
+}
+
+func TestRevokedGrantIsAnAuthorizationError(t *testing.T) {
+	fake := testsupport.NewFakeCOROS(t)
+	svc, client, token := signIn(t, fake)
+	fake.RevokeAll()
+
+	_, err := svc.Open(context.Background(), client, token)
+	assert.ErrorIs(t, err, coros.ErrAuthorization)
+}
+
+func TestRevoke(t *testing.T) {
+	fake := testsupport.NewFakeCOROS(t)
+	svc, client, token := signIn(t, fake)
+	ctx := context.Background()
+
+	require.NoError(t, svc.Revoke(ctx, client, token))
+	_, err := svc.Open(ctx, client, token)
+	assert.ErrorIs(t, err, coros.ErrAuthorization)
+}
+
+func TestAnUnreachableServer(t *testing.T) {
+	fake := testsupport.NewFakeCOROS(t)
+	svc, client, token := signIn(t, fake)
+	fake.Server.Close()
+
+	_, err := svc.Open(context.Background(), client, token)
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, coros.ErrAuthorization, "an outage mustn't look like a revoked grant, or the user is told to reconnect for nothing")
+}
+
+func TestAClientGivenASecretUsesIt(t *testing.T) {
+	fake := testsupport.NewFakeCOROS(t)
+	fake.IssueSecret = true
+	fake.AccessTTL = time.Second
+	svc, client, token := signIn(t, fake)
+	require.NotEmpty(t, client.ClientSecret)
+
+	// The exchange has already used it; so must the refresh this session opens with, and the revoke.
+	ctx := context.Background()
+	session, err := svc.Open(ctx, client, token)
+	require.NoError(t, err)
+	fresh, err := session.Token()
+	require.NoError(t, err)
+	session.Close()
+	assert.NotEqual(t, token.AccessToken, fresh.AccessToken)
+	require.NoError(t, svc.Revoke(ctx, client, fresh))
+}
+
+func TestALinkThatFailsWasStillSpent(t *testing.T) {
+	fake := testsupport.NewFakeCOROS(t)
+	fake.Add(testsupport.FakeActivity{ID: "1", SportType: 100, Start: day, End: day.Add(time.Minute), File: []byte("one")})
+	svc, client, token := signIn(t, fake)
+	ctx := context.Background()
+	session, err := svc.Open(ctx, client, token)
+	require.NoError(t, err)
+	defer session.Close()
+
+	fake.FailDownloads = true
+	_, err = session.Files(ctx, coros.Activity{ID: "1", SportType: 100})
+	var spent *coros.SpentError
+	require.ErrorAs(t, err, &spent, "COROS counted the link when it issued it")
+	assert.Equal(t, 1, spent.Files)
+	assert.NotContains(t, err.Error(), "/fit/", "the link stays out of the error")
+
+	// One COROS never issued a link for spent nothing.
+	_, err = session.Files(ctx, coros.Activity{ID: "nope", SportType: 100})
+	require.Error(t, err)
+	assert.NotErrorAs(t, err, &spent)
+}
+
+func TestRefreshBeforeOpening(t *testing.T) {
+	fake := testsupport.NewFakeCOROS(t)
+	svc, client, token := signIn(t, fake)
+	ctx := context.Background()
+
+	same, err := svc.Refresh(ctx, client, token)
+	require.NoError(t, err)
+	assert.Equal(t, token.RefreshToken, same.RefreshToken, "a token with time left isn't refreshed")
+
+	spent := *token
+	spent.Expiry = time.Now().Add(-time.Minute)
+	fresh, err := svc.Refresh(ctx, client, &spent)
+	require.NoError(t, err)
+	assert.NotEqual(t, token.RefreshToken, fresh.RefreshToken)
+
+	// The server going down after the refresh costs nothing: the new tokens are already in hand.
+	fake.Down = true
+	_, err = svc.Open(ctx, client, fresh)
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, coros.ErrAuthorization)
+	fake.Down = false
+	session, err := svc.Open(ctx, client, fresh)
+	require.NoError(t, err)
+	session.Close()
+
+	fake.RevokeAll()
+	_, err = svc.Refresh(ctx, client, &spent)
+	assert.ErrorIs(t, err, coros.ErrAuthorization)
+}
+
+func TestAnActivityInPartsComesWhole(t *testing.T) {
+	fake := testsupport.NewFakeCOROS(t)
+	// More parts than COROS hands over unless asked.
+	fake.Add(testsupport.FakeActivity{ID: "1", SportType: 10000, Start: day, End: day.Add(time.Hour), File: []byte("a leg"), Parts: 7})
+	svc, client, token := signIn(t, fake)
+	ctx := context.Background()
+	session, err := svc.Open(ctx, client, token)
+	require.NoError(t, err)
+	defer session.Close()
+
+	files, err := session.Files(ctx, coros.Activity{ID: "1", SportType: 10000})
+	require.NoError(t, err)
+	assert.Len(t, files, 7)
+}
+
+func TestAFullListSaysSo(t *testing.T) {
+	fake := testsupport.NewFakeCOROS(t)
+	for n := range 200 {
+		fake.Add(testsupport.FakeActivity{ID: fmt.Sprint(n + 1), SportType: 100, Start: day.Add(time.Duration(n) * time.Minute), End: day.Add(time.Duration(n+1) * time.Minute)})
+	}
+	svc, client, token := signIn(t, fake)
+	session, err := svc.Open(context.Background(), client, token)
+	require.NoError(t, err)
+	defer session.Close()
+
+	_, err = session.List(context.Background(), day.AddDate(0, 0, -1), day.AddDate(0, 0, 1))
+	assert.ErrorIs(t, err, coros.ErrTooMany, "a list cut off at what was asked for can't be taken as all there is")
+}
+
+func TestASignedInRequestIsNotFollowedToAnotherServer(t *testing.T) {
+	var mu sync.Mutex
+	var seen []string
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen = append(seen, r.Header.Get("Authorization"))
+		mu.Unlock()
+	}))
+	defer elsewhere.Close()
+	home := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, elsewhere.URL+"/mcp", http.StatusTemporaryRedirect)
+	}))
+	defer home.Close()
+
+	svc := coros.New(home.URL+"/mcp", redirectURL)
+	token := &oauth2.Token{AccessToken: "access-1", RefreshToken: "refresh-1", Expiry: time.Now().Add(time.Hour)}
+	_, err := svc.Open(context.Background(), &coros.Client{Resource: home.URL + "/mcp", TokenURL: home.URL + "/token"}, token)
+	require.Error(t, err)
+	// The transport would have put the token on the request to the other server too.
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Empty(t, seen)
+}

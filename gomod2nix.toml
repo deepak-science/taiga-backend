@@ -85,6 +85,7 @@ cachePackages = [
   'github.com/golang-migrate/migrate/v4/source',
   'github.com/golang-migrate/migrate/v4/source/file',
   'github.com/golang-migrate/migrate/v4/source/iofs',
+  'github.com/google/jsonschema-go/jsonschema',
   'github.com/google/uuid',
   'github.com/jackc/pgpassfile',
   'github.com/jackc/pgservicefile',
@@ -100,6 +101,10 @@ cachePackages = [
   'github.com/lib/pq/pqerror',
   'github.com/lib/pq/scram',
   'github.com/mattn/go-sqlite3',
+  'github.com/modelcontextprotocol/go-sdk/auth',
+  'github.com/modelcontextprotocol/go-sdk/jsonrpc',
+  'github.com/modelcontextprotocol/go-sdk/mcp',
+  'github.com/modelcontextprotocol/go-sdk/oauthex',
   'github.com/muktihari/fit/decoder',
   'github.com/muktihari/fit/encoder',
   'github.com/muktihari/fit/kit/datetime',
@@ -121,6 +126,17 @@ cachePackages = [
   'github.com/pmezard/go-difflib/difflib',
   'github.com/remyoudompheng/bigfft',
   'github.com/sagikazarmark/locafero',
+  'github.com/segmentio/asm/ascii',
+  'github.com/segmentio/asm/base64',
+  'github.com/segmentio/asm/cpu',
+  'github.com/segmentio/asm/cpu/arm',
+  'github.com/segmentio/asm/cpu/arm64',
+  'github.com/segmentio/asm/cpu/cpuid',
+  'github.com/segmentio/asm/cpu/x86',
+  'github.com/segmentio/asm/keyset',
+  'github.com/segmentio/encoding/ascii',
+  'github.com/segmentio/encoding/iso8601',
+  'github.com/segmentio/encoding/json',
   'github.com/spf13/afero',
   'github.com/spf13/afero/mem',
   'github.com/spf13/cast',
@@ -132,11 +148,14 @@ cachePackages = [
   'github.com/stretchr/testify/mock',
   'github.com/stretchr/testify/require',
   'github.com/subosito/gotenv',
+  'github.com/yosida95/uritemplate/v3',
   'go.yaml.in/yaml/v3',
   'golang.org/x/crypto/bcrypt',
   'golang.org/x/crypto/blowfish',
   'golang.org/x/oauth2',
+  'golang.org/x/sync/errgroup',
   'golang.org/x/sync/semaphore',
+  'golang.org/x/sys/cpu',
   'golang.org/x/sys/unix',
   'golang.org/x/term',
   'golang.org/x/text/cases',
@@ -150,6 +169,7 @@ cachePackages = [
   'golang.org/x/text/unicode/bidi',
   'golang.org/x/text/unicode/norm',
   'golang.org/x/text/width',
+  'golang.org/x/time/rate',
   'gopkg.in/yaml.v3',
   'modernc.org/libc',
   'modernc.org/libc/sys/types',
@@ -270,6 +290,10 @@ cachePackages = [
     version = 'v4.20.1'
     hash = 'sha256-lIHYmgSZxpY5j8BDoPM/ZA8EnQ5lxKhj1SdEBnU39l8='
 
+  [mod.'github.com/google/jsonschema-go']
+    version = 'v0.4.3'
+    hash = 'sha256-AJDx6ZY91bQV0/mPHGDwko7+FgH/ihCH0kHubcbJIU4='
+
   [mod.'github.com/google/uuid']
     version = 'v1.6.0'
     hash = 'sha256-VWl9sqUzdOuhW0KzQlv0gwwUQClYkmZwSydHG2sALYw='
@@ -302,6 +326,10 @@ cachePackages = [
     version = 'v1.14.53'
     hash = 'sha256-wvKCPdhD9f3MHIcJ9zvO6Bs9Rc3BG+aNcC70SjFLBI4='
 
+  [mod.'github.com/modelcontextprotocol/go-sdk']
+    version = 'v1.8.0'
+    hash = 'sha256-MrAf2ChF1ikahpJDZ3zeXt59j9/cXMYocn46esn5+6E='
+
   [mod.'github.com/muktihari/fit']
     version = 'v0.28.6'
     hash = 'sha256-A4xtPVyR3Qs64ZszCR+Gr/ycfhXD+zxuZPH+QKk/f2c='
@@ -329,6 +357,14 @@ cachePackages = [
   [mod.'github.com/sagikazarmark/locafero']
     version = 'v0.12.0'
     hash = 'sha256-EXk9S5Z5sYyApAzCgHIugsGMbt/pHWRfHYFZH5D+5Ws='
+
+  [mod.'github.com/segmentio/asm']
+    version = 'v1.1.3'
+    hash = 'sha256-T26b7yreVbvHVaUSLRnSeF+p4fmVhyTNIj7HzL83deA='
+
+  [mod.'github.com/segmentio/encoding']
+    version = 'v0.5.4'
+    hash = 'sha256-AVIwCIh/L7X7CaGGX2gYOlurO/xifjjLpK+AIRTv2rQ='
 
   [mod.'github.com/spf13/afero']
     version = 'v1.15.0'
@@ -358,6 +394,10 @@ cachePackages = [
     version = 'v1.6.0'
     hash = 'sha256-LspbjTniiq2xAICSXmgqP7carwlNaLqnCTQfw2pa80A='
 
+  [mod.'github.com/yosida95/uritemplate/v3']
+    version = 'v3.0.2'
+    hash = 'sha256-znUsCrfogPwAUNsdxBL93jIW/joercUm7RxKSExuWTM='
+
   [mod.'go.yaml.in/yaml/v3']
     version = 'v3.0.6'
     hash = 'sha256-4XBaZyVp0pU1FzRY+M/juXISzENKJ+v189aVvU0mvqM='
@@ -385,6 +425,10 @@ cachePackages = [
   [mod.'golang.org/x/text']
     version = 'v0.44.0'
     hash = 'sha256-dTeEJZSwSLJ5jumnR+JjT4gSpXW6E22IxT0aCrcf2vQ='
+
+  [mod.'golang.org/x/time']
+    version = 'v0.15.0'
+    hash = 'sha256-5D24A65wn7k93Jj3+918UKjB9ccmGHPBEqjD2XDB92E='
 
   [mod.'gopkg.in/yaml.v3']
     version = 'v3.0.1'

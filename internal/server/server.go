@@ -20,6 +20,7 @@ import (
 	"gitea.deepak.science/deepak/taiga/internal/models"
 	"gitea.deepak.science/deepak/taiga/internal/oidc"
 	"gitea.deepak.science/deepak/taiga/internal/routes"
+	"gitea.deepak.science/deepak/taiga/internal/sources"
 	"gitea.deepak.science/deepak/taiga/internal/tokens"
 	"gitea.deepak.science/deepak/taiga/internal/weather"
 )
@@ -75,11 +76,22 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 	log.Printf("Password login: %v; OIDC providers: %d", cfg.Auth.PasswordLogin, len(providers.Providers()))
 
+	// The same key seals what sources store, for the same reason: a connection outlives a restart, and rotating the key means connecting again.
+	var sourceManager *sources.Manager
+	if cfg.Sources.Coros.Enabled {
+		sourceManager, err = sources.New(m, cfg.Sources.Coros.Endpoint, cfg.Auth.PublicBaseURL, cfg.Auth.APIBase(), privateKey)
+		if err != nil {
+			return nil, err
+		}
+		log.Printf("Sources: COROS")
+	}
+
 	// Create routes handler
 	routesHandler := routes.New(m, toker, fileRepo,
 		routes.WithRegistration(registrationOpen),
 		routes.WithPasswordLogin(cfg.Auth.PasswordLogin),
 		routes.WithOIDC(providers),
+		routes.WithSources(sourceManager),
 	)
 
 	// Create chi router for middleware
@@ -125,6 +137,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	worker := jobs.NewWorker(m, fileRepo)
+	worker.Sources = sourceManager
 	switch cfg.Weather.Provider {
 	case "":
 	case "open-meteo":

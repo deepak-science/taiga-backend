@@ -69,6 +69,47 @@ type RouteOverride struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type SourceActivity struct {
+	UserID         int32              `json:"user_id"`
+	Kind           string             `json:"kind"`
+	ExternalID     string             `json:"external_id"`
+	ActivityFileID *int32             `json:"activity_file_id"`
+	StartTime      pgtype.Timestamptz `json:"start_time"`
+	Files          int32              `json:"files"`
+	FetchedAt      pgtype.Timestamptz `json:"fetched_at"`
+}
+
+type SourceClient struct {
+	ID           int32              `json:"id"`
+	Kind         string             `json:"kind"`
+	Issuer       string             `json:"issuer"`
+	RedirectUri  string             `json:"redirect_uri"`
+	Registration string             `json:"registration"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
+type SourceConnection struct {
+	ID             int32              `json:"id"`
+	UserID         int32              `json:"user_id"`
+	Kind           string             `json:"kind"`
+	ClientID       int32              `json:"client_id"`
+	Credentials    string             `json:"credentials"`
+	SyncedThrough  pgtype.Timestamptz `json:"synced_through"`
+	LastSyncedAt   pgtype.Timestamptz `json:"last_synced_at"`
+	LastError      string             `json:"last_error"`
+	NeedsReconnect bool               `json:"needs_reconnect"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+type SourceFileRequest struct {
+	ID          int32              `json:"id"`
+	UserID      int32              `json:"user_id"`
+	Kind        string             `json:"kind"`
+	ExternalID  string             `json:"external_id"`
+	Files       int32              `json:"files"`
+	RequestedAt pgtype.Timestamptz `json:"requested_at"`
+}
+
 type Stretch struct {
 	ID              int32              `json:"id"`
 	UserID          int32              `json:"user_id"`
