@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -522,7 +523,7 @@ func putCorrectionsFunc(m models.Model, fileRepo filerepo.FileRepo) http.Handler
 	}
 }
 
-// getWorkoutTotalsFunc sums each sport's counted workouts starting in ?from=/?to=; excluded workouts stay out.
+// getWorkoutTotalsFunc sums each sport's counted workouts starting in ?from=/?to=, with the longest of each; excluded workouts stay out.
 func getWorkoutTotalsFunc(m models.Model) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -545,7 +546,7 @@ func getWorkoutTotalsFunc(m models.Model) http.HandlerFunc {
 	}
 }
 
-// getPeriodicTotalsFunc sums the counted workouts per week or month of ?from=/?to=, at ?tz='s local midnights.
+// getPeriodicTotalsFunc sums the counted workouts per week, month or year of ?from=/?to=, at ?tz='s local midnights.
 func getPeriodicTotalsFunc(m models.Model) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -555,7 +556,7 @@ func getPeriodicTotalsFunc(m models.Model) http.HandlerFunc {
 			return
 		}
 		every := chi.URLParam(r, "every")
-		if every != models.EveryWeek && every != models.EveryMonth {
+		if !slices.Contains(models.Periods, every) {
 			notFoundHandler(w, r)
 			return
 		}

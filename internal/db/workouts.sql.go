@@ -327,6 +327,8 @@ func (q *Queries) GetWorkoutsByActivityFile(ctx context.Context, arg *GetWorkout
 
 const listCountedWorkoutsInWindow = `-- name: ListCountedWorkoutsInWindow :many
 SELECT
+  id,
+  name,
   sport,
   start_time,
   distance_miles,
@@ -350,13 +352,16 @@ type ListCountedWorkoutsInWindowParams struct {
 }
 
 type ListCountedWorkoutsInWindowRow struct {
+	ID            int32              `json:"id"`
+	Name          string             `json:"name"`
 	Sport         string             `json:"sport"`
 	StartTime     pgtype.Timestamptz `json:"start_time"`
 	DistanceMiles *float64           `json:"distance_miles"`
 	TimeSeconds   *float64           `json:"time_seconds"`
 }
 
-// What a periodic total needs of each counted workout starting in [window_from, window_to), oldest first; bucketing by local week or month happens in Go, since the two databases share no date functions.
+// What a total needs of each counted workout starting in [window_from, window_to), oldest first; an excluded workout stays out of stats.
+// Bucketing by local week, month or year happens in Go, since the two databases share no date functions.
 func (q *Queries) ListCountedWorkoutsInWindow(ctx context.Context, arg *ListCountedWorkoutsInWindowParams) ([]*ListCountedWorkoutsInWindowRow, error) {
 	rows, err := q.db.Query(ctx, listCountedWorkoutsInWindow, arg.UserID, arg.WindowFrom, arg.WindowTo)
 	if err != nil {
@@ -367,6 +372,8 @@ func (q *Queries) ListCountedWorkoutsInWindow(ctx context.Context, arg *ListCoun
 	for rows.Next() {
 		var i ListCountedWorkoutsInWindowRow
 		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
 			&i.Sport,
 			&i.StartTime,
 			&i.DistanceMiles,
@@ -876,67 +883,4 @@ func (q *Queries) UpdateWorkoutDerived(ctx context.Context, arg *UpdateWorkoutDe
 		&i.AvgVerticalRatioPct,
 	)
 	return &i, err
-}
-
-const workoutTotalsByUser = `-- name: WorkoutTotalsByUser :many
-SELECT
-  sport,
-  COUNT(*) AS workouts,
-  CAST(
-    COALESCE(SUM(distance_miles), 0) AS DOUBLE PRECISION
-  ) AS distance_miles,
-  CAST(
-    COALESCE(SUM(time_seconds), 0) AS DOUBLE PRECISION
-  ) AS time_seconds
-FROM
-  workouts
-WHERE
-  user_id = $1
-  AND excluded_reason = ''
-  AND start_time >= $2
-  AND start_time < $3
-GROUP BY
-  sport
-ORDER BY
-  workouts DESC,
-  sport
-`
-
-type WorkoutTotalsByUserParams struct {
-	UserID     int32              `json:"user_id"`
-	WindowFrom pgtype.Timestamptz `json:"window_from"`
-	WindowTo   pgtype.Timestamptz `json:"window_to"`
-}
-
-type WorkoutTotalsByUserRow struct {
-	Sport         string  `json:"sport"`
-	Workouts      int64   `json:"workouts"`
-	DistanceMiles float64 `json:"distance_miles"`
-	TimeSeconds   float64 `json:"time_seconds"`
-}
-
-// Per sport, for workouts starting in [window_from, window_to) that count; an excluded workout stays out of stats.
-func (q *Queries) WorkoutTotalsByUser(ctx context.Context, arg *WorkoutTotalsByUserParams) ([]*WorkoutTotalsByUserRow, error) {
-	rows, err := q.db.Query(ctx, workoutTotalsByUser, arg.UserID, arg.WindowFrom, arg.WindowTo)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []*WorkoutTotalsByUserRow{}
-	for rows.Next() {
-		var i WorkoutTotalsByUserRow
-		if err := rows.Scan(
-			&i.Sport,
-			&i.Workouts,
-			&i.DistanceMiles,
-			&i.TimeSeconds,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, &i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }

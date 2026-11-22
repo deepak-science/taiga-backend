@@ -305,6 +305,15 @@ func TestTimeWindowParams(t *testing.T) {
 	assert.Empty(t, months[1].Sports)
 	assert.Contains(t, string(body), `-0`, "starts are local midnights with their offset")
 
+	status, body = alice.get("/workouts/totals/year?tz=America/Chicago")
+	require.Equal(t, http.StatusOK, status, string(body))
+	var totalYears []models.PeriodTotals
+	require.NoError(t, json.Unmarshal(body, &totalYears))
+	require.Len(t, totalYears, 2)
+	require.Len(t, totalYears[1].Sports, 1)
+	assert.Equal(t, later, totalYears[1].Sports[0].LongestByDistance.WorkoutID)
+	assert.Contains(t, string(body), `"longest_by_time":{"workout_id":`)
+
 	status, body = alice.get("/segments/yearly-bests?tz=America/Chicago")
 	require.Equal(t, http.StatusOK, status, string(body))
 	var years []models.YearBests
