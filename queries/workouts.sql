@@ -143,30 +143,6 @@ LIMIT
 OFFSET
   sqlc.arg(page_offset);
 
--- name: WorkoutTotalsByUser :many
--- Per sport, for workouts starting in [window_from, window_to) that count; an excluded workout stays out of stats.
-SELECT
-  sport,
-  COUNT(*) AS workouts,
-  CAST(
-    COALESCE(SUM(distance_miles), 0) AS DOUBLE PRECISION
-  ) AS distance_miles,
-  CAST(
-    COALESCE(SUM(time_seconds), 0) AS DOUBLE PRECISION
-  ) AS time_seconds
-FROM
-  workouts
-WHERE
-  user_id = sqlc.arg(user_id)
-  AND excluded_reason = ''
-  AND start_time >= sqlc.arg(window_from)
-  AND start_time < sqlc.arg(window_to)
-GROUP BY
-  sport
-ORDER BY
-  workouts DESC,
-  sport;
-
 -- name: FirstWorkoutStartInWindow :one
 -- The earliest start in [window_from, window_to), excluded workouts included since they're still listed; no rows when the window is empty.
 SELECT
@@ -183,8 +159,11 @@ LIMIT
   1;
 
 -- name: ListCountedWorkoutsInWindow :many
--- What a periodic total needs of each counted workout starting in [window_from, window_to), oldest first; bucketing by local week or month happens in Go, since the two databases share no date functions.
+-- What a total needs of each counted workout starting in [window_from, window_to), oldest first; an excluded workout stays out of stats.
+-- Bucketing by local week, month or year happens in Go, since the two databases share no date functions.
 SELECT
+  id,
+  name,
   sport,
   start_time,
   distance_miles,

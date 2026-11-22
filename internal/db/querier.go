@@ -145,7 +145,8 @@ type Querier interface {
 	// A distance segment ranks by time, a duration segment by distance covered; only workouts of one sport starting in [window_from, window_to) compete.
 	ListBestSegmentsByName(ctx context.Context, arg *ListBestSegmentsByNameParams) ([]*ListBestSegmentsByNameRow, error)
 	ListCliSessionsByUser(ctx context.Context, userID int32) ([]*CliSession, error)
-	// What a periodic total needs of each counted workout starting in [window_from, window_to), oldest first; bucketing by local week or month happens in Go, since the two databases share no date functions.
+	// What a total needs of each counted workout starting in [window_from, window_to), oldest first; an excluded workout stays out of stats.
+	// Bucketing by local week, month or year happens in Go, since the two databases share no date functions.
 	ListCountedWorkoutsInWindow(ctx context.Context, arg *ListCountedWorkoutsInWindowParams) ([]*ListCountedWorkoutsInWindowRow, error)
 	ListIdentitiesByUser(ctx context.Context, userID int32) ([]*UserIdentity, error)
 	ListJobsByUser(ctx context.Context, arg *ListJobsByUserParams) ([]*Job, error)
@@ -225,8 +226,6 @@ type Querier interface {
 	UpsertWorkoutTrack(ctx context.Context, arg *UpsertWorkoutTrackParams) error
 	UpsertWorkoutWeather(ctx context.Context, arg *UpsertWorkoutWeatherParams) error
 	UserHasPassword(ctx context.Context, id int32) (bool, error)
-	// Per sport, for workouts starting in [window_from, window_to) that count; an excluded workout stays out of stats.
-	WorkoutTotalsByUser(ctx context.Context, arg *WorkoutTotalsByUserParams) ([]*WorkoutTotalsByUserRow, error)
 }
 
 var _ Querier = (*Queries)(nil)

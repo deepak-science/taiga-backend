@@ -86,9 +86,9 @@ type Model interface {
 	GetActivityFileContent(ctx context.Context, id int32, userToken *tokens.UserToken, fileRepo filerepo.FileRepo) (io.ReadCloser, error)
 	Workout(ctx context.Context, id int32, userToken *tokens.UserToken) (*Workout, error)
 	Workouts(ctx context.Context, query WorkoutQuery, userToken *tokens.UserToken) ([]*Workout, error)
-	// WorkoutTotals sums each sport's counted workouts starting in the window.
+	// WorkoutTotals sums each sport's counted workouts starting in the window, and names the longest of each.
 	WorkoutTotals(ctx context.Context, window Window, userToken *tokens.UserToken) (*WorkoutTotals, error)
-	// PeriodicTotals sums each sport's counted workouts per local week or month (EveryWeek, EveryMonth) across the window.
+	// PeriodicTotals sums each sport's counted workouts per local week, month or year (Periods) across the window.
 	PeriodicTotals(ctx context.Context, every string, window Window, loc *time.Location, userToken *tokens.UserToken) ([]*PeriodTotals, error)
 	AddWorkout(ctx context.Context, workout *Workout, userToken *tokens.UserToken) (*Workout, error)
 	UpdateWorkout(ctx context.Context, id int32, workout *Workout, userToken *tokens.UserToken) (*Workout, error)
