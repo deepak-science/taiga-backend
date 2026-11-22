@@ -35,10 +35,13 @@ A connection is the user's own. No one else's syncs use it, and `GET /sources` s
 ## What a sync does
 
 A `sync_source` job runs when a user connects, every hour after, and when they ask (`POST /sources/{id}/sync`):
- A long gap is asked for 30 days at a time, and a stretch with more activities than one list holds (200) is asked for again in halves, down to a day.
+
 1. Ask COROS for the activities since the last sync, less a day in case the watch uploaded one late. A new connection starts a week back.
 2. Skip every activity already dealt with.
 3. For each of the rest, oldest first, ask for its FIT file and put it through the same path as an upload.
+4. Ask for COROS's own figures on each workout that came from it and has none yet (below).
+
+A long gap is asked for 30 days at a time, and a stretch with more activities than one list holds (200) is asked for again in halves, down to a day.
 
 The file COROS hands over is the same one t.coros.com exports, byte for byte, so a run uploaded by hand as well is recognised by its content and not imported twice.
 Everything comes across, not only runs: a pickleball game is stored and listed the way an uploaded one is, and isn't scored.
@@ -48,6 +51,19 @@ Each activity dealt with is remembered by its COROS id (`source_activities`), by
 So a workout deleted from taiga stays deleted, and disconnecting and connecting again fetches nothing twice.
 
 History from before the connection isn't fetched: upload an export for that.
+
+### COROS's own figures
+
+COROS works out things about an activity that are in no file: training load, aerobic and anaerobic training effect, a training focus ("Threshold"), a performance word ("Best"), and its adjusted, moving-average and best-kilometre paces.
+Its activity detail tool gives those along with its own totals, and taiga keeps all of it beside the workout (`coros_metadata`), served by `GET /workouts/{id}/coros`.
+
+- **It is for tracking only.** Nothing in it feeds best efforts, splits, totals or the workout's own summary, which stay worked out from the file. COROS's distance and time can differ from taiga's, and both are kept.
+- **It isn't derived from the file**, so reprocessing leaves it alone, as with weather. Deleting the workout deletes it.
+- **Which workouts:** every one whose file a sync has matched to a COROS activity, a run uploaded by hand included, since its file is the same one. At most 20 a sync, newest first; whether COROS limits these calls isn't known.
+- **Stored in metres and seconds**, paces as seconds a kilometre, whichever units the account shows. What COROS said is kept whole as well, so a figure taiga doesn't read today can be read later without asking again.
+- **When it can't be had**, the activities still come in and the sync still finishes: the connection's `last_error` says the figures couldn't be read or fetched, and the next sync asks again. Only a grant COROS has ended stops it.
+
+Runs from before the connection whose files were never matched by a sync have none: the list would have to be walked back through the years for that, which isn't built.
 
 ### The daily limit
 
@@ -64,7 +80,8 @@ An activity recorded in parts has several files, and how many isn't known until 
 | COROS can't be reached, or answers with an error | The job retries with backoff, five times, then is dead; `last_error` on the connection says why. The hourly sweep leaves a connection with a dead job alone until it's retried (`POST /jobs/{id}/retry`, or `POST /sources/{id}/sync`). |
 | COROS no longer honours the tokens (the user removed taiga there, or a refresh token was lost) | The connection is marked `needs_reconnect` and nothing more is asked until the user connects again, which carries on from where the syncs had got to. |
 | An activity is still being recorded | It waits for the next sync; later ones aren't held up. |
-| COROS's reply can't be read | The sync fails, as an outage does. |
+| COROS's list or file reply can't be read | The sync fails, as an outage does. |
+| COROS's own figures for an activity can't be read or fetched | The sync finishes and `last_error` says so; they're asked for again next time. |
 
 That last one matters because COROS's tools answer in prose written for a language model, not data (the whole of it is under "What COROS sends"):
 
@@ -81,7 +98,8 @@ The file is the only thing trusted for the workout itself.
 
 - **The registration** (`source_clients`): the client id COROS issued (and a secret, had it given one), and the addresses of its servers.
 - **Each user's tokens** (`source_connections`): an access token (30 days) and a refresh token (180 days, replaced at every refresh, so a connection that syncs stays alive).
-- **What's been dealt with** (`source_activities`): COROS's id for the activity, when it started, and which file it became.
+- **What's been dealt with** (`source_activities`): COROS's id and sport code for the activity, when it started, and which file it became.
+- **COROS's own figures** (`coros_metadata`): one row a workout, with the reply they were read from.
 - **What was asked for** (`source_file_requests`): each request for an activity's files in the last day, for the daily limit.
 
 The registration and the tokens are encrypted (AES-256-GCM) under a key derived from the token signing key (`tokens.private_key_path`), so a copy of the database alone doesn't give access to anyone's COROS account.
@@ -95,16 +113,17 @@ Download links for files work for anyone who has them, with no sign-in. They are
 ## What taiga can do at COROS, and what it does
 
 COROS has one scope, `mcp.tools`, covering every tool its server offers, and some of those write: training plans, scheduled workouts, routes.
-taiga asks for that scope because there is no narrower one, and calls two tools, both reads:
+taiga asks for that scope because there is no narrower one, and calls three tools, all reads:
 
 - `querySportRecords`, to list activities;
-- `queryActivityFitFileDownloadUrls`, to get a file's link.
+- `queryActivityFitFileDownloadUrls`, to get a file's link;
+- `getActivityDetail`, for COROS's own figures on an activity.
 
 What reaches COROS is the account's own sign-in, the dates asked about, and the ids of activities fetched. Nothing from taiga's side: no workouts, no other users.
 
 ## What COROS sends
 
-Recorded on 2026-11-21 from `mcpus.coros.com`. The two replies taiga reads are kept, with the ids and places changed, in `internal/coros/testdata/`, and the parser's tests run on them.
+Recorded on 2026-11-21 from `mcpus.coros.com`. The replies taiga reads are kept, with the ids, places and some figures changed, in `internal/coros/testdata/`, and the parser's tests run on them.
 
 ### Signing in
 
@@ -119,7 +138,7 @@ Recorded on 2026-11-21 from `mcpus.coros.com`. The two replies taiga reads are k
 
 - Protocol version `2025-11-25`. It calls itself `mcp-server` version `1.0.0`, which says nothing about which build is running; the HTTP responses carry a `v: Build2.11.15` header that does.
 - 34 tools. None declares an output schema, and no reply carried structured content: text is all there is.
-- Each tool says whether it writes (`readOnlyHint`). Eight do: `uploadRouteFile`, `createScheduledWorkout`, `updateScheduledWorkout`, `createTrainingPlan`, `updateTrainingPlan`, `createSingleWorkout`, `scheduleWorkout` and `updateWorkoutDetails`. The two taiga calls are marked read-only.
+- Each tool says whether it writes (`readOnlyHint`). Eight do: `uploadRouteFile`, `createScheduledWorkout`, `updateScheduledWorkout`, `createTrainingPlan`, `updateTrainingPlan`, `createSingleWorkout`, `scheduleWorkout` and `updateWorkoutDetails`. The three taiga calls are marked read-only.
 
 ### `querySportRecords`
 
@@ -172,9 +191,42 @@ Activity FIT file download URL(s):
 - For an activity still being recorded, COROS documents the reply `This activity is still in progress; the FIT file is available after it ends.` taiga matches "still in progress".
 - **What it says at the daily limit has not been seen.** taiga treats a reply that mentions "limit" and has no link as the limit; anything else without a link is a failed sync.
 
+### `getActivityDetail`
+
+Asked with `{"labelId": "…", "sportType": 100}`. The reply is a JSON string like the list, a heading and then a line a figure:
+
+```
+🏃 Outdoor Run Activity Details
+========================================
+
+Workout Time: 51:40
+Distance: 7.63 km
+Total Time: 52:05
+Average Pace: 6:47 /km
+Moving Average Pace: 6:38 /km
+Adjusted Pace: 6:43 /km
+Best Kilometer: 6:20 /km
+Average Heart Rate: 150 bpm
+Average Cadence: 170 spm
+Average Stride Length: 1.05 m
+Average Power: 250 W
+Elevation Gain / Loss: 54 m / 51 m
+Calories: 300 kcal
+Training Load: 120
+Aerobic TE: 3.6
+Anaerobic TE: 0.9
+Training Focus: Threshold
+Performance: Best
+```
+
+- **Which lines there are goes by the sport.** A pickleball game had only workout time, distance, heart rate, calories, load, the two training effects and focus; a gym session had no distance.
+- taiga reads each line it knows by its label, and passes over one it doesn't. A known label whose value it can't read (a unit not seen before, a time that isn't one) fails that activity's figures; it is never guessed at.
+- **Only a metric account has been seen.** Miles and feet are read if they come as `mi`, `/mi` and `ft`, which is a guess at what an imperial account gets.
+- Whether these calls are limited isn't known.
+
 ## How much of this will hold
 
-COROS says nothing about it. Its docs ([coroslab/coros-mcp](https://github.com/coroslab/coros-mcp)) have no statement on stability, versions, deprecation or compatibility, and describe what these two tools return only as "matching activities with date, sport, location, distance, duration, pace or speed, and activity identifiers and times" and "file names and their FIT download links". The one example of a list entry they give leaves out the identifier lines.
+COROS says nothing about it. Its docs ([coroslab/coros-mcp](https://github.com/coroslab/coros-mcp)) have no statement on stability, versions, deprecation or compatibility, and describe what the list and file tools return only as "matching activities with date, sport, location, distance, duration, pace or speed, and activity identifiers and times" and "file names and their FIT download links". The one example of a list entry they give leaves out the identifier lines.
 
 What the record shows, from launch on 2026-05-05 to November:
 
@@ -190,7 +242,8 @@ So the list should be expected to change under taiga, and the design is for that
 - The FIT file is the only thing the workout is built from. The list decides what to fetch and nothing else.
 - A reply that doesn't parse, or whose entries don't number what its heading says, fails the sync, shows on the connection as `last_error`, and after five tries waits to be asked again. It never reads as "nothing new".
 - Nothing is lost while it's broken: the next sync that works carries on from the last one that did.
-- When it does change: record the new reply (the tests' files show the form), fix `internal/coros/parse.go`, and add the new reply beside the old.
+- COROS's own figures are extra: a detail reply that can't be read costs those figures and nothing else.
+- When it does change: record the new reply (the tests' files show the form), fix `internal/coros/parse.go` or `detail.go`, and add the new reply beside the old.
 
 ## What isn't known
 

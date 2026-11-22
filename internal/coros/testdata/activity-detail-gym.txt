@@ -1,0 +1,1 @@
+"🏋️ Gym Cardio Activity Details\n========================================\n\nWorkout Time: 1:06:11\nTotal Time: 1:06:11\nAverage Heart Rate: 150 bpm\nCalories: 300 kcal\nTraining Load: 19\nAerobic TE: 1.5\nAnaerobic TE: 0.0\nTraining Focus: Recovery"

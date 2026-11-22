@@ -53,7 +53,7 @@ VALUES
     $17
   )
 RETURNING
-  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds
+  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds, timer_seconds, avg_heart_rate, max_heart_rate, min_heart_rate, ascent_meters, descent_meters, calories, total_steps, avg_cadence, avg_power_watts, avg_effort_pace_mps, avg_step_length_m, avg_vertical_oscillation_mm, avg_ground_contact_ms, avg_vertical_ratio_pct
 `
 
 type CreateWorkoutParams struct {
@@ -121,6 +121,21 @@ func (q *Queries) CreateWorkout(ctx context.Context, arg *CreateWorkoutParams) (
 		&i.Place,
 		&i.Timezone,
 		&i.UtcOffsetSeconds,
+		&i.TimerSeconds,
+		&i.AvgHeartRate,
+		&i.MaxHeartRate,
+		&i.MinHeartRate,
+		&i.AscentMeters,
+		&i.DescentMeters,
+		&i.Calories,
+		&i.TotalSteps,
+		&i.AvgCadence,
+		&i.AvgPowerWatts,
+		&i.AvgEffortPaceMps,
+		&i.AvgStepLengthM,
+		&i.AvgVerticalOscillationMm,
+		&i.AvgGroundContactMs,
+		&i.AvgVerticalRatioPct,
 	)
 	return &i, err
 }
@@ -173,7 +188,7 @@ func (q *Queries) FirstWorkoutStartInWindow(ctx context.Context, arg *FirstWorko
 
 const getWorkout = `-- name: GetWorkout :one
 SELECT
-  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds
+  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds, timer_seconds, avg_heart_rate, max_heart_rate, min_heart_rate, ascent_meters, descent_meters, calories, total_steps, avg_cadence, avg_power_watts, avg_effort_pace_mps, avg_step_length_m, avg_vertical_oscillation_mm, avg_ground_contact_ms, avg_vertical_ratio_pct
 FROM
   workouts
 WHERE
@@ -215,13 +230,28 @@ func (q *Queries) GetWorkout(ctx context.Context, arg *GetWorkoutParams) (*Worko
 		&i.Place,
 		&i.Timezone,
 		&i.UtcOffsetSeconds,
+		&i.TimerSeconds,
+		&i.AvgHeartRate,
+		&i.MaxHeartRate,
+		&i.MinHeartRate,
+		&i.AscentMeters,
+		&i.DescentMeters,
+		&i.Calories,
+		&i.TotalSteps,
+		&i.AvgCadence,
+		&i.AvgPowerWatts,
+		&i.AvgEffortPaceMps,
+		&i.AvgStepLengthM,
+		&i.AvgVerticalOscillationMm,
+		&i.AvgGroundContactMs,
+		&i.AvgVerticalRatioPct,
 	)
 	return &i, err
 }
 
 const getWorkoutsByActivityFile = `-- name: GetWorkoutsByActivityFile :many
 SELECT
-  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds
+  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds, timer_seconds, avg_heart_rate, max_heart_rate, min_heart_rate, ascent_meters, descent_meters, calories, total_steps, avg_cadence, avg_power_watts, avg_effort_pace_mps, avg_step_length_m, avg_vertical_oscillation_mm, avg_ground_contact_ms, avg_vertical_ratio_pct
 FROM
   workouts
 WHERE
@@ -269,6 +299,21 @@ func (q *Queries) GetWorkoutsByActivityFile(ctx context.Context, arg *GetWorkout
 			&i.Place,
 			&i.Timezone,
 			&i.UtcOffsetSeconds,
+			&i.TimerSeconds,
+			&i.AvgHeartRate,
+			&i.MaxHeartRate,
+			&i.MinHeartRate,
+			&i.AscentMeters,
+			&i.DescentMeters,
+			&i.Calories,
+			&i.TotalSteps,
+			&i.AvgCadence,
+			&i.AvgPowerWatts,
+			&i.AvgEffortPaceMps,
+			&i.AvgStepLengthM,
+			&i.AvgVerticalOscillationMm,
+			&i.AvgGroundContactMs,
+			&i.AvgVerticalRatioPct,
 		); err != nil {
 			return nil, err
 		}
@@ -339,7 +384,7 @@ func (q *Queries) ListCountedWorkoutsInWindow(ctx context.Context, arg *ListCoun
 
 const listWorkoutsByUser = `-- name: ListWorkoutsByUser :many
 SELECT
-  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds
+  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds, timer_seconds, avg_heart_rate, max_heart_rate, min_heart_rate, ascent_meters, descent_meters, calories, total_steps, avg_cadence, avg_power_watts, avg_effort_pace_mps, avg_step_length_m, avg_vertical_oscillation_mm, avg_ground_contact_ms, avg_vertical_ratio_pct
 FROM
   workouts
 WHERE
@@ -381,6 +426,21 @@ func (q *Queries) ListWorkoutsByUser(ctx context.Context, userID int32) ([]*Work
 			&i.Place,
 			&i.Timezone,
 			&i.UtcOffsetSeconds,
+			&i.TimerSeconds,
+			&i.AvgHeartRate,
+			&i.MaxHeartRate,
+			&i.MinHeartRate,
+			&i.AscentMeters,
+			&i.DescentMeters,
+			&i.Calories,
+			&i.TotalSteps,
+			&i.AvgCadence,
+			&i.AvgPowerWatts,
+			&i.AvgEffortPaceMps,
+			&i.AvgStepLengthM,
+			&i.AvgVerticalOscillationMm,
+			&i.AvgGroundContactMs,
+			&i.AvgVerticalRatioPct,
 		); err != nil {
 			return nil, err
 		}
@@ -394,7 +454,7 @@ func (q *Queries) ListWorkoutsByUser(ctx context.Context, userID int32) ([]*Work
 
 const listWorkoutsByUserInWindow = `-- name: ListWorkoutsByUserInWindow :many
 SELECT
-  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds
+  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds, timer_seconds, avg_heart_rate, max_heart_rate, min_heart_rate, ascent_meters, descent_meters, calories, total_steps, avg_cadence, avg_power_watts, avg_effort_pace_mps, avg_step_length_m, avg_vertical_oscillation_mm, avg_ground_contact_ms, avg_vertical_ratio_pct
 FROM
   workouts
 WHERE
@@ -458,6 +518,21 @@ func (q *Queries) ListWorkoutsByUserInWindow(ctx context.Context, arg *ListWorko
 			&i.Place,
 			&i.Timezone,
 			&i.UtcOffsetSeconds,
+			&i.TimerSeconds,
+			&i.AvgHeartRate,
+			&i.MaxHeartRate,
+			&i.MinHeartRate,
+			&i.AscentMeters,
+			&i.DescentMeters,
+			&i.Calories,
+			&i.TotalSteps,
+			&i.AvgCadence,
+			&i.AvgPowerWatts,
+			&i.AvgEffortPaceMps,
+			&i.AvgStepLengthM,
+			&i.AvgVerticalOscillationMm,
+			&i.AvgGroundContactMs,
+			&i.AvgVerticalRatioPct,
 		); err != nil {
 			return nil, err
 		}
@@ -490,6 +565,116 @@ func (q *Queries) SetWorkoutDuplicateOf(ctx context.Context, arg *SetWorkoutDupl
 	return err
 }
 
+const setWorkoutFigures = `-- name: SetWorkoutFigures :one
+UPDATE workouts
+SET
+  timer_seconds = $3,
+  avg_heart_rate = $4,
+  max_heart_rate = $5,
+  min_heart_rate = $6,
+  ascent_meters = $7,
+  descent_meters = $8,
+  calories = $9,
+  total_steps = $10,
+  avg_cadence = $11,
+  avg_power_watts = $12,
+  avg_effort_pace_mps = $13,
+  avg_step_length_m = $14,
+  avg_vertical_oscillation_mm = $15,
+  avg_ground_contact_ms = $16,
+  avg_vertical_ratio_pct = $17
+WHERE
+  id = $1
+  AND user_id = $2
+RETURNING
+  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds, timer_seconds, avg_heart_rate, max_heart_rate, min_heart_rate, ascent_meters, descent_meters, calories, total_steps, avg_cadence, avg_power_watts, avg_effort_pace_mps, avg_step_length_m, avg_vertical_oscillation_mm, avg_ground_contact_ms, avg_vertical_ratio_pct
+`
+
+type SetWorkoutFiguresParams struct {
+	ID                       int32    `json:"id"`
+	UserID                   int32    `json:"user_id"`
+	TimerSeconds             *float64 `json:"timer_seconds"`
+	AvgHeartRate             *float64 `json:"avg_heart_rate"`
+	MaxHeartRate             *float64 `json:"max_heart_rate"`
+	MinHeartRate             *float64 `json:"min_heart_rate"`
+	AscentMeters             *float64 `json:"ascent_meters"`
+	DescentMeters            *float64 `json:"descent_meters"`
+	Calories                 *float64 `json:"calories"`
+	TotalSteps               *float64 `json:"total_steps"`
+	AvgCadence               *float64 `json:"avg_cadence"`
+	AvgPowerWatts            *float64 `json:"avg_power_watts"`
+	AvgEffortPaceMps         *float64 `json:"avg_effort_pace_mps"`
+	AvgStepLengthM           *float64 `json:"avg_step_length_m"`
+	AvgVerticalOscillationMm *float64 `json:"avg_vertical_oscillation_mm"`
+	AvgGroundContactMs       *float64 `json:"avg_ground_contact_ms"`
+	AvgVerticalRatioPct      *float64 `json:"avg_vertical_ratio_pct"`
+}
+
+// What the file states for the whole workout; part of what reprocessing rebuilds.
+func (q *Queries) SetWorkoutFigures(ctx context.Context, arg *SetWorkoutFiguresParams) (*Workout, error) {
+	row := q.db.QueryRow(ctx, setWorkoutFigures,
+		arg.ID,
+		arg.UserID,
+		arg.TimerSeconds,
+		arg.AvgHeartRate,
+		arg.MaxHeartRate,
+		arg.MinHeartRate,
+		arg.AscentMeters,
+		arg.DescentMeters,
+		arg.Calories,
+		arg.TotalSteps,
+		arg.AvgCadence,
+		arg.AvgPowerWatts,
+		arg.AvgEffortPaceMps,
+		arg.AvgStepLengthM,
+		arg.AvgVerticalOscillationMm,
+		arg.AvgGroundContactMs,
+		arg.AvgVerticalRatioPct,
+	)
+	var i Workout
+	err := row.Scan(
+		&i.ID,
+		&i.DistanceMiles,
+		&i.TimeSeconds,
+		&i.SpeedMph,
+		&i.PaceMinPerMile,
+		&i.StartTime,
+		&i.EndTime,
+		&i.ActivityFileID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.UserID,
+		&i.ProcessorVersion,
+		&i.Sport,
+		&i.SubSport,
+		&i.ExcludedReason,
+		&i.Source,
+		&i.SportOverride,
+		&i.UserExcludedReason,
+		&i.DuplicateOf,
+		&i.Name,
+		&i.Place,
+		&i.Timezone,
+		&i.UtcOffsetSeconds,
+		&i.TimerSeconds,
+		&i.AvgHeartRate,
+		&i.MaxHeartRate,
+		&i.MinHeartRate,
+		&i.AscentMeters,
+		&i.DescentMeters,
+		&i.Calories,
+		&i.TotalSteps,
+		&i.AvgCadence,
+		&i.AvgPowerWatts,
+		&i.AvgEffortPaceMps,
+		&i.AvgStepLengthM,
+		&i.AvgVerticalOscillationMm,
+		&i.AvgGroundContactMs,
+		&i.AvgVerticalRatioPct,
+	)
+	return &i, err
+}
+
 const updateWorkout = `-- name: UpdateWorkout :one
 UPDATE workouts
 SET
@@ -505,7 +690,7 @@ WHERE
   id = $1
   AND user_id = $2
 RETURNING
-  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds
+  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds, timer_seconds, avg_heart_rate, max_heart_rate, min_heart_rate, ascent_meters, descent_meters, calories, total_steps, avg_cadence, avg_power_watts, avg_effort_pace_mps, avg_step_length_m, avg_vertical_oscillation_mm, avg_ground_contact_ms, avg_vertical_ratio_pct
 `
 
 type UpdateWorkoutParams struct {
@@ -557,6 +742,21 @@ func (q *Queries) UpdateWorkout(ctx context.Context, arg *UpdateWorkoutParams) (
 		&i.Place,
 		&i.Timezone,
 		&i.UtcOffsetSeconds,
+		&i.TimerSeconds,
+		&i.AvgHeartRate,
+		&i.MaxHeartRate,
+		&i.MinHeartRate,
+		&i.AscentMeters,
+		&i.DescentMeters,
+		&i.Calories,
+		&i.TotalSteps,
+		&i.AvgCadence,
+		&i.AvgPowerWatts,
+		&i.AvgEffortPaceMps,
+		&i.AvgStepLengthM,
+		&i.AvgVerticalOscillationMm,
+		&i.AvgGroundContactMs,
+		&i.AvgVerticalRatioPct,
 	)
 	return &i, err
 }
@@ -586,7 +786,7 @@ WHERE
   id = $1
   AND user_id = $2
 RETURNING
-  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds
+  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds, timer_seconds, avg_heart_rate, max_heart_rate, min_heart_rate, ascent_meters, descent_meters, calories, total_steps, avg_cadence, avg_power_watts, avg_effort_pace_mps, avg_step_length_m, avg_vertical_oscillation_mm, avg_ground_contact_ms, avg_vertical_ratio_pct
 `
 
 type UpdateWorkoutDerivedParams struct {
@@ -659,6 +859,21 @@ func (q *Queries) UpdateWorkoutDerived(ctx context.Context, arg *UpdateWorkoutDe
 		&i.Place,
 		&i.Timezone,
 		&i.UtcOffsetSeconds,
+		&i.TimerSeconds,
+		&i.AvgHeartRate,
+		&i.MaxHeartRate,
+		&i.MinHeartRate,
+		&i.AscentMeters,
+		&i.DescentMeters,
+		&i.Calories,
+		&i.TotalSteps,
+		&i.AvgCadence,
+		&i.AvgPowerWatts,
+		&i.AvgEffortPaceMps,
+		&i.AvgStepLengthM,
+		&i.AvgVerticalOscillationMm,
+		&i.AvgGroundContactMs,
+		&i.AvgVerticalRatioPct,
 	)
 	return &i, err
 }

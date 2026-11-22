@@ -666,6 +666,10 @@ func (s *stubSource) Files(_ context.Context, a coros.Activity) ([][]byte, error
 	return s.files(a)
 }
 
+func (s *stubSource) Detail(context.Context, coros.Activity) (*coros.Detail, error) {
+	return &coros.Detail{Reply: "Activity Details"}, nil
+}
+
 func (a *sourcesAPI) connection(c *apiClient) (*models.SourceConnection, *tokens.UserToken) {
 	a.t.Helper()
 	user, err := a.toker.DecodeTokenString(c.token)

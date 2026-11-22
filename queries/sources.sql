@@ -141,10 +141,11 @@ INSERT INTO
     activity_file_id,
     start_time,
     files,
-    fetched_at
+    fetched_at,
+    sport_type
   )
 VALUES
-  ($1, $2, $3, $4, $5, $6, $7)
+  ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT DO NOTHING;
 
 -- name: RecordSourceFileRequest :exec
@@ -217,3 +218,120 @@ WHERE
   user_id = $1
   AND kind = 'sync_source'
   AND state IN ('queued', 'dead');
+
+-- name: ListSourceActivitiesWithoutMetadata :many
+-- The source's activities whose workout has none of the source's own figures yet, newest first. An activity recorded in parts is matched by its first file.
+SELECT
+  source_activities.external_id,
+  source_activities.sport_type,
+  workouts.id AS workout_id
+FROM
+  source_activities
+  JOIN workouts ON workouts.activity_file_id = source_activities.activity_file_id
+  AND workouts.user_id = source_activities.user_id
+WHERE
+  source_activities.user_id = sqlc.arg(user_id)
+  AND source_activities.kind = sqlc.arg(kind)
+  AND source_activities.sport_type IS NOT NULL
+  AND NOT EXISTS (
+    SELECT
+      1
+    FROM
+      coros_metadata
+    WHERE
+      coros_metadata.workout_id = workouts.id
+  )
+ORDER BY
+  source_activities.start_time DESC,
+  workouts.id DESC
+LIMIT
+  sqlc.arg(at_most);
+
+-- name: UpsertCOROSMetadata :exec
+INSERT INTO
+  coros_metadata (
+    workout_id,
+    user_id,
+    external_id,
+    fetched_at,
+    reply,
+    workout_seconds,
+    total_seconds,
+    distance_meters,
+    avg_pace_s_per_km,
+    moving_avg_pace_s_per_km,
+    adjusted_pace_s_per_km,
+    best_km_seconds,
+    avg_heart_rate,
+    avg_cadence,
+    avg_stride_length_m,
+    avg_power_watts,
+    elevation_gain_m,
+    elevation_loss_m,
+    calories,
+    training_load,
+    aerobic_te,
+    anaerobic_te,
+    training_focus,
+    performance
+  )
+VALUES
+  (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9,
+    $10,
+    $11,
+    $12,
+    $13,
+    $14,
+    $15,
+    $16,
+    $17,
+    $18,
+    $19,
+    $20,
+    $21,
+    $22,
+    $23,
+    $24
+  )
+ON CONFLICT (workout_id) DO UPDATE
+SET
+  external_id = excluded.external_id,
+  fetched_at = excluded.fetched_at,
+  reply = excluded.reply,
+  workout_seconds = excluded.workout_seconds,
+  total_seconds = excluded.total_seconds,
+  distance_meters = excluded.distance_meters,
+  avg_pace_s_per_km = excluded.avg_pace_s_per_km,
+  moving_avg_pace_s_per_km = excluded.moving_avg_pace_s_per_km,
+  adjusted_pace_s_per_km = excluded.adjusted_pace_s_per_km,
+  best_km_seconds = excluded.best_km_seconds,
+  avg_heart_rate = excluded.avg_heart_rate,
+  avg_cadence = excluded.avg_cadence,
+  avg_stride_length_m = excluded.avg_stride_length_m,
+  avg_power_watts = excluded.avg_power_watts,
+  elevation_gain_m = excluded.elevation_gain_m,
+  elevation_loss_m = excluded.elevation_loss_m,
+  calories = excluded.calories,
+  training_load = excluded.training_load,
+  aerobic_te = excluded.aerobic_te,
+  anaerobic_te = excluded.anaerobic_te,
+  training_focus = excluded.training_focus,
+  performance = excluded.performance;
+
+-- name: GetCOROSMetadata :one
+SELECT
+  *
+FROM
+  coros_metadata
+WHERE
+  workout_id = $1
+  AND user_id = $2;

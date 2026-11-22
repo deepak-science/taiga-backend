@@ -27,6 +27,33 @@ type CliSession struct {
 	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
 }
 
+type CorosMetadatum struct {
+	WorkoutID           int32              `json:"workout_id"`
+	UserID              int32              `json:"user_id"`
+	ExternalID          string             `json:"external_id"`
+	FetchedAt           pgtype.Timestamptz `json:"fetched_at"`
+	Reply               string             `json:"reply"`
+	WorkoutSeconds      *float64           `json:"workout_seconds"`
+	TotalSeconds        *float64           `json:"total_seconds"`
+	DistanceMeters      *float64           `json:"distance_meters"`
+	AvgPaceSPerKm       *float64           `json:"avg_pace_s_per_km"`
+	MovingAvgPaceSPerKm *float64           `json:"moving_avg_pace_s_per_km"`
+	AdjustedPaceSPerKm  *float64           `json:"adjusted_pace_s_per_km"`
+	BestKmSeconds       *float64           `json:"best_km_seconds"`
+	AvgHeartRate        *float64           `json:"avg_heart_rate"`
+	AvgCadence          *float64           `json:"avg_cadence"`
+	AvgStrideLengthM    *float64           `json:"avg_stride_length_m"`
+	AvgPowerWatts       *float64           `json:"avg_power_watts"`
+	ElevationGainM      *float64           `json:"elevation_gain_m"`
+	ElevationLossM      *float64           `json:"elevation_loss_m"`
+	Calories            *float64           `json:"calories"`
+	TrainingLoad        *float64           `json:"training_load"`
+	AerobicTe           *float64           `json:"aerobic_te"`
+	AnaerobicTe         *float64           `json:"anaerobic_te"`
+	TrainingFocus       string             `json:"training_focus"`
+	Performance         string             `json:"performance"`
+}
+
 type DeviceAuthorization struct {
 	ID             int32              `json:"id"`
 	DeviceCodeHash string             `json:"device_code_hash"`
@@ -77,6 +104,7 @@ type SourceActivity struct {
 	StartTime      pgtype.Timestamptz `json:"start_time"`
 	Files          int32              `json:"files"`
 	FetchedAt      pgtype.Timestamptz `json:"fetched_at"`
+	SportType      *int32             `json:"sport_type"`
 }
 
 type SourceClient struct {
@@ -154,29 +182,50 @@ type UserIdentity struct {
 }
 
 type Workout struct {
-	ID                 int32              `json:"id"`
-	DistanceMiles      *float64           `json:"distance_miles"`
-	TimeSeconds        *float64           `json:"time_seconds"`
-	SpeedMph           *float64           `json:"speed_mph"`
-	PaceMinPerMile     *float64           `json:"pace_min_per_mile"`
-	StartTime          pgtype.Timestamptz `json:"start_time"`
-	EndTime            pgtype.Timestamptz `json:"end_time"`
-	ActivityFileID     *int32             `json:"activity_file_id"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	UserID             int32              `json:"user_id"`
-	ProcessorVersion   string             `json:"processor_version"`
-	Sport              string             `json:"sport"`
-	SubSport           string             `json:"sub_sport"`
-	ExcludedReason     string             `json:"excluded_reason"`
-	Source             string             `json:"source"`
-	SportOverride      string             `json:"sport_override"`
-	UserExcludedReason string             `json:"user_excluded_reason"`
-	DuplicateOf        *int32             `json:"duplicate_of"`
-	Name               string             `json:"name"`
-	Place              string             `json:"place"`
-	Timezone           string             `json:"timezone"`
-	UtcOffsetSeconds   *int32             `json:"utc_offset_seconds"`
+	ID                       int32              `json:"id"`
+	DistanceMiles            *float64           `json:"distance_miles"`
+	TimeSeconds              *float64           `json:"time_seconds"`
+	SpeedMph                 *float64           `json:"speed_mph"`
+	PaceMinPerMile           *float64           `json:"pace_min_per_mile"`
+	StartTime                pgtype.Timestamptz `json:"start_time"`
+	EndTime                  pgtype.Timestamptz `json:"end_time"`
+	ActivityFileID           *int32             `json:"activity_file_id"`
+	CreatedAt                pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                pgtype.Timestamptz `json:"updated_at"`
+	UserID                   int32              `json:"user_id"`
+	ProcessorVersion         string             `json:"processor_version"`
+	Sport                    string             `json:"sport"`
+	SubSport                 string             `json:"sub_sport"`
+	ExcludedReason           string             `json:"excluded_reason"`
+	Source                   string             `json:"source"`
+	SportOverride            string             `json:"sport_override"`
+	UserExcludedReason       string             `json:"user_excluded_reason"`
+	DuplicateOf              *int32             `json:"duplicate_of"`
+	Name                     string             `json:"name"`
+	Place                    string             `json:"place"`
+	Timezone                 string             `json:"timezone"`
+	UtcOffsetSeconds         *int32             `json:"utc_offset_seconds"`
+	TimerSeconds             *float64           `json:"timer_seconds"`
+	AvgHeartRate             *float64           `json:"avg_heart_rate"`
+	MaxHeartRate             *float64           `json:"max_heart_rate"`
+	MinHeartRate             *float64           `json:"min_heart_rate"`
+	AscentMeters             *float64           `json:"ascent_meters"`
+	DescentMeters            *float64           `json:"descent_meters"`
+	Calories                 *float64           `json:"calories"`
+	TotalSteps               *float64           `json:"total_steps"`
+	AvgCadence               *float64           `json:"avg_cadence"`
+	AvgPowerWatts            *float64           `json:"avg_power_watts"`
+	AvgEffortPaceMps         *float64           `json:"avg_effort_pace_mps"`
+	AvgStepLengthM           *float64           `json:"avg_step_length_m"`
+	AvgVerticalOscillationMm *float64           `json:"avg_vertical_oscillation_mm"`
+	AvgGroundContactMs       *float64           `json:"avg_ground_contact_ms"`
+	AvgVerticalRatioPct      *float64           `json:"avg_vertical_ratio_pct"`
+}
+
+type WorkoutLap struct {
+	WorkoutID int32  `json:"workout_id"`
+	UserID    int32  `json:"user_id"`
+	Laps      []byte `json:"laps"`
 }
 
 type WorkoutRoute struct {

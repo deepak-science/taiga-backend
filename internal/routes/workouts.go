@@ -31,6 +31,8 @@ func newWorkoutRouter(m models.Model, fileRepo filerepo.FileRepo) http.Handler {
 	router.Get("/{workoutid}/route", getWorkoutRouteFunc(m))
 	router.Get("/{workoutid}/stretches", getWorkoutStretchesFunc(m))
 	router.Get("/{workoutid}/weather", getWorkoutWeatherFunc(m))
+	router.Get("/{workoutid}/laps", getWorkoutLapsFunc(m))
+	router.Get("/{workoutid}/coros", getWorkoutCOROSFunc(m))
 	router.Get("/{workoutid}/route/override", workoutRouteOverrideFunc(m))
 	router.Put("/{workoutid}/route/override", workoutRouteOverrideFunc(m))
 	router.Delete("/{workoutid}/route/override", workoutRouteOverrideFunc(m))
@@ -401,6 +403,66 @@ func getWorkoutWeatherFunc(m models.Model) http.HandlerFunc {
 		case models.IsNotFound(err):
 			notFoundHandler(w, r)
 		case errors.Is(err, models.ErrNoWeather):
+			http.Error(w, err.Error(), http.StatusNotFound)
+		case err != nil:
+			serverError(w, err)
+		default:
+			writeJSON(w, found)
+		}
+	}
+}
+
+func getWorkoutLapsFunc(m models.Model) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		userToken, err := tokens.UserTokenFromContext(ctx)
+		if err != nil {
+			unauthorizedHandler(w, r)
+			return
+		}
+
+		workoutID64, err := strconv.ParseInt(chi.URLParam(r, "workoutid"), 10, 32)
+		if err != nil {
+			notFoundHandler(w, r)
+			return
+		}
+
+		laps, err := m.WorkoutLaps(ctx, int32(workoutID64), userToken)
+		switch {
+		case models.IsNotFound(err):
+			notFoundHandler(w, r)
+		case err != nil:
+			serverError(w, err)
+		default:
+			// Stored already encoded, like the series.
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(laps)
+		}
+	}
+}
+
+func getWorkoutCOROSFunc(m models.Model) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		userToken, err := tokens.UserTokenFromContext(ctx)
+		if err != nil {
+			unauthorizedHandler(w, r)
+			return
+		}
+
+		workoutID64, err := strconv.ParseInt(chi.URLParam(r, "workoutid"), 10, 32)
+		if err != nil {
+			notFoundHandler(w, r)
+			return
+		}
+
+		found, err := m.WorkoutCOROSMetadata(ctx, int32(workoutID64), userToken)
+		switch {
+		case models.IsNotFound(err):
+			notFoundHandler(w, r)
+		case errors.Is(err, models.ErrNoCOROSMetadata):
 			http.Error(w, err.Error(), http.StatusNotFound)
 		case err != nil:
 			serverError(w, err)

@@ -184,11 +184,11 @@ func buildActivity(start time.Time, splits []Split, bearing float64) *filedef.Ac
 	return activity
 }
 
-func encode(t *testing.T, activity *filedef.Activity) []byte {
+func encode(t *testing.T, activity *filedef.Activity, options ...encoder.Option) []byte {
 	t.Helper()
 	fit := activity.ToFIT(nil)
 	var buf bytes.Buffer
-	if err := encoder.New(&buf).Encode(&fit); err != nil {
+	if err := encoder.New(&buf, options...).Encode(&fit); err != nil {
 		t.Fatalf("encoding FIT: %v", err)
 	}
 	return buf.Bytes()

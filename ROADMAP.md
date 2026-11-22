@@ -520,15 +520,17 @@ One COROS PACE 4 run's FIT file, and one call each to COROS's activity detail, f
 
 ### Tasks
 
-- [ ] **From the file** (an `extractorVersion` bump, so every FIT workout gets them on reprocessing):
-  - Summary: average, max and min heart rate; ascent and descent; calories; elapsed and moving time; total steps; averages of power, effort pace, step length, vertical oscillation, ground contact time and vertical ratio.
+- [x] **From the file** (`extractorVersion` 11, so every FIT workout gets them on reprocessing; migration 22):
+  - Summary, as columns on the workout: average, max and min heart rate; ascent and descent; calories; the watch's timer beside elapsed time; total steps and average cadence; averages of power, effort pace, step length, vertical oscillation, ground contact time and vertical ratio. Stored as the file states them, not recomputed.
   - Series columns: power, effort pace, step length, vertical oscillation, ground contact time, vertical ratio. Null where a sample is missing and omitted when never recorded, like the columns there now.
-  - Laps as recorded, with their own figures: the lap button is used now and then for intervals, and taiga's mile splits don't show those.
+  - Laps as recorded, with their own figures (`GET /workouts/{id}/laps`): the lap button is used now and then for intervals, and taiga's mile splits don't show those. A COROS file doesn't say which laps were the button's (`trigger` is unset in the one surveyed), so that has to be told from their lengths.
   - Not wrist temperature: the weather lookup is the better reading.
-- [ ] **COROS's own figures for an activity** (`coros_metadata`, beside the workout the way `workout_weather` is: not derived from the file, so reprocessing leaves it alone). All of what `getActivityDetail` gives, the three paces included, for tracking; none of it feeds best efforts.
-  - A third tool for taiga to call, where `docs/sources.md` and the code now allow two. One call per activity, and whether those are limited isn't known.
-  - Filled by the sync for each activity it deals with. Runs uploaded by hand before the connection could get theirs too: the list reaches back years, and an activity matches a workout by its start.
-  - The reply is prose again, so the same rule as the list: what can't be read fails loudly, and the wording gets a test file.
+- [x] **COROS's own figures for an activity** (`GET /workouts/{id}/coros`; `coros_metadata`, beside the workout the way `workout_weather` is: not derived from the file, so reprocessing leaves it alone). All of what `getActivityDetail` gives, the three paces included, for tracking; none of it feeds best efforts.
+  - A third tool for taiga to call. One call per activity, at most 20 a sync; whether those are limited isn't known.
+  - Filled by the sync for every workout whose file it has matched to a COROS activity, one uploaded by hand included, and asked for again until it's had.
+  - The reply is prose again, read by label with a test file for the wording. What can't be read is said on the connection (`last_error`) without failing the sync: a dead job would stop the activities coming in for the sake of figures that are extra.
+  - Kept in metres and seconds with the reply whole beside them, so a line not read today can be read later.
+- [ ] **COROS's figures for runs from before the connection.** Their files were uploaded by hand and no sync has matched them. The list reaches back years and costs no file requests: walk it back, match each activity to a workout by its start, and ask for its details.
 - [ ] **Frontend:** the new summary figures and laps on the workout page, the new columns as lines on its graph, and COROS's figures where it has them.
 - [ ] **Other sources.** See what the Endomondo JSON, Google Fit's TCX and a Garmin FIT have that corresponds (heart rate summaries, ascent, calories, laps, running dynamics), and read it into the same fields.
 - [ ] **Later: daily fitness** from COROS, a row per user and day, which is a new kind of data here: the fitness assessment (VO2max, running level, threshold pace, race predictions) and training load first. The predictions set against actual best efforts is the picture worth having. Recovery, sleep, HRV and stress only if taiga is to be a health log too.

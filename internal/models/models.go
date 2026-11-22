@@ -103,6 +103,10 @@ type Model interface {
 	YearlyBests(ctx context.Context, sport string, loc *time.Location, userToken *tokens.UserToken) ([]*YearBests, error)
 	CompareWorkouts(ctx context.Context, workoutIDs []int32, userToken *tokens.UserToken) ([]*WorkoutComparison, error)
 	WorkoutSeries(ctx context.Context, workoutID int32, userToken *tokens.UserToken) ([]byte, error)
+	// WorkoutLaps is the laps the workout's file recorded, as stored JSON; an empty list when there are none.
+	WorkoutLaps(ctx context.Context, workoutID int32, userToken *tokens.UserToken) ([]byte, error)
+	// WorkoutCOROSMetadata is COROS's own figures for the workout, fetched by the sync; ErrNoCOROSMetadata when it has none.
+	WorkoutCOROSMetadata(ctx context.Context, workoutID int32, userToken *tokens.UserToken) (*COROSMetadata, error)
 	// ReprocessWorkout rebuilds the workout's summary, segments and series from its activity file.
 	ReprocessWorkout(ctx context.Context, workoutID int32, userToken *tokens.UserToken, fileRepo filerepo.FileRepo) (*Workout, error)
 	// CorrectWorkout replaces a file-backed workout's corrections and reprocesses it with them.

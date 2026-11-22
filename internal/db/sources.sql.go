@@ -66,10 +66,11 @@ INSERT INTO
     activity_file_id,
     start_time,
     files,
-    fetched_at
+    fetched_at,
+    sport_type
   )
 VALUES
-  ($1, $2, $3, $4, $5, $6, $7)
+  ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT DO NOTHING
 `
 
@@ -81,6 +82,7 @@ type CreateSourceActivityParams struct {
 	StartTime      pgtype.Timestamptz `json:"start_time"`
 	Files          int32              `json:"files"`
 	FetchedAt      pgtype.Timestamptz `json:"fetched_at"`
+	SportType      *int32             `json:"sport_type"`
 }
 
 func (q *Queries) CreateSourceActivity(ctx context.Context, arg *CreateSourceActivityParams) error {
@@ -92,6 +94,7 @@ func (q *Queries) CreateSourceActivity(ctx context.Context, arg *CreateSourceAct
 		arg.StartTime,
 		arg.Files,
 		arg.FetchedAt,
+		arg.SportType,
 	)
 	return err
 }
@@ -295,9 +298,56 @@ func (q *Queries) FinishSourceSync(ctx context.Context, arg *FinishSourceSyncPar
 	return err
 }
 
+const getCOROSMetadata = `-- name: GetCOROSMetadata :one
+SELECT
+  workout_id, user_id, external_id, fetched_at, reply, workout_seconds, total_seconds, distance_meters, avg_pace_s_per_km, moving_avg_pace_s_per_km, adjusted_pace_s_per_km, best_km_seconds, avg_heart_rate, avg_cadence, avg_stride_length_m, avg_power_watts, elevation_gain_m, elevation_loss_m, calories, training_load, aerobic_te, anaerobic_te, training_focus, performance
+FROM
+  coros_metadata
+WHERE
+  workout_id = $1
+  AND user_id = $2
+`
+
+type GetCOROSMetadataParams struct {
+	WorkoutID int32 `json:"workout_id"`
+	UserID    int32 `json:"user_id"`
+}
+
+func (q *Queries) GetCOROSMetadata(ctx context.Context, arg *GetCOROSMetadataParams) (*CorosMetadatum, error) {
+	row := q.db.QueryRow(ctx, getCOROSMetadata, arg.WorkoutID, arg.UserID)
+	var i CorosMetadatum
+	err := row.Scan(
+		&i.WorkoutID,
+		&i.UserID,
+		&i.ExternalID,
+		&i.FetchedAt,
+		&i.Reply,
+		&i.WorkoutSeconds,
+		&i.TotalSeconds,
+		&i.DistanceMeters,
+		&i.AvgPaceSPerKm,
+		&i.MovingAvgPaceSPerKm,
+		&i.AdjustedPaceSPerKm,
+		&i.BestKmSeconds,
+		&i.AvgHeartRate,
+		&i.AvgCadence,
+		&i.AvgStrideLengthM,
+		&i.AvgPowerWatts,
+		&i.ElevationGainM,
+		&i.ElevationLossM,
+		&i.Calories,
+		&i.TrainingLoad,
+		&i.AerobicTe,
+		&i.AnaerobicTe,
+		&i.TrainingFocus,
+		&i.Performance,
+	)
+	return &i, err
+}
+
 const getSourceActivity = `-- name: GetSourceActivity :one
 SELECT
-  user_id, kind, external_id, activity_file_id, start_time, files, fetched_at
+  user_id, kind, external_id, activity_file_id, start_time, files, fetched_at, sport_type
 FROM
   source_activities
 WHERE
@@ -323,6 +373,7 @@ func (q *Queries) GetSourceActivity(ctx context.Context, arg *GetSourceActivityP
 		&i.StartTime,
 		&i.Files,
 		&i.FetchedAt,
+		&i.SportType,
 	)
 	return &i, err
 }
@@ -447,6 +498,67 @@ func (q *Queries) GetSourceConnectionByKind(ctx context.Context, arg *GetSourceC
 	return &i, err
 }
 
+const listSourceActivitiesWithoutMetadata = `-- name: ListSourceActivitiesWithoutMetadata :many
+SELECT
+  source_activities.external_id,
+  source_activities.sport_type,
+  workouts.id AS workout_id
+FROM
+  source_activities
+  JOIN workouts ON workouts.activity_file_id = source_activities.activity_file_id
+  AND workouts.user_id = source_activities.user_id
+WHERE
+  source_activities.user_id = $1
+  AND source_activities.kind = $2
+  AND source_activities.sport_type IS NOT NULL
+  AND NOT EXISTS (
+    SELECT
+      1
+    FROM
+      coros_metadata
+    WHERE
+      coros_metadata.workout_id = workouts.id
+  )
+ORDER BY
+  source_activities.start_time DESC,
+  workouts.id DESC
+LIMIT
+  $3
+`
+
+type ListSourceActivitiesWithoutMetadataParams struct {
+	UserID int32  `json:"user_id"`
+	Kind   string `json:"kind"`
+	AtMost int32  `json:"at_most"`
+}
+
+type ListSourceActivitiesWithoutMetadataRow struct {
+	ExternalID string `json:"external_id"`
+	SportType  *int32 `json:"sport_type"`
+	WorkoutID  int32  `json:"workout_id"`
+}
+
+// The source's activities whose workout has none of the source's own figures yet, newest first. An activity recorded in parts is matched by its first file.
+func (q *Queries) ListSourceActivitiesWithoutMetadata(ctx context.Context, arg *ListSourceActivitiesWithoutMetadataParams) ([]*ListSourceActivitiesWithoutMetadataRow, error) {
+	rows, err := q.db.Query(ctx, listSourceActivitiesWithoutMetadata, arg.UserID, arg.Kind, arg.AtMost)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*ListSourceActivitiesWithoutMetadataRow{}
+	for rows.Next() {
+		var i ListSourceActivitiesWithoutMetadataRow
+		if err := rows.Scan(&i.ExternalID, &i.SportType, &i.WorkoutID); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSourceConnections = `-- name: ListSourceConnections :many
 SELECT
   id, user_id, kind, client_id, credentials, synced_through, last_synced_at, last_error, needs_reconnect, created_at
@@ -564,6 +676,144 @@ type SetSourceCredentialsParams struct {
 
 func (q *Queries) SetSourceCredentials(ctx context.Context, arg *SetSourceCredentialsParams) error {
 	_, err := q.db.Exec(ctx, setSourceCredentials, arg.ID, arg.UserID, arg.Credentials)
+	return err
+}
+
+const upsertCOROSMetadata = `-- name: UpsertCOROSMetadata :exec
+INSERT INTO
+  coros_metadata (
+    workout_id,
+    user_id,
+    external_id,
+    fetched_at,
+    reply,
+    workout_seconds,
+    total_seconds,
+    distance_meters,
+    avg_pace_s_per_km,
+    moving_avg_pace_s_per_km,
+    adjusted_pace_s_per_km,
+    best_km_seconds,
+    avg_heart_rate,
+    avg_cadence,
+    avg_stride_length_m,
+    avg_power_watts,
+    elevation_gain_m,
+    elevation_loss_m,
+    calories,
+    training_load,
+    aerobic_te,
+    anaerobic_te,
+    training_focus,
+    performance
+  )
+VALUES
+  (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9,
+    $10,
+    $11,
+    $12,
+    $13,
+    $14,
+    $15,
+    $16,
+    $17,
+    $18,
+    $19,
+    $20,
+    $21,
+    $22,
+    $23,
+    $24
+  )
+ON CONFLICT (workout_id) DO UPDATE
+SET
+  external_id = excluded.external_id,
+  fetched_at = excluded.fetched_at,
+  reply = excluded.reply,
+  workout_seconds = excluded.workout_seconds,
+  total_seconds = excluded.total_seconds,
+  distance_meters = excluded.distance_meters,
+  avg_pace_s_per_km = excluded.avg_pace_s_per_km,
+  moving_avg_pace_s_per_km = excluded.moving_avg_pace_s_per_km,
+  adjusted_pace_s_per_km = excluded.adjusted_pace_s_per_km,
+  best_km_seconds = excluded.best_km_seconds,
+  avg_heart_rate = excluded.avg_heart_rate,
+  avg_cadence = excluded.avg_cadence,
+  avg_stride_length_m = excluded.avg_stride_length_m,
+  avg_power_watts = excluded.avg_power_watts,
+  elevation_gain_m = excluded.elevation_gain_m,
+  elevation_loss_m = excluded.elevation_loss_m,
+  calories = excluded.calories,
+  training_load = excluded.training_load,
+  aerobic_te = excluded.aerobic_te,
+  anaerobic_te = excluded.anaerobic_te,
+  training_focus = excluded.training_focus,
+  performance = excluded.performance
+`
+
+type UpsertCOROSMetadataParams struct {
+	WorkoutID           int32              `json:"workout_id"`
+	UserID              int32              `json:"user_id"`
+	ExternalID          string             `json:"external_id"`
+	FetchedAt           pgtype.Timestamptz `json:"fetched_at"`
+	Reply               string             `json:"reply"`
+	WorkoutSeconds      *float64           `json:"workout_seconds"`
+	TotalSeconds        *float64           `json:"total_seconds"`
+	DistanceMeters      *float64           `json:"distance_meters"`
+	AvgPaceSPerKm       *float64           `json:"avg_pace_s_per_km"`
+	MovingAvgPaceSPerKm *float64           `json:"moving_avg_pace_s_per_km"`
+	AdjustedPaceSPerKm  *float64           `json:"adjusted_pace_s_per_km"`
+	BestKmSeconds       *float64           `json:"best_km_seconds"`
+	AvgHeartRate        *float64           `json:"avg_heart_rate"`
+	AvgCadence          *float64           `json:"avg_cadence"`
+	AvgStrideLengthM    *float64           `json:"avg_stride_length_m"`
+	AvgPowerWatts       *float64           `json:"avg_power_watts"`
+	ElevationGainM      *float64           `json:"elevation_gain_m"`
+	ElevationLossM      *float64           `json:"elevation_loss_m"`
+	Calories            *float64           `json:"calories"`
+	TrainingLoad        *float64           `json:"training_load"`
+	AerobicTe           *float64           `json:"aerobic_te"`
+	AnaerobicTe         *float64           `json:"anaerobic_te"`
+	TrainingFocus       string             `json:"training_focus"`
+	Performance         string             `json:"performance"`
+}
+
+func (q *Queries) UpsertCOROSMetadata(ctx context.Context, arg *UpsertCOROSMetadataParams) error {
+	_, err := q.db.Exec(ctx, upsertCOROSMetadata,
+		arg.WorkoutID,
+		arg.UserID,
+		arg.ExternalID,
+		arg.FetchedAt,
+		arg.Reply,
+		arg.WorkoutSeconds,
+		arg.TotalSeconds,
+		arg.DistanceMeters,
+		arg.AvgPaceSPerKm,
+		arg.MovingAvgPaceSPerKm,
+		arg.AdjustedPaceSPerKm,
+		arg.BestKmSeconds,
+		arg.AvgHeartRate,
+		arg.AvgCadence,
+		arg.AvgStrideLengthM,
+		arg.AvgPowerWatts,
+		arg.ElevationGainM,
+		arg.ElevationLossM,
+		arg.Calories,
+		arg.TrainingLoad,
+		arg.AerobicTe,
+		arg.AnaerobicTe,
+		arg.TrainingFocus,
+		arg.Performance,
+	)
 	return err
 }
 

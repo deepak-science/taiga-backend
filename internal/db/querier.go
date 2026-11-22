@@ -72,6 +72,7 @@ type Querier interface {
 	DeleteStretchEffortsByWorkout(ctx context.Context, arg *DeleteStretchEffortsByWorkoutParams) error
 	DeleteSyncSourceJobs(ctx context.Context, userID int32) error
 	DeleteWorkout(ctx context.Context, arg *DeleteWorkoutParams) error
+	DeleteWorkoutLaps(ctx context.Context, arg *DeleteWorkoutLapsParams) error
 	DeleteWorkoutRoute(ctx context.Context, arg *DeleteWorkoutRouteParams) error
 	DeleteWorkoutRoutesByUser(ctx context.Context, userID int32) error
 	DeleteWorkoutSeries(ctx context.Context, arg *DeleteWorkoutSeriesParams) error
@@ -99,6 +100,7 @@ type Querier interface {
 	FirstWorkoutStartInWindow(ctx context.Context, arg *FirstWorkoutStartInWindowParams) (pgtype.Timestamptz, error)
 	GetActivityFile(ctx context.Context, arg *GetActivityFileParams) (*ActivityFile, error)
 	GetActivityFileByHash(ctx context.Context, arg *GetActivityFileByHashParams) (*ActivityFile, error)
+	GetCOROSMetadata(ctx context.Context, arg *GetCOROSMetadataParams) (*CorosMetadatum, error)
 	GetCliSessionByHash(ctx context.Context, tokenHash string) (*CliSession, error)
 	GetDeviceAuthorizationByHash(ctx context.Context, deviceCodeHash string) (*DeviceAuthorization, error)
 	GetIdentityUser(ctx context.Context, arg *GetIdentityUserParams) (*GetIdentityUserRow, error)
@@ -130,6 +132,7 @@ type Querier interface {
 	// Case-insensitive, so it can find more than one: registration has always kept the case it was given.
 	GetUsersByEmail(ctx context.Context, lower string) ([]*GetUsersByEmailRow, error)
 	GetWorkout(ctx context.Context, arg *GetWorkoutParams) (*Workout, error)
+	GetWorkoutLaps(ctx context.Context, arg *GetWorkoutLapsParams) ([]byte, error)
 	GetWorkoutRouteID(ctx context.Context, arg *GetWorkoutRouteIDParams) (int32, error)
 	GetWorkoutSeries(ctx context.Context, arg *GetWorkoutSeriesParams) ([]byte, error)
 	GetWorkoutTrack(ctx context.Context, arg *GetWorkoutTrackParams) ([]byte, error)
@@ -151,6 +154,8 @@ type Querier interface {
 	ListSegmentEffortsBySport(ctx context.Context, arg *ListSegmentEffortsBySportParams) ([]*ListSegmentEffortsBySportRow, error)
 	// Distance segments shortest first, then duration segments shortest first.
 	ListSegmentsByWorkout(ctx context.Context, arg *ListSegmentsByWorkoutParams) ([]*WorkoutSegment, error)
+	// The source's activities whose workout has none of the source's own figures yet, newest first. An activity recorded in parts is matched by its first file.
+	ListSourceActivitiesWithoutMetadata(ctx context.Context, arg *ListSourceActivitiesWithoutMetadataParams) ([]*ListSourceActivitiesWithoutMetadataRow, error)
 	ListSourceConnections(ctx context.Context, userID int32) ([]*SourceConnection, error)
 	ListStretchEffortsByStretch(ctx context.Context, arg *ListStretchEffortsByStretchParams) ([]*ListStretchEffortsByStretchRow, error)
 	// Every effort with when its workout started, newest first; the stretch list sums them per stretch.
@@ -187,15 +192,19 @@ type Querier interface {
 	SetRouteRepresentative(ctx context.Context, arg *SetRouteRepresentativeParams) error
 	SetSourceCredentials(ctx context.Context, arg *SetSourceCredentialsParams) error
 	SetWorkoutDuplicateOf(ctx context.Context, arg *SetWorkoutDuplicateOfParams) error
+	// What the file states for the whole workout; part of what reprocessing rebuilds.
+	SetWorkoutFigures(ctx context.Context, arg *SetWorkoutFiguresParams) (*Workout, error)
 	TouchCliSession(ctx context.Context, arg *TouchCliSessionParams) error
 	TouchDeviceAuthorization(ctx context.Context, arg *TouchDeviceAuthorizationParams) error
 	UpdateActivityFile(ctx context.Context, arg *UpdateActivityFileParams) (*ActivityFile, error)
 	UpdateWorkout(ctx context.Context, arg *UpdateWorkoutParams) (*Workout, error)
 	// Everything reprocessing rebuilds from the activity file, and the corrections it applied over it.
 	UpdateWorkoutDerived(ctx context.Context, arg *UpdateWorkoutDerivedParams) (*Workout, error)
+	UpsertCOROSMetadata(ctx context.Context, arg *UpsertCOROSMetadataParams) error
 	UpsertRouteOverride(ctx context.Context, arg *UpsertRouteOverrideParams) error
 	// Connecting again replaces the tokens and clears the fault, and carries on from where the syncs had got to.
 	UpsertSourceConnection(ctx context.Context, arg *UpsertSourceConnectionParams) (*SourceConnection, error)
+	UpsertWorkoutLaps(ctx context.Context, arg *UpsertWorkoutLapsParams) error
 	UpsertWorkoutSeries(ctx context.Context, arg *UpsertWorkoutSeriesParams) error
 	UpsertWorkoutTrack(ctx context.Context, arg *UpsertWorkoutTrackParams) error
 	UpsertWorkoutWeather(ctx context.Context, arg *UpsertWorkoutWeatherParams) error

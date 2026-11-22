@@ -128,11 +128,15 @@ func ReadActivity(activity *filedef.Activity) (*Run, error) {
 	onlySession := activity.Sessions[0]
 	summary := summarise(onlySession)
 	summary.Source = fitSource(&activity.FileId)
+	effort := effortPace(activity)
+	summary.Figures = sessionFigures(onlySession, effort)
 	run.Summary = *summary
+	run.Laps = readLaps(activity, run.Summary.StartTime, effort)
 
 	for _, rec := range activity.Records {
 		// rec := activity.Records[i]
 		rec_summary := summariseRecord(rec)
+		rec_summary.Form = recordForm(rec, effort)
 		rec_summary.DurationFromStart = rec_summary.Timestamp.Sub(run.Summary.StartTime)
 
 		run.Records = append(run.Records, rec_summary)

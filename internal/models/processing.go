@@ -85,7 +85,11 @@ func (m *storeModel) CreateWorkoutFromActivityFile(ctx context.Context, activity
 		if err != nil {
 			return err
 		}
-		return storeDerived(ctx, q, saved.ID, run, userToken)
+		if err := storeDerived(ctx, q, saved.ID, run, userToken); err != nil {
+			return err
+		}
+		saved, err = storeFigures(ctx, q, saved.ID, run, userToken)
+		return err
 	})
 	if err != nil {
 		log.Printf("Could not create workout from activity file %d: %v", activityFileID, err)
@@ -190,7 +194,11 @@ func (m *storeModel) rebuild(ctx context.Context, workout *Workout, corrections 
 				return err
 			}
 		}
-		return storeDerived(ctx, q, workout.ID, run, userToken)
+		if err := storeDerived(ctx, q, workout.ID, run, userToken); err != nil {
+			return err
+		}
+		updated, err = storeFigures(ctx, q, workout.ID, run, userToken)
+		return err
 	})
 	if err != nil {
 		log.Printf("Could not reprocess workout %d: %v", workout.ID, err)
