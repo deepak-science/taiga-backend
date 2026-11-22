@@ -106,8 +106,8 @@ The test stack is internal-only (LAN and tailnet). These must land before taiga 
 - [x] Rename the `trygo-template` service name that `GET /` and `GET /health` reported; it is `taiga` now.
   - [ ] Tokens are still issued as `trygo-<environment>` (`internal/tokens`). Renaming that turns away every token already out, so each browser signs in once more and each `taco` session refreshes; do it with a deploy where that is fine.
 - [x] Tests for `internal/tokens`, `internal/store`, `internal/filerepo`.
-  - Writing them found that `PUT /activity_files/{id}` took any string as `file_repo_hash`, and the local repo turned it into a path: `../…` read files outside the repo through the download. Both repos now take only a SHA-256 hash, and the `PUT` is `400` for anything else.
-  - [ ] The `PUT` still lets a user point a file at any stored content whose hash they know, another user's included. Knowing the hash means having the content, so nothing leaks, but no client sends the field; dropping it from the request would close it.
+  - Writing them found that `PUT /activity_files/{id}` took any string as `file_repo_hash`, and the local repo turned it into a path: `../…` read files outside the repo through the download. Both repos now take only a SHA-256 hash.
+  - [x] The `PUT` also let a user point a file at any stored content whose hash they knew, another user's included, and then download it. A hash can be known without the content (the server logs one on every repeat upload), so that was a way to read someone else's file. The field is gone from the request: only the timestamp can be set, and content is only ever attached by uploading it.
 
 ## M5 — Reprocessing and a work queue
 
@@ -201,7 +201,7 @@ Tried through a connected MCP client and by reading the server's own metadata; n
 What this makes of the plan:
 
 - [ ] **A COROS connection**, the first source. Linking is the authorization code flow taiga already runs for OIDC (state and verifier in the signed cookie, callback under `{api_base_url}`), after registering itself as a client once per deployment. The tokens are the credentials to encrypt.
-- [ ] **`sync_source` job**, hourly per connection: refresh the token if it's near its end, list from the newest activity already fetched (less a day, for late uploads from the watch) to today, skip `labelId`s already held, and put each new file through the normal upload and `process_workout` path. Stop at the daily limit and carry on next time. A new table keeps `(connection, labelId)` against the activity file, which is also what lets a deleted workout stay deleted.
+- [ ] **`sync_source` job**, hourly per connection: refresh the token if it's near its end, list from the newest activity already fetched (less a day, for late uploads from the watch) to today, skip `labelId`s already held, and put each new file through the normal upload and `process_workout` path. Take the activities oldest first, and only move the cursor past one once it has been fetched: stopped at the daily limit, the next run starts again from the first one left, so nothing older than its one-day lookback is skipped. A new table keeps `(connection, labelId)` against the activity file, which is also what lets a deleted workout stay deleted.
 - [ ] **A minimal MCP client** in Go: `initialize` and `tools/call` over HTTP with a bearer token is all this needs (the server's current flow is stateless), so it may not be worth a dependency. Check the official Go SDK first.
 - [ ] Before building: read the terms, and try registering a client and one full sign-in by hand, since registration is the step nothing here exercised.
 - [x] **Endomondo archive import.** Endomondo shut down in 2020; its export has a `.tcx` and a `.json` per workout. Surveyed on a 405-workout export (2016–2020):
