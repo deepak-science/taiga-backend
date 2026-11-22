@@ -655,10 +655,15 @@ type stubSource struct {
 	activities []coros.Activity
 	files      func(coros.Activity) ([][]byte, error)
 	detail     func(context.Context, coros.Activity) (*coros.Detail, error)
-	asked      int
+	// list, when set, answers in place of activities.
+	list  func(from, to time.Time) ([]coros.Activity, error)
+	asked int
 }
 
 func (s *stubSource) List(_ context.Context, from, to time.Time) ([]coros.Activity, error) {
+	if s.list != nil {
+		return s.list(from, to)
+	}
 	return s.activities, nil
 }
 

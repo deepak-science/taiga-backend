@@ -39,7 +39,8 @@ A `sync_source` job runs when a user connects, every hour after, and when they a
 1. Ask COROS for the activities since the last sync, less a day in case the watch uploaded one late. A new connection starts a week back.
 2. Skip every activity already dealt with.
 3. For each of the rest, oldest first, ask for its FIT file and put it through the same path as an upload.
-4. Ask for COROS's own figures on each workout that came from it and has none yet (below).
+4. Tie workouts uploaded by hand from before the connection to COROS's activities for them, a few months of history a sync (below).
+5. Ask for COROS's own figures on each workout that came from it and has none yet (below).
 
 A long gap is asked for 30 days at a time, and a stretch with more activities than one list holds (200) is asked for again in halves, down to a day.
 
@@ -50,7 +51,7 @@ A file taiga can't read is kept with no workout, where `GET /activity_files?with
 Each activity dealt with is remembered by its COROS id (`source_activities`), by user and not by connection.
 So a workout deleted from taiga stays deleted, and disconnecting and connecting again fetches nothing twice.
 
-History from before the connection isn't fetched: upload an export for that.
+History from before the connection isn't fetched: upload an export for that. Once uploaded, those runs get COROS's own figures too (below).
 
 ### COROS's own figures
 
@@ -59,7 +60,8 @@ Its activity detail tool gives those along with its own totals, and taiga keeps 
 
 - **It is for tracking only.** Nothing in it feeds best efforts, splits, totals or the workout's own summary, which stay worked out from the file. COROS's distance and time can differ from taiga's, and both are kept.
 - **It isn't derived from the file**, so reprocessing leaves it alone, as with weather. Deleting the workout deletes it.
-- **Which workouts:** every one whose file a sync has matched to a COROS activity, a run uploaded by hand included, since its file is the same one. At most 20 a sync, newest first, with any whose reply couldn't be read last time behind the ones not yet tried; whether COROS limits these calls isn't known. An activity a sync dealt with before taiga kept its sport code gets its figures once a sync lists it again, which is within a day of importing it; older ones wait for the walk back described below.
+- **Which workouts:** every one whose file a sync has matched to a COROS activity, a run uploaded by hand included, since its file is the same one. At most 20 a sync, newest first, with any whose reply couldn't be read last time behind the ones not yet tried; whether COROS limits these calls isn't known. An activity a sync dealt with before taiga kept its sport code gets its figures once a sync lists it again, which is within a day of importing it; older ones are found by the walk back described below.
+- **Runs from before the connection:** their files were uploaded by hand, so no sync brought them in, but COROS still lists the activities. Each sync takes the newest workout from a COROS file (its `source` starts "COROS") that no activity is tied to, lists COROS's month up to it, and ties each activity there to the workout starting at the same time, within 5 seconds; COROS's list and the file state the same start. No file is asked for, so none of the daily allowance is spent. A workout COROS lists nothing for is marked as looked for (`source_match_attempts`) and not searched for again. At most 12 lists a sync, a month cut short for being too full included, so the walk goes back through about a year an hour, skipping stretches with no workouts to look for, and a workout uploaded later is looked for by the next sync. The figures then come at the usual 20 a sync.
 - **Stored in metres and seconds**, paces as seconds a kilometre, whichever units the account shows. What COROS said is kept whole as well, so a figure taiga doesn't read today can be read later without asking again.
 - **When it can't be had**, the activities still come in and the sync still finishes. A reply that can't be read, or COROS saying it has nothing for that activity, costs that one's figures and the sync carries on to the next; COROS not answering stops the asking for this sync. Either way the connection's `last_error` says the figures couldn't be read or fetched, and the next sync asks again. Only a grant COROS has ended stops it.
 
@@ -100,6 +102,7 @@ The file is the only thing trusted for the workout itself.
 - **Each user's tokens** (`source_connections`): an access token (30 days) and a refresh token (180 days, replaced at every refresh, so a connection that syncs stays alive).
 - **What's been dealt with** (`source_activities`): COROS's id and sport code for the activity, when it started, and which file it became.
 - **COROS's own figures** (`coros_metadata`): one row a workout, with the reply they were read from.
+- **Workouts looked for in COROS's history and not found** (`source_match_attempts`): one row a workout, so the walk back doesn't list its month again.
 - **What was asked for** (`source_file_requests`): each request for an activity's files in the last day, for the daily limit.
 
 The registration and the tokens are encrypted (AES-256-GCM) under a key derived from the token signing key (`tokens.private_key_path`), so a copy of the database alone doesn't give access to anyone's COROS account.

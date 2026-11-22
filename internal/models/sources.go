@@ -2,6 +2,7 @@ package models
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
@@ -64,6 +65,10 @@ type SyncResult struct {
 	Detailed int
 	// DetailProblem is why some didn't, which the connection shows as its error though the sync itself finished; empty when all did.
 	DetailProblem string
+	// Matched is how many workouts the user had uploaded were tied to the source's activity for them.
+	Matched int
+	// MatchProblem is why the search for those stopped short; empty when it didn't.
+	MatchProblem string
 }
 
 func (m *storeModel) SourceClient(ctx context.Context, kind, issuer, redirectURI string) (*SourceClient, error) {
@@ -379,14 +384,22 @@ windows:
 	}
 
 	// After the cursor is saved: COROS's figures are extra, and failing to get them shouldn't have the next sync list all this again.
-	res.Detailed, res.DetailProblem, err = m.fetchSourceDetails(ctx, conn, src, now, userToken)
+	// The older workouts are tied to their activities first, so their figures are asked for in the same sync.
+	res.Matched, res.MatchProblem, err = m.matchSourceHistory(ctx, conn, src, now, userToken)
 	if err != nil {
 		return res, err
 	}
-	if res.DetailProblem != "" {
+	// With the sync's time already gone there's none to ask in, and what stopped the search is what the connection says.
+	if ctx.Err() == nil {
+		res.Detailed, res.DetailProblem, err = m.fetchSourceDetails(ctx, conn, src, now, userToken)
+		if err != nil {
+			return res, err
+		}
+	}
+	if problem := cmp.Or(res.DetailProblem, res.MatchProblem); problem != "" {
 		// Said on the connection without failing the job: a job that dies stops the hourly syncs, and the activities themselves are coming in.
 		// Past the deadline, which may be what kept the figures from coming.
-		if err := q.FailSourceSync(context.WithoutCancel(ctx), &db.FailSourceSyncParams{ID: conn.ID, UserID: userToken.ID, LastError: res.DetailProblem}); err != nil {
+		if err := q.FailSourceSync(context.WithoutCancel(ctx), &db.FailSourceSyncParams{ID: conn.ID, UserID: userToken.ID, LastError: problem}); err != nil {
 			return res, err
 		}
 	}

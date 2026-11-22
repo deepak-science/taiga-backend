@@ -67,6 +67,7 @@ type Querier interface {
 	DeleteSegmentsByWorkout(ctx context.Context, arg *DeleteSegmentsByWorkoutParams) error
 	DeleteSourceConnection(ctx context.Context, arg *DeleteSourceConnectionParams) (int64, error)
 	DeleteSourceFileRequestsBefore(ctx context.Context, arg *DeleteSourceFileRequestsBeforeParams) error
+	DeleteSourceMatchAttempts(ctx context.Context, arg *DeleteSourceMatchAttemptsParams) error
 	DeleteStretch(ctx context.Context, arg *DeleteStretchParams) error
 	// SQLite doesn't enforce ON DELETE CASCADE without a per-connection pragma, so a deleted stretch clears its own efforts.
 	DeleteStretchEffortsByStretch(ctx context.Context, arg *DeleteStretchEffortsByStretchParams) error
@@ -176,9 +177,12 @@ type Querier interface {
 	ListWorkoutsByUser(ctx context.Context, userID int32) ([]*Workout, error)
 	// Starting in [window_from, window_to); callers pass far-off bounds for an open end, so the same SQL runs on SQLite.
 	ListWorkoutsByUserInWindow(ctx context.Context, arg *ListWorkoutsByUserInWindowParams) ([]*Workout, error)
+	// The user's workouts from files the source's devices recorded that no activity of the source is tied to and that haven't been looked for, newest first.
+	ListWorkoutsToMatchToSource(ctx context.Context, arg *ListWorkoutsToMatchToSourceParams) ([]*ListWorkoutsToMatchToSourceRow, error)
 	// Takes the user row's write lock for the rest of the transaction, so checks across their rows (e.g. their last way to sign in) can't race; works the same on both databases.
 	LockUser(ctx context.Context, id int32) error
 	MarkSourceDetailTried(ctx context.Context, arg *MarkSourceDetailTriedParams) error
+	MarkSourceMatchTried(ctx context.Context, arg *MarkSourceMatchTriedParams) error
 	MoveWorkoutRoutes(ctx context.Context, arg *MoveWorkoutRoutesParams) error
 	RecordSourceFileRequest(ctx context.Context, arg *RecordSourceFileRequestParams) error
 	RenameRoute(ctx context.Context, arg *RenameRouteParams) (*Route, error)
