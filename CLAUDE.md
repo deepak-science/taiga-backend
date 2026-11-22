@@ -23,7 +23,6 @@ This is the taiga API: upload FIT files (or Endomondo export JSON, or TCX such a
 - **internal/routes**: HTTP request handlers and routing
   - Auth endpoints with JWT token generation/validation
   - Health checks with database connectivity
-  - Hat management (example CRUD operations)
   - Activity files API for secure file upload/download
   - Protected routes using JWT middleware
 
@@ -139,7 +138,7 @@ just exec-docker         # Run interactive shell in Docker container
 
 ### Utility Commands
 ```bash
-go run cmd/fit_view/main.go [file.fit]  # View FIT workout files
+go run cmd/fit_view/main.go -filename file.fit  # View FIT workout files
 go run cmd/migrate/main.go [options]    # Manual database migrations
 go run cmd/useradd/main.go -email you@example.com  # Create an account while registration is closed (prompts for the password; in the cluster: kubectl -n taiga exec -it deploy/taiga-backend -- useradd -email ...)
 ```
@@ -314,18 +313,11 @@ weather:
 - `GET /auth/sessions` (requires JWT token) - The user's CLI sessions, most recently used first: `{id, name, created_at, last_used_at, expires_at}`
 - `DELETE /auth/sessions/{id}` (requires JWT token) - Revoke one; `204`
 
-### Protected Endpoints (require JWT token)
-- `GET /hats` - List all hats
-- `POST /hats` - Create new hat
-- `GET /hats/{id}` - Get specific hat
-- `PUT /hats/{id}` - Update hat
-- `DELETE /hats/{id}` - Delete hat
-
 ### Activity Files API (requires JWT token)
 - `GET /activity_files` - List all activity files for authenticated user (newest first); `?without_workout=true` lists only files with no workout, e.g. ones that failed to parse
 - `GET /activity_files/{id}` - Get specific activity file metadata
 - `POST /activity_files` - Upload new activity file (multipart form with `file` and optional `timestamp`); `201` when new, `200` with the existing file when the user already uploaded the same content
-- `PUT /activity_files/{id}` - Update activity file metadata (timestamp, file_repo_hash)
+- `PUT /activity_files/{id}` - Update the activity file's `timestamp`; nothing else can be set, and `400` for any other field
 - `DELETE /activity_files/{id}` - Delete the activity file record (stored content is shared by hash and kept); `409` while workouts still reference it
 - `GET /activity_files/{id}/download` - Download the actual file content
 

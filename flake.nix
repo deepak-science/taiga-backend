@@ -38,8 +38,6 @@
         let
           pkgs = import nixpkgs {
             inherit system;
-            # for terraform, maybe this will be opentofu someday
-            config.allowUnfree = true;
           };
         in
         pkgs.extend (
@@ -188,9 +186,6 @@
             pkgs.sqlite
             pkgs.postgresql
             pkgs.openssl
-            # terraform, maybe opentofu someday
-            pkgs.terraform-ls
-            # pkgs.terraform
 
             pkgs.awscli2
 
