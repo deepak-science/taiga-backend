@@ -259,3 +259,105 @@ func TestStretchesLeaveOutWorkoutsWithoutATrack(t *testing.T) {
 	assert.Equal(t, http.StatusUnprocessableEntity, status, string(body))
 	assert.Contains(t, string(body), "too little GPS")
 }
+
+func TestStretchesAndRoutesPointAtEachOther(t *testing.T) {
+	srv, m, toker := newAPI(t)
+	alice := newUserClient(t, srv, m, toker, "alice@example.com")
+	bob := newUserClient(t, srv, m, toker, "bob@example.com")
+	_, first := alice.uploadWorkout(testsupport.EncodeFIT(t, routeDay, []testsupport.Split{{Meters: 2000, Seconds: 600}}))
+	_, second := alice.uploadWorkout(testsupport.EncodeFIT(t, routeDay.AddDate(0, 0, 1), []testsupport.Split{{Meters: 2000, Seconds: 800}}))
+	_, east := alice.uploadWorkout(testsupport.EncodeFITHeading(t, routeDay.AddDate(0, 0, 2), []testsupport.Split{{Meters: 2000, Seconds: 600}}, 90))
+	require.NoError(t, m.DetectRoutes(t.Context(), &tokens.UserToken{ID: 1}))
+	status, body := alice.get(fmt.Sprintf("/workouts/%d/route", first))
+	require.Equal(t, http.StatusOK, status, string(body))
+	var route models.RouteSummary
+	require.NoError(t, json.Unmarshal(body, &route))
+	// A run put on the route by hand is one of its runs, and passes neither stretch.
+	status, body = alice.put(fmt.Sprintf("/workouts/%d/route/override", east), fmt.Sprintf(`{"route_id":%d}`, route.ID))
+	require.Equal(t, http.StatusOK, status, string(body))
+
+	cut := func(name string, from, to int) int32 {
+		status, body := alice.postJSON("/stretches", fmt.Sprintf(`{"name":%q,"workout_id":%d,"start_m":%d,"end_m":%d}`, name, first, from, to))
+		require.Equal(t, http.StatusCreated, status, string(body))
+		var made models.StretchDetail
+		require.NoError(t, json.Unmarshal(body, &made))
+		return made.ID
+	}
+	hill := cut("The hill", 500, 1500)
+	early := cut("Early on", 100, 300)
+
+	routeStretches := func(query string) []models.RouteStretch {
+		status, body := alice.get(fmt.Sprintf("/routes/%d/stretches%s", route.ID, query))
+		require.Equal(t, http.StatusOK, status, string(body))
+		var got []models.RouteStretch
+		require.NoError(t, json.Unmarshal(body, &got))
+		return got
+	}
+	got := routeStretches("")
+	require.Len(t, got, 2)
+	assert.Equal(t, early, got[0].ID, "in the order the route comes to them")
+	assert.Equal(t, hill, got[1].ID)
+	assert.Equal(t, "The hill", got[1].Name)
+	assert.Equal(t, 3, got[1].RunCount)
+	assert.Equal(t, 2, got[1].WorkoutCount)
+	assert.Equal(t, 2, got[1].EffortCount)
+	assert.Equal(t, []int32{east}, got[1].MissedWorkoutIDs)
+	require.NotNil(t, got[1].BestSeconds)
+	assert.InDelta(t, 300, *got[1].BestSeconds, 0.5)
+	assert.Equal(t, first, *got[1].BestWorkoutID)
+
+	got = routeStretches("?from=" + routeDay.AddDate(0, 0, 1).Format("2006-01-02"))
+	require.Len(t, got, 2)
+	assert.Equal(t, 2, got[1].RunCount, "the window's runs")
+	assert.Equal(t, 1, got[1].WorkoutCount)
+	assert.InDelta(t, 400, *got[1].BestSeconds, 0.5)
+	assert.Empty(t, routeStretches("?from="+routeDay.AddDate(0, 0, 2).Format("2006-01-02")), "a stretch none of the window's runs pass isn't listed")
+
+	t.Run("a stretch's efforts say which route they were on", func(t *testing.T) {
+		detail := alice.stretch(hill, "")
+		require.Len(t, detail.Efforts, 2)
+		for _, e := range detail.Efforts {
+			require.NotNil(t, e.RouteID)
+			assert.Equal(t, route.ID, *e.RouteID)
+		}
+		require.Len(t, detail.Routes, 1)
+		assert.Equal(t, route.ID, detail.Routes[0].ID)
+		assert.Equal(t, 2, detail.Routes[0].EffortCount)
+		assert.Equal(t, 2, detail.Routes[0].WorkoutCount)
+		assert.NotNil(t, detail.Routes[0].DistanceMiles)
+
+		// Off its route, the run still passes the stretch.
+		status, body := alice.put(fmt.Sprintf("/workouts/%d/route/override", second), `{"route_id":null}`)
+		require.Equal(t, http.StatusOK, status, string(body))
+		detail = alice.stretch(hill, "")
+		require.Len(t, detail.Efforts, 2)
+		assert.Nil(t, detail.Efforts[0].RouteID)
+		assert.Equal(t, 1, detail.Routes[0].EffortCount)
+		status, _ = alice.delete(fmt.Sprintf("/workouts/%d/route/override", second))
+		require.Equal(t, http.StatusNoContent, status)
+	})
+
+	t.Run("a workout's passes say where they stand", func(t *testing.T) {
+		status, body := alice.get(fmt.Sprintf("/workouts/%d/stretches", second))
+		require.Equal(t, http.StatusOK, status, string(body))
+		var passes []models.WorkoutStretchEffort
+		require.NoError(t, json.Unmarshal(body, &passes))
+		require.Len(t, passes, 2)
+		assert.Equal(t, hill, passes[1].StretchID)
+		assert.InDelta(t, 300, passes[1].BestSeconds, 0.5)
+		assert.Equal(t, 2, passes[1].Rank)
+		assert.Equal(t, 2, passes[1].EffortCount)
+		require.NotNil(t, passes[1].RouteID)
+		assert.Equal(t, route.ID, *passes[1].RouteID)
+
+		status, body = alice.get(fmt.Sprintf("/workouts/%d/stretches", first))
+		require.Equal(t, http.StatusOK, status, string(body))
+		require.NoError(t, json.Unmarshal(body, &passes))
+		assert.Equal(t, 1, passes[1].Rank)
+	})
+
+	status, _ = bob.get(fmt.Sprintf("/routes/%d/stretches", route.ID))
+	assert.Equal(t, http.StatusNotFound, status)
+	status, _ = alice.get("/routes/9999/stretches")
+	assert.Equal(t, http.StatusNotFound, status)
+}

@@ -208,3 +208,15 @@ WHERE
   route_id = $1
   AND user_id = $2
   AND with_group = TRUE;
+
+-- name: ListRouteNamesByUser :many
+-- Each route with what it's called by: its name, and its representative run's distance.
+SELECT
+  routes.id,
+  routes.name,
+  workouts.distance_miles
+FROM
+  routes
+  LEFT JOIN workouts ON workouts.id = routes.representative_workout_id
+WHERE
+  routes.user_id = $1;

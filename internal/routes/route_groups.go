@@ -23,6 +23,7 @@ func newRouteRouter(m models.Model) http.Handler {
 	router := chi.NewRouter()
 	router.Get("/", getRoutesFunc(m))
 	router.Get("/{routeid}", getRouteFunc(m))
+	router.Get("/{routeid}/stretches", getRouteStretchesFunc(m))
 	router.Put("/{routeid}", putRouteFunc(m))
 	router.Post("/{routeid}/merge", postRouteMergeFunc(m))
 	router.Delete("/{routeid}/merges", deleteRouteMergesFunc(m))

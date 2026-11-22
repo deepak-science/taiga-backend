@@ -229,3 +229,34 @@ func getWorkoutStretchesFunc(m models.Model) http.HandlerFunc {
 		writeJSON(w, efforts)
 	}
 }
+
+// getRouteStretchesFunc lists the stretches a route's runs pass, with the runs that missed each.
+func getRouteStretchesFunc(m models.Model) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userToken, err := tokens.UserTokenFromContext(r.Context())
+		if err != nil {
+			unauthorizedHandler(w, r)
+			return
+		}
+		id, ok := routeID(r)
+		if !ok {
+			notFoundHandler(w, r)
+			return
+		}
+		window, err := parseWindow(r.URL.Query())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		stretches, err := m.RouteStretches(r.Context(), id, window, userToken)
+		if models.IsNotFound(err) {
+			notFoundHandler(w, r)
+			return
+		}
+		if err != nil {
+			serverError(w, err)
+			return
+		}
+		writeJSON(w, stretches)
+	}
+}
