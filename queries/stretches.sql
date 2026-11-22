@@ -133,6 +133,47 @@ WHERE
 ORDER BY
   stretch_efforts.start_offset_seconds;
 
+-- name: ListStretchEffortsOverWorkoutStretches :many
+-- Every effort over the stretches one workout passes, its own among them, with each stretch's name.
+-- One statement, so a pass and the efforts it's ranked among are read together.
+SELECT
+  stretch_efforts.*,
+  stretches.name,
+  stretches.meters
+FROM
+  stretch_efforts
+  JOIN stretches ON stretches.id = stretch_efforts.stretch_id
+WHERE
+  stretch_efforts.user_id = sqlc.arg(user_id)
+  AND stretch_efforts.stretch_id IN (
+    SELECT
+      own.stretch_id
+    FROM
+      stretch_efforts AS own
+    WHERE
+      own.workout_id = sqlc.arg(workout_id)
+      AND own.user_id = sqlc.arg(user_id)
+  )
+ORDER BY
+  stretch_efforts.start_offset_seconds;
+
+-- name: ListStretchEffortsByRoute :many
+-- The efforts of a route's runs, newest run first and each run's passes in the order it made them.
+SELECT
+  stretch_efforts.*,
+  workouts.start_time,
+  workouts.name AS workout_name
+FROM
+  stretch_efforts
+  JOIN workout_routes ON workout_routes.workout_id = stretch_efforts.workout_id
+  JOIN workouts ON workouts.id = stretch_efforts.workout_id
+WHERE
+  workout_routes.route_id = $1
+  AND stretch_efforts.user_id = $2
+ORDER BY
+  workouts.start_time DESC,
+  stretch_efforts.start_offset_seconds;
+
 -- name: ListWorkoutTracksByUserAndSport :many
 -- The workouts a new stretch is matched against: tracked (so scored, with GPS) and not a copy of another.
 SELECT

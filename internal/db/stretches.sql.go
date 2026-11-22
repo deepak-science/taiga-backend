@@ -206,6 +206,77 @@ func (q *Queries) GetStretch(ctx context.Context, arg *GetStretchParams) (*Stret
 	return &i, err
 }
 
+const listStretchEffortsByRoute = `-- name: ListStretchEffortsByRoute :many
+SELECT
+  stretch_efforts.id, stretch_efforts.stretch_id, stretch_efforts.workout_id, stretch_efforts.user_id, stretch_efforts.start_offset_seconds, stretch_efforts.end_offset_seconds, stretch_efforts.duration_seconds, stretch_efforts.start_meters, stretch_efforts.distance_meters, stretch_efforts.walked_fraction,
+  workouts.start_time,
+  workouts.name AS workout_name
+FROM
+  stretch_efforts
+  JOIN workout_routes ON workout_routes.workout_id = stretch_efforts.workout_id
+  JOIN workouts ON workouts.id = stretch_efforts.workout_id
+WHERE
+  workout_routes.route_id = $1
+  AND stretch_efforts.user_id = $2
+ORDER BY
+  workouts.start_time DESC,
+  stretch_efforts.start_offset_seconds
+`
+
+type ListStretchEffortsByRouteParams struct {
+	RouteID int32 `json:"route_id"`
+	UserID  int32 `json:"user_id"`
+}
+
+type ListStretchEffortsByRouteRow struct {
+	ID                 int32              `json:"id"`
+	StretchID          int32              `json:"stretch_id"`
+	WorkoutID          int32              `json:"workout_id"`
+	UserID             int32              `json:"user_id"`
+	StartOffsetSeconds float64            `json:"start_offset_seconds"`
+	EndOffsetSeconds   float64            `json:"end_offset_seconds"`
+	DurationSeconds    float64            `json:"duration_seconds"`
+	StartMeters        float64            `json:"start_meters"`
+	DistanceMeters     float64            `json:"distance_meters"`
+	WalkedFraction     *float64           `json:"walked_fraction"`
+	StartTime          pgtype.Timestamptz `json:"start_time"`
+	WorkoutName        string             `json:"workout_name"`
+}
+
+// The efforts of a route's runs, newest run first and each run's passes in the order it made them.
+func (q *Queries) ListStretchEffortsByRoute(ctx context.Context, arg *ListStretchEffortsByRouteParams) ([]*ListStretchEffortsByRouteRow, error) {
+	rows, err := q.db.Query(ctx, listStretchEffortsByRoute, arg.RouteID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*ListStretchEffortsByRouteRow{}
+	for rows.Next() {
+		var i ListStretchEffortsByRouteRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.StretchID,
+			&i.WorkoutID,
+			&i.UserID,
+			&i.StartOffsetSeconds,
+			&i.EndOffsetSeconds,
+			&i.DurationSeconds,
+			&i.StartMeters,
+			&i.DistanceMeters,
+			&i.WalkedFraction,
+			&i.StartTime,
+			&i.WorkoutName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listStretchEffortsByStretch = `-- name: ListStretchEffortsByStretch :many
 SELECT
   stretch_efforts.id, stretch_efforts.stretch_id, stretch_efforts.workout_id, stretch_efforts.user_id, stretch_efforts.start_offset_seconds, stretch_efforts.end_offset_seconds, stretch_efforts.duration_seconds, stretch_efforts.start_meters, stretch_efforts.distance_meters, stretch_efforts.walked_fraction,
@@ -384,6 +455,84 @@ func (q *Queries) ListStretchEffortsByWorkout(ctx context.Context, arg *ListStre
 	items := []*ListStretchEffortsByWorkoutRow{}
 	for rows.Next() {
 		var i ListStretchEffortsByWorkoutRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.StretchID,
+			&i.WorkoutID,
+			&i.UserID,
+			&i.StartOffsetSeconds,
+			&i.EndOffsetSeconds,
+			&i.DurationSeconds,
+			&i.StartMeters,
+			&i.DistanceMeters,
+			&i.WalkedFraction,
+			&i.Name,
+			&i.Meters,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStretchEffortsOverWorkoutStretches = `-- name: ListStretchEffortsOverWorkoutStretches :many
+SELECT
+  stretch_efforts.id, stretch_efforts.stretch_id, stretch_efforts.workout_id, stretch_efforts.user_id, stretch_efforts.start_offset_seconds, stretch_efforts.end_offset_seconds, stretch_efforts.duration_seconds, stretch_efforts.start_meters, stretch_efforts.distance_meters, stretch_efforts.walked_fraction,
+  stretches.name,
+  stretches.meters
+FROM
+  stretch_efforts
+  JOIN stretches ON stretches.id = stretch_efforts.stretch_id
+WHERE
+  stretch_efforts.user_id = $1
+  AND stretch_efforts.stretch_id IN (
+    SELECT
+      own.stretch_id
+    FROM
+      stretch_efforts AS own
+    WHERE
+      own.workout_id = $2
+      AND own.user_id = $1
+  )
+ORDER BY
+  stretch_efforts.start_offset_seconds
+`
+
+type ListStretchEffortsOverWorkoutStretchesParams struct {
+	UserID    int32 `json:"user_id"`
+	WorkoutID int32 `json:"workout_id"`
+}
+
+type ListStretchEffortsOverWorkoutStretchesRow struct {
+	ID                 int32    `json:"id"`
+	StretchID          int32    `json:"stretch_id"`
+	WorkoutID          int32    `json:"workout_id"`
+	UserID             int32    `json:"user_id"`
+	StartOffsetSeconds float64  `json:"start_offset_seconds"`
+	EndOffsetSeconds   float64  `json:"end_offset_seconds"`
+	DurationSeconds    float64  `json:"duration_seconds"`
+	StartMeters        float64  `json:"start_meters"`
+	DistanceMeters     float64  `json:"distance_meters"`
+	WalkedFraction     *float64 `json:"walked_fraction"`
+	Name               string   `json:"name"`
+	Meters             float64  `json:"meters"`
+}
+
+// Every effort over the stretches one workout passes, its own among them, with each stretch's name.
+// One statement, so a pass and the efforts it's ranked among are read together.
+func (q *Queries) ListStretchEffortsOverWorkoutStretches(ctx context.Context, arg *ListStretchEffortsOverWorkoutStretchesParams) ([]*ListStretchEffortsOverWorkoutStretchesRow, error) {
+	rows, err := q.db.Query(ctx, listStretchEffortsOverWorkoutStretches, arg.UserID, arg.WorkoutID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*ListStretchEffortsOverWorkoutStretchesRow{}
+	for rows.Next() {
+		var i ListStretchEffortsOverWorkoutStretchesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.StretchID,
