@@ -151,9 +151,20 @@ func clock(value string) (*float64, error) {
 	if m == nil {
 		return nil, fmt.Errorf("not a time")
 	}
-	hours, _ := strconv.Atoi(m[1])
+	hours := 0
+	if m[1] != "" {
+		var err error
+		// More digits than an int holds is no time either.
+		if hours, err = strconv.Atoi(m[1]); err != nil {
+			return nil, fmt.Errorf("not a time")
+		}
+	}
 	minutes, _ := strconv.Atoi(m[2])
 	seconds, _ := strconv.Atoi(m[3])
+	// "6:99" is a slip in the reply, not 7:39; minutes alone may run past the hour ("75:10").
+	if seconds > 59 || (m[1] != "" && minutes > 59) {
+		return nil, fmt.Errorf("not a time")
+	}
 	total := float64(hours*3600 + minutes*60 + seconds)
 	return &total, nil
 }
@@ -209,7 +220,7 @@ func (s *Session) Detail(ctx context.Context, a Activity) (*Detail, error) {
 		return nil, err
 	}
 	if failed {
-		return nil, fmt.Errorf("COROS couldn't describe activity %s: %s", a.ID, brief(text))
+		return nil, fmt.Errorf("%w: activity %s: %s", ErrNoDetail, a.ID, brief(text))
 	}
 	return parseDetail(text)
 }

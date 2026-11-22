@@ -106,8 +106,8 @@ func (m *storeModel) fetchSourceDetails(ctx context.Context, conn *SourceConnect
 		switch {
 		case errors.Is(err, coros.ErrAuthorization):
 			return stored, "", err
-		// One reply in words taiga can't read doesn't speak for the next activity, which may be another sport.
-		case errors.Is(err, coros.ErrUnexpectedReply):
+		// One reply in words taiga can't read doesn't speak for the next activity, which may be another sport; nor does COROS having nothing for this one.
+		case errors.Is(err, coros.ErrUnexpectedReply), errors.Is(err, coros.ErrNoDetail):
 			log.Printf("sources: %s's figures for activity %s of user %d can't be read: %v", conn.Kind, row.ExternalID, userToken.ID, err)
 			unread++
 			if problem == "" {
@@ -162,6 +162,10 @@ func (m *storeModel) fetchSourceDetails(ctx context.Context, conn *SourceConnect
 			return q.UpsertCOROSMetadata(ctx, params)
 		})
 		if err != nil {
+			// A delete that lands between the check and the insert fails the insert on its foreign key, which is the workout being gone and no fault of the sync.
+			if _, gone := q.GetWorkout(ctx, &db.GetWorkoutParams{ID: row.WorkoutID, UserID: userToken.ID}); IsNotFound(gone) {
+				continue
+			}
 			return stored, "", err
 		}
 		if kept {

@@ -61,7 +61,7 @@ Its activity detail tool gives those along with its own totals, and taiga keeps 
 - **It isn't derived from the file**, so reprocessing leaves it alone, as with weather. Deleting the workout deletes it.
 - **Which workouts:** every one whose file a sync has matched to a COROS activity, a run uploaded by hand included, since its file is the same one. At most 20 a sync, newest first, with any whose reply couldn't be read last time behind the ones not yet tried; whether COROS limits these calls isn't known. An activity a sync dealt with before taiga kept its sport code gets its figures once a sync lists it again, which is within a day of importing it; older ones wait for the walk back described below.
 - **Stored in metres and seconds**, paces as seconds a kilometre, whichever units the account shows. What COROS said is kept whole as well, so a figure taiga doesn't read today can be read later without asking again.
-- **When it can't be had**, the activities still come in and the sync still finishes: the connection's `last_error` says the figures couldn't be read or fetched, and the next sync asks again. Only a grant COROS has ended stops it.
+- **When it can't be had**, the activities still come in and the sync still finishes. A reply that can't be read, or COROS saying it has nothing for that activity, costs that one's figures and the sync carries on to the next; COROS not answering stops the asking for this sync. Either way the connection's `last_error` says the figures couldn't be read or fetched, and the next sync asks again. Only a grant COROS has ended stops it.
 
 Runs from before the connection whose files were never matched by a sync have none: the list would have to be walked back through the years for that, which isn't built.
 

@@ -74,6 +74,8 @@ type FakeActivity struct {
 	InProgress bool
 	// Detail is what the detail tool says of it; empty for FakeRunDetail.
 	Detail string
+	// NoDetail makes the detail tool say it has nothing for the activity.
+	NoDetail bool
 }
 
 // FakeRunDetail is the detail tool's reply for a run, in the wording COROS's server used in November 2026.
@@ -394,7 +396,7 @@ func (f *FakeCOROS) detail(_ context.Context, _ *mcp.CallToolRequest, args fakeD
 	defer f.mu.Unlock()
 	f.DetailCalls++
 	for _, a := range f.activities {
-		if a.ID != args.LabelID || a.SportType != args.SportType {
+		if a.ID != args.LabelID || a.SportType != args.SportType || a.NoDetail {
 			continue
 		}
 		reply := FakeRunDetail

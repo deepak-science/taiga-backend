@@ -75,6 +75,9 @@ func TestDetailsThatDoNotAddUpAreNotGuessedAt(t *testing.T) {
 		"a unit not seen before":   strings.Replace(run, "7.63 km", "7.63 leagues", 1),
 		"a pace per something new": strings.Replace(run, "6:47 /km", "6:47 /500m", 1),
 		"a time that isn't one":    strings.Replace(run, "Workout Time: 51:40", "Workout Time: about an hour", 1),
+		"sixty seconds or more":    strings.Replace(run, "6:47 /km", "6:99 /km", 1),
+		"sixty minutes in an hour": strings.Replace(run, "Workout Time: 51:40", "Workout Time: 1:99:00", 1),
+		"hours past counting":      strings.Replace(run, "Workout Time: 51:40", "Workout Time: 99999999999999999999:00:00", 1),
 		"a number that isn't one":  strings.Replace(run, "Training Load: 120", "Training Load: high", 1),
 		"a gain without a loss":    strings.Replace(run, "54 m / 51 m", "54 m", 1),
 	} {

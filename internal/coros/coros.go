@@ -47,6 +47,8 @@ var (
 	ErrDailyLimit = errors.New("COROS's daily limit on FIT files is used up")
 	// ErrInProgress means the activity hasn't finished, so it has no file yet.
 	ErrInProgress = errors.New("the activity is still in progress")
+	// ErrNoDetail means COROS answered that it has no figures to give for an activity, which says nothing about the next one.
+	ErrNoDetail = errors.New("COROS couldn't describe the activity")
 	// ErrUnexpectedReply means a tool answered in words this package can't read: its replies are prose, so this is what a change of wording looks like.
 	ErrUnexpectedReply = errors.New("COROS answered in a form taiga doesn't know how to read")
 	// ErrTooMany means a list came back full, so there may be more than it holds: ask for a shorter window.

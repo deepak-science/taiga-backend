@@ -195,3 +195,28 @@ func TestUnreadableFiguresDoNotKeepTheRestWaiting(t *testing.T) {
 	}
 	assert.Equal(t, 1, had)
 }
+
+func TestAnActivityCOROSHasNothingForDoesNotKeepTheRestWaiting(t *testing.T) {
+	a := newSourcesAPI(t)
+	alice := a.user("alice@example.com")
+	// The newest is one COROS says it can't describe; the older one answers as usual.
+	missing := a.run(1, 2*time.Hour)
+	missing.NoDetail = true
+	a.fake.Add(missing, a.run(2, 26*time.Hour))
+	a.connect(alice)
+	a.sync()
+
+	imported := a.workouts(alice)
+	require.Len(t, imported, 2)
+	assert.Equal(t, 2, a.fake.Details(), "the one after it was still asked for")
+	had := 0
+	for _, w := range imported {
+		if status, _ := alice.corosFigures(w.ID); status == http.StatusOK {
+			had++
+		}
+	}
+	assert.Equal(t, 1, had)
+	conn := a.sources(alice).Connections[0]
+	require.NotNil(t, conn.LastSyncedAt)
+	assert.Contains(t, conn.LastError, "COROS's own figures for 1 of them couldn't be read")
+}
