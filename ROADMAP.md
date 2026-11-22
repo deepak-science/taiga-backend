@@ -106,8 +106,8 @@ The test stack is internal-only (LAN and tailnet). These must land before taiga 
 - [x] Rename the `trygo-template` service name that `GET /` and `GET /health` reported; it is `taiga` now.
   - [ ] Tokens are still issued as `trygo-<environment>` (`internal/tokens`). Renaming that turns away every token already out, so each browser signs in once more and each `taco` session refreshes; do it with a deploy where that is fine.
 - [x] Tests for `internal/tokens`, `internal/store`, `internal/filerepo`.
-  - Writing them found that `PUT /activity_files/{id}` took any string as `file_repo_hash`, and the local repo turned it into a path: `../…` read files outside the repo through the download. Both repos now take only a SHA-256 hash, and the `PUT` is `400` for anything else.
-  - [ ] The `PUT` still lets a user point a file at any stored content whose hash they know, another user's included. Knowing the hash means having the content, so nothing leaks, but no client sends the field; dropping it from the request would close it.
+  - Writing them found that `PUT /activity_files/{id}` took any string as `file_repo_hash`, and the local repo turned it into a path: `../…` read files outside the repo through the download. Both repos now take only a SHA-256 hash.
+  - [x] The `PUT` also let a user point a file at any stored content whose hash they knew, another user's included, and then download it. A hash can be known without the content (the server logs one on every repeat upload), so that was a way to read someone else's file. The field is gone from the request: only the timestamp can be set, and content is only ever attached by uploading it.
 
 ## M5 — Reprocessing and a work queue
 
@@ -201,7 +201,7 @@ Tried through a connected MCP client and by reading the server's own metadata; n
 What this makes of the plan:
 
 - [x] **A COROS connection**, the first source (`docs/sources.md`). Linking is the authorization code flow taiga already runs for OIDC, after the server registers itself as a client the first time anyone connects. The registration and each user's tokens are sealed under a key derived from the token signing key. `GET /sources`, `POST /sources/coros`, `DELETE /sources/{id}`.
-- [x] **`sync_source` job**, on connecting, hourly, and on `POST /sources/{id}/sync`: lists from the last sync less a day, skips ids already dealt with (`source_activities`, which is also what keeps a deleted workout deleted), and puts each new file through the upload path. Stops at 45 files in 24 hours and carries on next time. A grant COROS has ended marks the connection `needs_reconnect` and stops asking.
+- [x] **`sync_source` job**, on connecting, hourly, and on `POST /sources/{id}/sync`: lists from the last sync less a day, skips ids already dealt with (`source_activities`, which is also what keeps a deleted workout deleted), and puts each new file through the upload path. Takes them oldest first and stops at 45 files in 24 hours, leaving the cursor at the first one not fetched, so the next run misses nothing. A grant COROS has ended marks the connection `needs_reconnect` and stops asking.
 - [x] **The MCP client** is the official Go SDK (`modelcontextprotocol/go-sdk`), which also serves the stand-in the tests run against (`testsupport.NewFakeCOROS`).
 - [x] **Tried against COROS** (2026-11-21, from `localhost`): it registered with no approval, signed in, imported the week's six activities and fetched nothing on the next sync. What it sent is written down in `docs/sources.md` and kept as the parser's test files. Two things it turned up: the list arrives as a JSON string, quotes and all, and COROS registers taiga with no client secret whatever is asked for.
 - [x] **Refreshing works** (same day): with the stored token treated as expired, three syncs in a row each refreshed, got a new token pair, and saved it for the next. So a client with no secret is refreshed, and the rotation is kept.

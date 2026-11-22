@@ -26,7 +26,7 @@ type FileRepo interface {
 var ErrInvalidHash = errors.New("not a file hash")
 
 // CheckHash returns ErrInvalidHash unless hash is lowercase hex SHA-256.
-// A hash becomes a path or key, and one can arrive from a request (PUT /activity_files/{id}).
+// A hash becomes a path or key, so the stores take nothing else, wherever it came from.
 func CheckHash(hash string) error {
 	if len(hash) != sha256.Size*2 {
 		return ErrInvalidHash
