@@ -1,7 +1,9 @@
 package routes_test
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/cookiejar"
@@ -620,4 +622,141 @@ func TestAskingToSyncRevivesADeadOne(t *testing.T) {
 	a.worker.SweepSources(t.Context())
 	a.sync()
 	assert.Len(t, a.workouts(alice), 2)
+}
+
+func TestARefreshIsKeptWhenCOROSThenFails(t *testing.T) {
+	a := newSourcesAPI(t)
+	alice := a.user("alice@example.com")
+	a.fake.Add(a.run(1, 2*time.Hour))
+	// The first sync finds its token run out, refreshes, and then can't reach the server.
+	a.fake.AccessTTL = time.Second
+	a.connect(alice)
+	a.fake.AccessTTL = 30 * 24 * time.Hour
+	a.fake.Down = true
+	a.sync()
+	conn := a.sources(alice).Connections[0]
+	require.NotEmpty(t, conn.LastError)
+	require.False(t, conn.NeedsReconnect)
+
+	// The retry has the new refresh token; with the old one, spent, COROS would turn it away.
+	a.fake.Down = false
+	a.now = a.now.Add(time.Minute)
+	a.sync()
+	conn = a.sources(alice).Connections[0]
+	assert.False(t, conn.NeedsReconnect, conn.LastError)
+	assert.Len(t, a.workouts(alice), 1)
+}
+
+// stubSource is a source that lists what it's given and hands over files as told.
+type stubSource struct {
+	activities []coros.Activity
+	files      func(coros.Activity) ([][]byte, error)
+	asked      int
+}
+
+func (s *stubSource) List(_ context.Context, from, to time.Time) ([]coros.Activity, error) {
+	return s.activities, nil
+}
+
+func (s *stubSource) Files(_ context.Context, a coros.Activity) ([][]byte, error) {
+	s.asked++
+	return s.files(a)
+}
+
+func (a *sourcesAPI) connection(c *apiClient) (*models.SourceConnection, *tokens.UserToken) {
+	a.t.Helper()
+	user, err := a.toker.DecodeTokenString(c.token)
+	require.NoError(a.t, err)
+	conn, err := a.m.SourceConnectionByKind(a.t.Context(), coros.Kind, user)
+	require.NoError(a.t, err)
+	return conn, user
+}
+
+func TestLinksIssuedCountEvenWhenTheImportFails(t *testing.T) {
+	a := newSourcesAPI(t)
+	alice := a.user("alice@example.com")
+	a.connect(alice)
+	a.sync()
+	conn, user := a.connection(alice)
+	repo := testsupport.NewFileRepo(t)
+	activity := coros.Activity{ID: "1", SportType: 100, Start: a.now.Add(-time.Hour)}
+
+	// COROS issued the day's worth of links and then none would download.
+	failing := &stubSource{activities: []coros.Activity{activity}, files: func(coros.Activity) ([][]byte, error) {
+		return nil, &coros.SpentError{Files: models.SourceDailyFiles, Err: errors.New("status 500")}
+	}}
+	_, err := a.m.SyncSource(t.Context(), conn, failing, repo, a.now, user)
+	require.Error(t, err)
+
+	working := &stubSource{activities: []coros.Activity{activity}, files: func(coros.Activity) ([][]byte, error) {
+		return [][]byte{a.run(1, time.Hour).File}, nil
+	}}
+	res, err := a.m.SyncSource(t.Context(), conn, working, repo, a.now, user)
+	require.NoError(t, err)
+	assert.True(t, res.LimitReached, "the links that failed were spent all the same")
+	assert.Zero(t, working.asked)
+
+	// A day on they no longer count, and the activity that failed is still waiting.
+	res, err = a.m.SyncSource(t.Context(), conn, working, repo, a.now.Add(25*time.Hour), user)
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Imported)
+}
+
+func TestRoutesAreDetectedForWhatAFailedSyncBroughtIn(t *testing.T) {
+	a := newSourcesAPI(t)
+	alice := a.user("alice@example.com")
+	a.connect(alice)
+	a.sync()
+	conn, user := a.connection(alice)
+	queued := func() []string {
+		_, body := alice.get("/jobs?state=queued")
+		var jobs []models.Job
+		require.NoError(t, json.Unmarshal(body, &jobs), string(body))
+		var kinds []string
+		for _, job := range jobs {
+			kinds = append(kinds, job.Kind)
+		}
+		return kinds
+	}
+	require.NotContains(t, queued(), "detect_routes")
+
+	// The first activity comes in, and the second fails the sync.
+	src := &stubSource{
+		activities: []coros.Activity{{ID: "1", SportType: 100, Start: a.now.Add(-2 * time.Hour)}, {ID: "2", SportType: 100, Start: a.now.Add(-time.Hour)}},
+		files: func(activity coros.Activity) ([][]byte, error) {
+			if activity.ID == "2" {
+				return nil, errors.New("COROS is down")
+			}
+			return [][]byte{a.run(1, 2*time.Hour).File}, nil
+		},
+	}
+	res, err := a.m.SyncSource(t.Context(), conn, src, testsupport.NewFileRepo(t), a.now, user)
+	require.Error(t, err)
+	require.Equal(t, 1, res.Imported)
+	assert.Contains(t, queued(), "detect_routes", "the next sync skips the one that came in, so it wouldn't queue this")
+}
+
+func TestARegistrationSealedUnderAnOldKeyIsReplaced(t *testing.T) {
+	a := newSourcesAPI(t)
+	alice := a.user("alice@example.com")
+	a.connect(alice)
+	registrations := func() int {
+		n, _, _, _, _ := a.fake.Counts()
+		return n
+	}
+	require.Equal(t, 1, registrations())
+	_, user := a.connection(alice)
+
+	// The token signing key was replaced, and with it the key everything stored is sealed under.
+	rotated, err := sources.New(a.m, a.fake.Endpoint(), "https://"+frontendHost, a.srv.URL, []byte("another secret"))
+	require.NoError(t, err)
+	address, err := rotated.Begin(t.Context(), httptest.NewRecorder(), user)
+	require.NoError(t, err, "connecting has to work again without anyone editing the database")
+	assert.NotEmpty(t, address)
+	assert.Equal(t, 2, registrations())
+
+	// Once is enough.
+	_, err = rotated.Begin(t.Context(), httptest.NewRecorder(), user)
+	require.NoError(t, err)
+	assert.Equal(t, 2, registrations())
 }

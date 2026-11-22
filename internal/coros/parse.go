@@ -40,7 +40,8 @@ var (
 )
 
 func parseActivities(text string) ([]Activity, error) {
-	if strings.Contains(text, "No sport records found") {
+	// Only as the whole reply: an activity can be named anything, these words included.
+	if strings.HasPrefix(strings.TrimSpace(text), "No sport records found") {
 		return nil, nil
 	}
 	count := countPattern.FindStringSubmatch(text)

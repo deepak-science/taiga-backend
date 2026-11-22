@@ -28,6 +28,15 @@ SET
 RETURNING
   *;
 
+-- name: ReplaceSourceClient :one
+UPDATE source_clients
+SET
+  registration = $2
+WHERE
+  id = $1
+RETURNING
+  *;
+
 -- name: UpsertSourceConnection :one
 -- Connecting again replaces the tokens and clears the fault, and carries on from where the syncs had got to.
 INSERT INTO
@@ -136,15 +145,28 @@ VALUES
   ($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT DO NOTHING;
 
+-- name: RecordSourceFileRequest :exec
+INSERT INTO
+  source_file_requests (user_id, kind, external_id, files, requested_at)
+VALUES
+  ($1, $2, $3, $4, $5);
+
+-- name: DeleteSourceFileRequestsBefore :exec
+DELETE FROM source_file_requests
+WHERE
+  user_id = $1
+  AND kind = $2
+  AND requested_at <= $3;
+
 -- name: CountSourceFilesSince :one
 SELECT
   CAST(COALESCE(SUM(files), 0) AS INTEGER) AS files
 FROM
-  source_activities
+  source_file_requests
 WHERE
   user_id = $1
   AND kind = $2
-  AND fetched_at > $3;
+  AND requested_at > $3;
 
 -- name: CountSourceActivities :one
 SELECT

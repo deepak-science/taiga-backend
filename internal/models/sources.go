@@ -83,6 +83,15 @@ func (m *storeModel) SaveSourceClient(ctx context.Context, kind, issuer, redirec
 	return q.CreateSourceClient(ctx, &db.CreateSourceClientParams{Kind: kind, Issuer: issuer, RedirectUri: redirectURI, Registration: registration})
 }
 
+// ReplaceSourceClient puts a new registration in place of one that can no longer be read.
+func (m *storeModel) ReplaceSourceClient(ctx context.Context, id int32, registration string) (*SourceClient, error) {
+	q, err := m.store.GetQuerier()
+	if err != nil {
+		return nil, err
+	}
+	return q.ReplaceSourceClient(ctx, &db.ReplaceSourceClientParams{ID: id, Registration: registration})
+}
+
 // ConnectSource keeps the user's tokens for a source and queues its first sync.
 // A user already connected gets the new tokens and carries on from where their syncs had got to.
 func (m *storeModel) ConnectSource(ctx context.Context, kind string, clientID int32, credentials string, now time.Time, userToken *tokens.UserToken) (*SourceConnection, error) {
@@ -205,17 +214,28 @@ func (m *storeModel) EnqueueSourceSyncsDue(ctx context.Context, now time.Time) (
 
 // SyncSource brings in the activities the source has that the connection hasn't dealt with: each one's file goes through the same path as an upload, so one the user already uploaded is recognised by its content.
 // It stops at SourceDailyFiles a day and picks up from there next time; an error leaves what was already brought in.
-func (m *storeModel) SyncSource(ctx context.Context, conn *SourceConnection, src ActivitySource, fileRepo filerepo.FileRepo, now time.Time, userToken *tokens.UserToken) (*SyncResult, error) {
+func (m *storeModel) SyncSource(ctx context.Context, conn *SourceConnection, src ActivitySource, fileRepo filerepo.FileRepo, now time.Time, userToken *tokens.UserToken) (res *SyncResult, err error) {
 	q, err := m.store.GetQuerier()
 	if err != nil {
 		return nil, err
 	}
-	used, err := q.CountSourceFilesSince(ctx, &db.CountSourceFilesSinceParams{UserID: userToken.ID, Kind: conn.Kind, FetchedAt: timestamptz(now.Add(-24 * time.Hour))})
+	day := timestamptz(now.Add(-24 * time.Hour))
+	if err := q.DeleteSourceFileRequestsBefore(ctx, &db.DeleteSourceFileRequestsBeforeParams{UserID: userToken.ID, Kind: conn.Kind, RequestedAt: day}); err != nil {
+		return nil, err
+	}
+	used, err := q.CountSourceFilesSince(ctx, &db.CountSourceFilesSinceParams{UserID: userToken.ID, Kind: conn.Kind, RequestedAt: day})
 	if err != nil {
 		return nil, err
 	}
 
-	res := &SyncResult{}
+	res = &SyncResult{}
+	// As after an upload: the new runs may belong on routes, or be copies of ones another source recorded.
+	// However the sync ends, since the next one skips what this one brought in and would see nothing new.
+	defer func() {
+		if res.Imported > 0 {
+			err = errors.Join(err, m.EnqueueDetectRoutes(context.WithoutCancel(ctx), now, userToken))
+		}
+	}()
 	// The earliest activity left for next time, which is as far as the connection can say it has synced.
 	var held time.Time
 	hold := func(a coros.Activity, windowStart time.Time) {
@@ -253,6 +273,18 @@ windows:
 			var files [][]byte
 			if !res.LimitReached {
 				files, err = src.Files(ctx, a)
+				// Counted as soon as COROS has issued the links, whatever becomes of the download or the import.
+				spent := len(files)
+				var after *coros.SpentError
+				if errors.As(err, &after) {
+					spent = after.Files
+				}
+				if spent > 0 {
+					used += int32(spent)
+					if recordErr := q.RecordSourceFileRequest(context.WithoutCancel(ctx), &db.RecordSourceFileRequestParams{UserID: userToken.ID, Kind: conn.Kind, ExternalID: a.ID, Files: int32(spent), RequestedAt: timestamptz(now)}); recordErr != nil {
+						return res, errors.Join(err, recordErr)
+					}
+				}
 				switch {
 				case errors.Is(err, coros.ErrInProgress):
 					hold(a, start)
@@ -268,7 +300,6 @@ windows:
 				hold(a, start)
 				break windows
 			}
-			used += int32(len(files))
 
 			var fileID *int32
 			for _, content := range files {
@@ -315,12 +346,6 @@ windows:
 	}
 	if err := q.FinishSourceSync(ctx, &db.FinishSourceSyncParams{ID: conn.ID, UserID: userToken.ID, SyncedThrough: timestamptz(through), LastSyncedAt: timestamptz(now)}); err != nil {
 		return res, err
-	}
-	if res.Imported > 0 {
-		// As after an upload: the new runs may belong on routes, or be copies of ones another source recorded.
-		if err := m.EnqueueDetectRoutes(ctx, now, userToken); err != nil {
-			return res, err
-		}
 	}
 	return res, nil
 }

@@ -61,3 +61,15 @@ func TestBriefKeepsLinksOut(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, brief(string(raw)), "s3.coros.com", "a link works for anyone who has it, so it can't go into an error or a log")
 }
+
+func TestAnActivityNamedLikeTheEmptyReplyIsStillListed(t *testing.T) {
+	list := "Sport Records — 2026-11-15 to 2026-11-21 (1 records)\n========================\n\n1. No sport records found — 2026-11-21\n   Location: No sport records found\n   Time Window: startTimestamp=1795286592 | endTimestamp=1795289692\n   LabelId: 5 | SportType: 100\n"
+	activities, err := parseActivities(list)
+	require.NoError(t, err)
+	require.Len(t, activities, 1)
+	assert.Equal(t, "5", activities[0].ID)
+
+	activities, err = parseActivities("No sport records found from 2024-01-01 to 2026-11-21.")
+	require.NoError(t, err)
+	assert.Empty(t, activities)
+}

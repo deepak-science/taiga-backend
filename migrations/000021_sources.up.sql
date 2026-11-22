@@ -37,10 +37,21 @@ CREATE TABLE source_activities (
   external_id VARCHAR(64) NOT NULL,
   activity_file_id INTEGER REFERENCES activity_file (id) ON DELETE SET NULL,
   start_time TIMESTAMP WITH TIME ZONE,
-  -- How many files it took, which is what the source's daily limit counts.
+  -- How many files it took.
   files INTEGER NOT NULL DEFAULT 0,
   fetched_at TIMESTAMP WITH TIME ZONE NOT NULL,
   PRIMARY KEY (user_id, kind, external_id)
 );
 
-CREATE INDEX idx_source_activities_fetched ON source_activities (user_id, kind, fetched_at);
+-- Every time a source was asked for an activity's files, which is what its daily limit counts: kept apart from source_activities, since asking can succeed and the import still fail.
+-- Only the last day's are kept.
+CREATE TABLE source_file_requests (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users (id),
+  kind VARCHAR(32) NOT NULL,
+  external_id VARCHAR(64) NOT NULL,
+  files INTEGER NOT NULL,
+  requested_at TIMESTAMP WITH TIME ZONE NOT NULL
+);
+
+CREATE INDEX idx_source_file_requests ON source_file_requests (user_id, kind, requested_at);

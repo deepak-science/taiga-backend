@@ -101,6 +101,15 @@ type SourceConnection struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
+type SourceFileRequest struct {
+	ID          int32              `json:"id"`
+	UserID      int32              `json:"user_id"`
+	Kind        string             `json:"kind"`
+	ExternalID  string             `json:"external_id"`
+	Files       int32              `json:"files"`
+	RequestedAt pgtype.Timestamptz `json:"requested_at"`
+}
+
 type Stretch struct {
 	ID              int32              `json:"id"`
 	UserID          int32              `json:"user_id"`

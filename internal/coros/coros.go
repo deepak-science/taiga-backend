@@ -46,6 +46,15 @@ var (
 	ErrUnexpectedReply = errors.New("COROS answered in a form taiga doesn't know how to read")
 )
 
+// SpentError is a failure after COROS had issued file links, which is when its daily limit counts them.
+type SpentError struct {
+	Files int
+	Err   error
+}
+
+func (e *SpentError) Error() string { return e.Err.Error() }
+func (e *SpentError) Unwrap() error { return e.Err }
+
 // Service talks to one COROS MCP endpoint on behalf of this deployment.
 type Service struct {
 	endpoint    string
@@ -271,7 +280,18 @@ type Session struct {
 	insecure bool
 }
 
-// Open signs in to the server with the connection's tokens, refreshing them if they've run out.
+// Refresh returns the connection's tokens, new ones if the access token has run out.
+// A refresh token works once, so new ones are for saving before anything else is tried with them.
+func (s *Service) Refresh(ctx context.Context, c *Client, token *oauth2.Token) (*oauth2.Token, error) {
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, s.http)
+	fresh, err := s.oauth(c).TokenSource(ctx, token).Token()
+	if err != nil {
+		return nil, (&refusals{}).authError(fmt.Errorf("refreshing the COROS tokens: %w", err))
+	}
+	return fresh, nil
+}
+
+// Open signs in to the server with the connection's tokens, refreshing them if they've run out: call Refresh first, since a refresh made here is lost if connecting then fails.
 // The tokens may be new afterwards: save what Token returns.
 func (s *Service) Open(ctx context.Context, c *Client, token *oauth2.Token) (*Session, error) {
 	refreshCtx := context.WithValue(context.WithoutCancel(ctx), oauth2.HTTPClient, s.http)
@@ -385,7 +405,7 @@ func (s *Session) Files(ctx context.Context, a Activity) ([][]byte, error) {
 	for _, link := range links {
 		content, err := s.download(ctx, link)
 		if err != nil {
-			return nil, fmt.Errorf("downloading the file for activity %s: %w", a.ID, err)
+			return nil, &SpentError{Files: len(links), Err: fmt.Errorf("downloading the file for activity %s: %w", a.ID, err)}
 		}
 		files = append(files, content)
 	}

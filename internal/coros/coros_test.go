@@ -261,3 +261,55 @@ func TestAClientGivenASecretUsesIt(t *testing.T) {
 	assert.NotEqual(t, token.AccessToken, fresh.AccessToken)
 	require.NoError(t, svc.Revoke(ctx, client, fresh))
 }
+
+func TestALinkThatFailsWasStillSpent(t *testing.T) {
+	fake := testsupport.NewFakeCOROS(t)
+	fake.Add(testsupport.FakeActivity{ID: "1", SportType: 100, Start: day, End: day.Add(time.Minute), File: []byte("one")})
+	svc, client, token := signIn(t, fake)
+	ctx := context.Background()
+	session, err := svc.Open(ctx, client, token)
+	require.NoError(t, err)
+	defer session.Close()
+
+	fake.FailDownloads = true
+	_, err = session.Files(ctx, coros.Activity{ID: "1", SportType: 100})
+	var spent *coros.SpentError
+	require.ErrorAs(t, err, &spent, "COROS counted the link when it issued it")
+	assert.Equal(t, 1, spent.Files)
+	assert.NotContains(t, err.Error(), "/fit/", "the link stays out of the error")
+
+	// One COROS never issued a link for spent nothing.
+	_, err = session.Files(ctx, coros.Activity{ID: "nope", SportType: 100})
+	require.Error(t, err)
+	assert.NotErrorAs(t, err, &spent)
+}
+
+func TestRefreshBeforeOpening(t *testing.T) {
+	fake := testsupport.NewFakeCOROS(t)
+	svc, client, token := signIn(t, fake)
+	ctx := context.Background()
+
+	same, err := svc.Refresh(ctx, client, token)
+	require.NoError(t, err)
+	assert.Equal(t, token.RefreshToken, same.RefreshToken, "a token with time left isn't refreshed")
+
+	spent := *token
+	spent.Expiry = time.Now().Add(-time.Minute)
+	fresh, err := svc.Refresh(ctx, client, &spent)
+	require.NoError(t, err)
+	assert.NotEqual(t, token.RefreshToken, fresh.RefreshToken)
+
+	// The server going down after the refresh costs nothing: the new tokens are already in hand.
+	fake.Down = true
+	_, err = svc.Open(ctx, client, fresh)
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, coros.ErrAuthorization)
+	fake.Down = false
+	session, err := svc.Open(ctx, client, fresh)
+	require.NoError(t, err)
+	session.Close()
+
+	fake.RevokeAll()
+	_, err = svc.Refresh(ctx, client, &spent)
+	assert.ErrorIs(t, err, coros.ErrAuthorization)
+}

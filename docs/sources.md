@@ -54,6 +54,8 @@ History from before the connection isn't fetched: upload an export for that.
 COROS hands over 50 FIT files a day for an account, and counts every request, including ones for a file already fetched.
 taiga takes at most 45 in any 24 hours and leaves the rest for whatever else the user has connected to COROS.
 A sync that reaches either limit stops there without failing and carries on from the same activity next time.
+COROS counts a file when it issues the link, so taiga does too (`source_file_requests`, kept for a day): a link whose download or import then failed is still one of the 45.
+An activity recorded in parts has several files, and how many isn't known until COROS has issued them, so the last activity of a day can go a file or two over 45. The five left under COROS's 50 cover that.
 
 ### When it goes wrong
 
@@ -80,9 +82,10 @@ The file is the only thing trusted for the workout itself.
 - **The registration** (`source_clients`): the client id COROS issued (and a secret, had it given one), and the addresses of its servers.
 - **Each user's tokens** (`source_connections`): an access token (30 days) and a refresh token (180 days, replaced at every refresh, so a connection that syncs stays alive).
 - **What's been dealt with** (`source_activities`): COROS's id for the activity, when it started, and which file it became.
+- **What was asked for** (`source_file_requests`): each request for an activity's files in the last day, for the daily limit.
 
 The registration and the tokens are encrypted (AES-256-GCM) under a key derived from the token signing key (`tokens.private_key_path`), so a copy of the database alone doesn't give access to anyone's COROS account.
-Replacing that key makes them unreadable: every user connects again.
+Replacing that key makes them unreadable: every user connects again, and the first to do so registers the deployment with COROS afresh, in place of the registration that can no longer be read.
 Neither is ever returned by the API or written to the log.
 
 Download links for files work for anyone who has them, with no sign-in. They are fetched once, without the user's token, and never stored or logged.

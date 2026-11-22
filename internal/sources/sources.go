@@ -121,18 +121,26 @@ func (g *Manager) client(ctx context.Context) (*models.SourceClient, *coros.Clie
 		return nil, nil, err
 	}
 	row, err := g.m.SourceClient(ctx, coros.Kind, found.Issuer, g.coros.RedirectURL())
+	// A registration sealed under a key since replaced is as good as none, and so are the tokens of everyone who connected with it.
+	unreadable := false
 	if err == nil {
 		client, err := g.openClient(row)
-		return row, client, err
-	}
-	if !models.IsNotFound(err) {
+		if !errors.Is(err, secretbox.ErrOpen) {
+			return row, client, err
+		}
+		unreadable = true
+	} else if !models.IsNotFound(err) {
 		return nil, nil, err
 	}
 	if err := g.coros.Register(ctx, found); err != nil {
 		return nil, nil, err
 	}
 	body, _ := json.Marshal(found)
-	row, err = g.m.SaveSourceClient(ctx, coros.Kind, found.Issuer, g.coros.RedirectURL(), g.stored.Seal(body))
+	if unreadable {
+		row, err = g.m.ReplaceSourceClient(ctx, row.ID, g.stored.Seal(body))
+	} else {
+		row, err = g.m.SaveSourceClient(ctx, coros.Kind, found.Issuer, g.coros.RedirectURL(), g.stored.Seal(body))
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -296,26 +304,35 @@ func (g *Manager) sync(ctx context.Context, conn *models.SourceConnection, fileR
 	if err != nil {
 		return nil, fmt.Errorf("the stored COROS tokens can't be read (was the token signing key changed?): %w", coros.ErrAuthorization)
 	}
-	session, err := g.coros.Open(ctx, client, token)
-	if err != nil {
-		return nil, err
-	}
-	defer session.Close()
-
-	// Opening may have refreshed the tokens, and COROS's refresh tokens work once: the new one is saved before anything else can fail.
-	save := func() error {
-		fresh, err := session.Token()
-		if err != nil {
-			return err
-		}
+	// COROS's refresh tokens work once: a new one is saved before anything else can fail, connecting included.
+	keep := func(fresh *oauth2.Token) error {
 		if fresh.AccessToken == token.AccessToken && fresh.RefreshToken == token.RefreshToken {
 			return nil
 		}
 		token = fresh
 		return g.m.SetSourceCredentials(context.WithoutCancel(ctx), conn.ID, g.seal(fresh), userToken)
 	}
-	if err := save(); err != nil {
+	// Past the deadline too: a refresh cut off after COROS answered would spend the token and keep nothing.
+	fresh, err := g.coros.Refresh(context.WithoutCancel(ctx), client, token)
+	if err != nil {
 		return nil, err
+	}
+	if err := keep(fresh); err != nil {
+		return nil, err
+	}
+	session, err := g.coros.Open(ctx, client, token)
+	if err != nil {
+		return nil, err
+	}
+	defer session.Close()
+
+	// A long sync can outlast the access token and refresh again.
+	save := func() error {
+		fresh, err := session.Token()
+		if err != nil {
+			return err
+		}
+		return keep(fresh)
 	}
 	res, err := g.m.SyncSource(ctx, conn, session, fileRepo, g.Now(), userToken)
 	return res, errors.Join(err, save())

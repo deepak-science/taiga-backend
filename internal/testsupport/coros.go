@@ -40,6 +40,10 @@ type FakeCOROS struct {
 	DenyNext string
 	// ListReply, when set, is what the list tool says instead of its list.
 	ListReply string
+	// Down makes the MCP endpoint answer 503 while sign-in and refreshing still work.
+	Down bool
+	// FailDownloads makes every file link answer 500, after it was issued and counted.
+	FailDownloads bool
 	// PlainList sends the list as plain text. COROS sends it as a JSON string, quotes and escapes included, and so does the fake unless this is set.
 	PlainList bool
 
@@ -89,6 +93,13 @@ func NewFakeCOROS(t *testing.T) *FakeCOROS {
 		if !f.authorized(r) {
 			w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer resource_metadata="%s/.well-known/oauth-protected-resource/mcp"`, f.Server.URL))
 			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		f.mu.Lock()
+		down := f.Down
+		f.mu.Unlock()
+		if down {
+			http.Error(w, "down for maintenance", http.StatusServiceUnavailable)
 			return
 		}
 		tools.ServeHTTP(w, r)
@@ -354,6 +365,10 @@ func (f *FakeCOROS) download(w http.ResponseWriter, r *http.Request) {
 	// As at COROS, the link is all it takes; a request that brings a token anyway is a leak worth failing on.
 	if r.Header.Get("Authorization") != "" {
 		http.Error(w, "the file link was sent a token", http.StatusBadRequest)
+		return
+	}
+	if f.FailDownloads {
+		http.Error(w, "storage is down", http.StatusInternalServerError)
 		return
 	}
 	id, _, _ := strings.Cut(r.PathValue("name"), "_")

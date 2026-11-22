@@ -65,6 +65,7 @@ type Model interface {
 	SourceClient(ctx context.Context, kind, issuer, redirectURI string) (*SourceClient, error)
 	SourceClientByID(ctx context.Context, id int32) (*SourceClient, error)
 	SaveSourceClient(ctx context.Context, kind, issuer, redirectURI, registration string) (*SourceClient, error)
+	ReplaceSourceClient(ctx context.Context, id int32, registration string) (*SourceClient, error)
 	ConnectSource(ctx context.Context, kind string, clientID int32, credentials string, now time.Time, userToken *tokens.UserToken) (*SourceConnection, error)
 	SourceConnections(ctx context.Context, userToken *tokens.UserToken) ([]SourceConnectionInfo, error)
 	SourceConnection(ctx context.Context, id int32, userToken *tokens.UserToken) (*SourceConnection, error)

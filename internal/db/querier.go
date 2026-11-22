@@ -65,6 +65,7 @@ type Querier interface {
 	DeleteRouteOverridesByRoute(ctx context.Context, arg *DeleteRouteOverridesByRouteParams) error
 	DeleteSegmentsByWorkout(ctx context.Context, arg *DeleteSegmentsByWorkoutParams) error
 	DeleteSourceConnection(ctx context.Context, arg *DeleteSourceConnectionParams) (int64, error)
+	DeleteSourceFileRequestsBefore(ctx context.Context, arg *DeleteSourceFileRequestsBeforeParams) error
 	DeleteStretch(ctx context.Context, arg *DeleteStretchParams) error
 	// SQLite doesn't enforce ON DELETE CASCADE without a per-connection pragma, so a deleted stretch clears its own efforts.
 	DeleteStretchEffortsByStretch(ctx context.Context, arg *DeleteStretchEffortsByStretchParams) error
@@ -171,8 +172,10 @@ type Querier interface {
 	// Takes the user row's write lock for the rest of the transaction, so checks across their rows (e.g. their last way to sign in) can't race; works the same on both databases.
 	LockUser(ctx context.Context, id int32) error
 	MoveWorkoutRoutes(ctx context.Context, arg *MoveWorkoutRoutesParams) error
+	RecordSourceFileRequest(ctx context.Context, arg *RecordSourceFileRequestParams) error
 	RenameRoute(ctx context.Context, arg *RenameRouteParams) (*Route, error)
 	RenameStretch(ctx context.Context, arg *RenameStretchParams) (*Stretch, error)
+	ReplaceSourceClient(ctx context.Context, arg *ReplaceSourceClientParams) (*SourceClient, error)
 	RequeueDeadJob(ctx context.Context, arg *RequeueDeadJobParams) (*Job, error)
 	RetargetRouteOverrides(ctx context.Context, arg *RetargetRouteOverridesParams) error
 	RetryJobLater(ctx context.Context, arg *RetryJobLaterParams) error

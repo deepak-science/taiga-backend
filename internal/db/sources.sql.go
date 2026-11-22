@@ -37,21 +37,21 @@ const countSourceFilesSince = `-- name: CountSourceFilesSince :one
 SELECT
   CAST(COALESCE(SUM(files), 0) AS INTEGER) AS files
 FROM
-  source_activities
+  source_file_requests
 WHERE
   user_id = $1
   AND kind = $2
-  AND fetched_at > $3
+  AND requested_at > $3
 `
 
 type CountSourceFilesSinceParams struct {
-	UserID    int32              `json:"user_id"`
-	Kind      string             `json:"kind"`
-	FetchedAt pgtype.Timestamptz `json:"fetched_at"`
+	UserID      int32              `json:"user_id"`
+	Kind        string             `json:"kind"`
+	RequestedAt pgtype.Timestamptz `json:"requested_at"`
 }
 
 func (q *Queries) CountSourceFilesSince(ctx context.Context, arg *CountSourceFilesSinceParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countSourceFilesSince, arg.UserID, arg.Kind, arg.FetchedAt)
+	row := q.db.QueryRow(ctx, countSourceFilesSince, arg.UserID, arg.Kind, arg.RequestedAt)
 	var files int32
 	err := row.Scan(&files)
 	return files, err
@@ -153,6 +153,25 @@ func (q *Queries) DeleteSourceConnection(ctx context.Context, arg *DeleteSourceC
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const deleteSourceFileRequestsBefore = `-- name: DeleteSourceFileRequestsBefore :exec
+DELETE FROM source_file_requests
+WHERE
+  user_id = $1
+  AND kind = $2
+  AND requested_at <= $3
+`
+
+type DeleteSourceFileRequestsBeforeParams struct {
+	UserID      int32              `json:"user_id"`
+	Kind        string             `json:"kind"`
+	RequestedAt pgtype.Timestamptz `json:"requested_at"`
+}
+
+func (q *Queries) DeleteSourceFileRequestsBefore(ctx context.Context, arg *DeleteSourceFileRequestsBeforeParams) error {
+	_, err := q.db.Exec(ctx, deleteSourceFileRequestsBefore, arg.UserID, arg.Kind, arg.RequestedAt)
+	return err
 }
 
 const deleteSyncSourceJobs = `-- name: DeleteSyncSourceJobs :exec
@@ -468,6 +487,61 @@ func (q *Queries) ListSourceConnections(ctx context.Context, userID int32) ([]*S
 		return nil, err
 	}
 	return items, nil
+}
+
+const recordSourceFileRequest = `-- name: RecordSourceFileRequest :exec
+INSERT INTO
+  source_file_requests (user_id, kind, external_id, files, requested_at)
+VALUES
+  ($1, $2, $3, $4, $5)
+`
+
+type RecordSourceFileRequestParams struct {
+	UserID      int32              `json:"user_id"`
+	Kind        string             `json:"kind"`
+	ExternalID  string             `json:"external_id"`
+	Files       int32              `json:"files"`
+	RequestedAt pgtype.Timestamptz `json:"requested_at"`
+}
+
+func (q *Queries) RecordSourceFileRequest(ctx context.Context, arg *RecordSourceFileRequestParams) error {
+	_, err := q.db.Exec(ctx, recordSourceFileRequest,
+		arg.UserID,
+		arg.Kind,
+		arg.ExternalID,
+		arg.Files,
+		arg.RequestedAt,
+	)
+	return err
+}
+
+const replaceSourceClient = `-- name: ReplaceSourceClient :one
+UPDATE source_clients
+SET
+  registration = $2
+WHERE
+  id = $1
+RETURNING
+  id, kind, issuer, redirect_uri, registration, created_at
+`
+
+type ReplaceSourceClientParams struct {
+	ID           int32  `json:"id"`
+	Registration string `json:"registration"`
+}
+
+func (q *Queries) ReplaceSourceClient(ctx context.Context, arg *ReplaceSourceClientParams) (*SourceClient, error) {
+	row := q.db.QueryRow(ctx, replaceSourceClient, arg.ID, arg.Registration)
+	var i SourceClient
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.Issuer,
+		&i.RedirectUri,
+		&i.Registration,
+		&i.CreatedAt,
+	)
+	return &i, err
 }
 
 const setSourceCredentials = `-- name: SetSourceCredentials :exec
