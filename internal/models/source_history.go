@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"time"
 
 	"gitea.deepak.science/deepak/taiga/internal/coros"
@@ -13,8 +14,8 @@ import (
 )
 
 const (
-	// sourceHistoryWindowsPerSync caps how many lists one sync asks for on its way back through the source's history; the rest wait an hour.
-	sourceHistoryWindowsPerSync = 12
+	// sourceHistoryListsPerSync caps how many lists one sync asks for on its way back through the source's history; the rest wait an hour.
+	sourceHistoryListsPerSync = 12
 	// The source's list and the file it gave state the same start; this is slack for rounding.
 	sourceMatchTolerance = 5 * time.Second
 	// More workouts than a window of history can hold.
@@ -44,7 +45,7 @@ func (m *storeModel) matchSourceHistory(ctx context.Context, conn *SourceConnect
 	}
 
 	matched, problem := 0, ""
-	for range sourceHistoryWindowsPerSync {
+	for lists := 0; lists < sourceHistoryListsPerSync; {
 		newest, err := waiting(time.Unix(0, 0), 1)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -55,13 +56,20 @@ func (m *storeModel) matchSourceHistory(ctx context.Context, conn *SourceConnect
 		if len(newest) == 0 {
 			break
 		}
-		to := newest[0].StartTime.Time.Add(sourceMatchTolerance)
+		latest := newest[0].StartTime.Time
+		to := latest.Add(sourceMatchTolerance)
 		width := sourceWindow
 		activities, err := src.List(ctx, to.Add(-width), to)
+		lists++
 		// More in the window than one list holds: a shorter one, which still ends at the workout being looked for.
 		for errors.Is(err, coros.ErrTooMany) && width > minSourceWindow {
+			// Out of lists with nothing learnt: the window is left as it was for the next sync.
+			if lists >= sourceHistoryListsPerSync {
+				return matched, problem, nil
+			}
 			width /= 2
 			activities, err = src.List(ctx, to.Add(-width), to)
+			lists++
 		}
 		switch {
 		case errors.Is(err, coros.ErrAuthorization):
@@ -84,6 +92,8 @@ func (m *storeModel) matchSourceHistory(ctx context.Context, conn *SourceConnect
 			if err != nil {
 				return err
 			}
+			// One uploaded while COROS answered can start after the window, and marking it would be saying it was looked for.
+			candidates = slices.DeleteFunc(candidates, func(w *db.ListWorkoutsToMatchToSourceRow) bool { return w.StartTime.Time.After(latest) })
 			taken := make(map[int32]bool, len(candidates))
 			for _, a := range activities {
 				if a.Start.IsZero() {

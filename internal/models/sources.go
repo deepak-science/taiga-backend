@@ -389,9 +389,12 @@ windows:
 	if err != nil {
 		return res, err
 	}
-	res.Detailed, res.DetailProblem, err = m.fetchSourceDetails(ctx, conn, src, now, userToken)
-	if err != nil {
-		return res, err
+	// With the sync's time already gone there's none to ask in, and what stopped the search is what the connection says.
+	if ctx.Err() == nil {
+		res.Detailed, res.DetailProblem, err = m.fetchSourceDetails(ctx, conn, src, now, userToken)
+		if err != nil {
+			return res, err
+		}
 	}
 	if problem := cmp.Or(res.DetailProblem, res.MatchProblem); problem != "" {
 		// Said on the connection without failing the job: a job that dies stops the hourly syncs, and the activities themselves are coming in.

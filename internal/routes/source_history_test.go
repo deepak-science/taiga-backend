@@ -1,6 +1,7 @@
 package routes_test
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"gitea.deepak.science/deepak/taiga/internal/coros"
 	"gitea.deepak.science/deepak/taiga/internal/testsupport"
 )
 
@@ -118,4 +120,80 @@ func TestTheWalkBackGoesAFewMonthsASync(t *testing.T) {
 	a.syncAgain(alice)
 	n, _ = have()
 	assert.Equal(t, runs, n)
+}
+
+// history is a source with nothing new, answering lists of its history (windows ending before the last week) with answer.
+func (a *sourcesAPI) history(answer func(from, to time.Time) ([]coros.Activity, error)) *stubSource {
+	return &stubSource{list: func(from, to time.Time) ([]coros.Activity, error) {
+		if to.After(a.now.Add(-30 * 24 * time.Hour)) {
+			return nil, nil
+		}
+		return answer(from, to)
+	}}
+}
+
+func TestARunUploadedWhileCOROSAnswersIsNotTakenAsLookedFor(t *testing.T) {
+	a := newSourcesAPI(t)
+	alice := a.user("alice@example.com")
+	const day = 24 * time.Hour
+	older, _ := a.old(1, 300*day)
+	newer, newerActivity := a.old(2, 200*day)
+	alice.uploadWorkout(older)
+	a.connect(alice)
+	conn, user := a.connection(alice)
+
+	// The newer run arrives while COROS is listing the month up to the older one.
+	var newerID int32
+	_, err := a.m.SyncSource(t.Context(), conn, a.history(func(from, to time.Time) ([]coros.Activity, error) {
+		if newerID == 0 {
+			_, newerID = alice.uploadWorkout(newer)
+			return nil, nil
+		}
+		if newerActivity.Start.Before(from) || newerActivity.Start.After(to) {
+			return nil, nil
+		}
+		return []coros.Activity{{ID: newerActivity.ID, SportType: 100, Start: newerActivity.Start}}, nil
+	}), a.repo, a.now, user)
+	require.NoError(t, err)
+	require.NotZero(t, newerID)
+
+	status, _ := alice.corosFigures(newerID)
+	assert.Equal(t, http.StatusOK, status, "its own month was still to be listed")
+}
+
+func TestTimeRunningOutInTheWalkBackDoesNotFailTheSync(t *testing.T) {
+	a := newSourcesAPI(t)
+	alice := a.user("alice@example.com")
+	file, _ := a.old(1, 300*24*time.Hour)
+	alice.uploadWorkout(file)
+	a.connect(alice)
+	conn, user := a.connection(alice)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	_, err := a.m.SyncSource(ctx, conn, a.history(func(time.Time, time.Time) ([]coros.Activity, error) {
+		cancel()
+		return nil, nil
+	}), a.repo, a.now, user)
+	require.NoError(t, err, "a failed job would stop the hourly syncs")
+	assert.Contains(t, a.sources(alice).Connections[0].LastError, "couldn't be searched")
+}
+
+func TestListsCutShortCountTowardsASyncsShare(t *testing.T) {
+	a := newSourcesAPI(t)
+	alice := a.user("alice@example.com")
+	for n := range 3 {
+		file, _ := a.old(n, time.Duration(n+2)*100*24*time.Hour)
+		alice.uploadWorkout(file)
+	}
+	a.connect(alice)
+	conn, user := a.connection(alice)
+
+	// Every month is too full to list, down to the day.
+	lists := 0
+	_, err := a.m.SyncSource(t.Context(), conn, a.history(func(time.Time, time.Time) ([]coros.Activity, error) {
+		lists++
+		return nil, coros.ErrTooMany
+	}), a.repo, a.now, user)
+	require.NoError(t, err)
+	assert.Equal(t, 12, lists)
 }

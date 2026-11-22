@@ -103,6 +103,9 @@ func (m *storeModel) fetchSourceDetails(ctx context.Context, conn *SourceConnect
 	}
 	due, err := q.ListSourceActivitiesWithoutMetadata(ctx, &db.ListSourceActivitiesWithoutMetadataParams{UserID: userToken.ID, Kind: conn.Kind, AtMost: sourceDetailsPerSync})
 	if err != nil {
+		if ctx.Err() != nil {
+			return 0, outOfTime(ctx), nil
+		}
 		return 0, "", err
 	}
 	stored, unread, problem := 0, 0, ""
