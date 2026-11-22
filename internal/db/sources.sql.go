@@ -521,6 +521,7 @@ SET
   registration = $2
 WHERE
   id = $1
+  AND registration = $3
 RETURNING
   id, kind, issuer, redirect_uri, registration, created_at
 `
@@ -528,10 +529,12 @@ RETURNING
 type ReplaceSourceClientParams struct {
 	ID           int32  `json:"id"`
 	Registration string `json:"registration"`
+	Was          string `json:"was"`
 }
 
+// Only in place of the registration that was read: no row means another request replaced it first.
 func (q *Queries) ReplaceSourceClient(ctx context.Context, arg *ReplaceSourceClientParams) (*SourceClient, error) {
-	row := q.db.QueryRow(ctx, replaceSourceClient, arg.ID, arg.Registration)
+	row := q.db.QueryRow(ctx, replaceSourceClient, arg.ID, arg.Registration, arg.Was)
 	var i SourceClient
 	err := row.Scan(
 		&i.ID,

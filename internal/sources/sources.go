@@ -137,7 +137,7 @@ func (g *Manager) client(ctx context.Context) (*models.SourceClient, *coros.Clie
 	}
 	body, _ := json.Marshal(found)
 	if unreadable {
-		row, err = g.m.ReplaceSourceClient(ctx, row.ID, g.stored.Seal(body))
+		row, err = g.m.ReplaceSourceClient(ctx, row.ID, row.Registration, g.stored.Seal(body))
 	} else {
 		row, err = g.m.SaveSourceClient(ctx, coros.Kind, found.Issuer, g.coros.RedirectURL(), g.stored.Seal(body))
 	}

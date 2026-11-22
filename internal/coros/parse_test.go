@@ -1,6 +1,7 @@
 package coros
 
 import (
+	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -104,4 +105,17 @@ func TestEveryEndpointHasToBeAsProtectedAsTheServer(t *testing.T) {
 	// A server with no revocation endpoint is fine.
 	client.RevocationURL = ""
 	assert.NoError(t, s.checkEndpoints(&client))
+}
+
+func TestRedirectsAreHeldToTheSameRule(t *testing.T) {
+	s := New("https://mcp.example.com/mcp", "https://taiga.example.com/api/sources/coros/callback")
+	hop := func(address string, earlier int) error {
+		req, err := http.NewRequest(http.MethodPost, address, nil)
+		require.NoError(t, err)
+		return s.http.CheckRedirect(req, make([]*http.Request, earlier))
+	}
+	assert.NoError(t, hop("https://mcpus.example.com/oauth2/token", 1))
+	// A 307 replays the POST, refresh token and all.
+	assert.ErrorContains(t, hop("http://mcpus.example.com/oauth2/token", 1), "isn't https")
+	assert.Error(t, hop("https://mcpus.example.com/oauth2/token", 10), "and not for ever")
 }

@@ -175,6 +175,7 @@ type Querier interface {
 	RecordSourceFileRequest(ctx context.Context, arg *RecordSourceFileRequestParams) error
 	RenameRoute(ctx context.Context, arg *RenameRouteParams) (*Route, error)
 	RenameStretch(ctx context.Context, arg *RenameStretchParams) (*Stretch, error)
+	// Only in place of the registration that was read: no row means another request replaced it first.
 	ReplaceSourceClient(ctx context.Context, arg *ReplaceSourceClientParams) (*SourceClient, error)
 	RequeueDeadJob(ctx context.Context, arg *RequeueDeadJobParams) (*Job, error)
 	RetargetRouteOverrides(ctx context.Context, arg *RetargetRouteOverridesParams) error

@@ -85,13 +85,18 @@ func (m *storeModel) SaveSourceClient(ctx context.Context, kind, issuer, redirec
 	return q.CreateSourceClient(ctx, &db.CreateSourceClientParams{Kind: kind, Issuer: issuer, RedirectUri: redirectURI, Registration: registration})
 }
 
-// ReplaceSourceClient puts a new registration in place of one that can no longer be read.
-func (m *storeModel) ReplaceSourceClient(ctx context.Context, id int32, registration string) (*SourceClient, error) {
+// ReplaceSourceClient puts a new registration in place of was, one that can no longer be read.
+// When another request has replaced it meanwhile, that one is kept and returned: a sign-in already under way was started with it.
+func (m *storeModel) ReplaceSourceClient(ctx context.Context, id int32, was, registration string) (*SourceClient, error) {
 	q, err := m.store.GetQuerier()
 	if err != nil {
 		return nil, err
 	}
-	return q.ReplaceSourceClient(ctx, &db.ReplaceSourceClientParams{ID: id, Registration: registration})
+	row, err := q.ReplaceSourceClient(ctx, &db.ReplaceSourceClientParams{ID: id, Registration: registration, Was: was})
+	if IsNotFound(err) {
+		return q.GetSourceClientByID(ctx, id)
+	}
+	return row, err
 }
 
 // ConnectSource keeps the user's tokens for a source and queues its first sync.
@@ -101,11 +106,12 @@ func (m *storeModel) ConnectSource(ctx context.Context, kind string, clientID in
 	err := m.store.InTx(ctx, func(q db.Querier) error {
 		var err error
 		conn, err = q.UpsertSourceConnection(ctx, &db.UpsertSourceConnectionParams{
-			UserID:        userToken.ID,
-			Kind:          kind,
-			ClientID:      clientID,
-			Credentials:   credentials,
-			SyncedThrough: timestamptz(now.Add(-sourceLookback)),
+			UserID:      userToken.ID,
+			Kind:        kind,
+			ClientID:    clientID,
+			Credentials: credentials,
+			// The first sync looks a day behind this like any other, which makes the week.
+			SyncedThrough: timestamptz(now.Add(-sourceLookback + sourceOverlap)),
 		})
 		if err != nil {
 			return err

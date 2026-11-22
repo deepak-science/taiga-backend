@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
 
@@ -342,4 +344,28 @@ func TestAFullListSaysSo(t *testing.T) {
 
 	_, err = session.List(context.Background(), day.AddDate(0, 0, -1), day.AddDate(0, 0, 1))
 	assert.ErrorIs(t, err, coros.ErrTooMany, "a list cut off at what was asked for can't be taken as all there is")
+}
+
+func TestASignedInRequestIsNotFollowedToAnotherServer(t *testing.T) {
+	var mu sync.Mutex
+	var seen []string
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen = append(seen, r.Header.Get("Authorization"))
+		mu.Unlock()
+	}))
+	defer elsewhere.Close()
+	home := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, elsewhere.URL+"/mcp", http.StatusTemporaryRedirect)
+	}))
+	defer home.Close()
+
+	svc := coros.New(home.URL+"/mcp", redirectURL)
+	token := &oauth2.Token{AccessToken: "access-1", RefreshToken: "refresh-1", Expiry: time.Now().Add(time.Hour)}
+	_, err := svc.Open(context.Background(), &coros.Client{Resource: home.URL + "/mcp", TokenURL: home.URL + "/token"}, token)
+	require.Error(t, err)
+	// The transport would have put the token on the request to the other server too.
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Empty(t, seen)
 }

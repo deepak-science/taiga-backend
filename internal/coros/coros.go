@@ -73,7 +73,33 @@ func New(endpoint, redirectURL string) *Service {
 	if endpoint == "" {
 		endpoint = DefaultEndpoint
 	}
-	return &Service{endpoint: endpoint, redirectURL: redirectURL, http: &http.Client{Timeout: timeout}}
+	s := &Service{endpoint: endpoint, redirectURL: redirectURL}
+	s.http = &http.Client{Timeout: timeout, CheckRedirect: s.checkRedirect}
+	return s
+}
+
+const maxRedirects = 10
+
+// checkRedirect holds every hop of a redirect to checkURL: Go replays a POST on a 307 or 308, and these requests carry refresh tokens.
+func (s *Service) checkRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= maxRedirects {
+		return fmt.Errorf("stopped after %d redirects", maxRedirects)
+	}
+	return s.checkURL(req.URL.String())
+}
+
+// withinOrigin keeps a signed-in client from following a redirect off the server it signed in to: its transport puts the token on every request, wherever that goes.
+func withinOrigin(resource string) func(*http.Request, []*http.Request) error {
+	home, err := url.Parse(resource)
+	return func(req *http.Request, via []*http.Request) error {
+		if len(via) >= maxRedirects {
+			return fmt.Errorf("stopped after %d redirects", maxRedirects)
+		}
+		if err != nil || req.URL.Scheme != home.Scheme || req.URL.Host != home.Host {
+			return fmt.Errorf("COROS sent a signed-in request on to another address (%s), which isn't followed", req.URL.Host)
+		}
+		return nil
+	}
 }
 
 // RedirectURL is the callback registered with COROS.
@@ -321,7 +347,7 @@ func (s *Service) Open(ctx context.Context, c *Client, token *oauth2.Token) (*Se
 	refreshCtx := context.WithValue(context.WithoutCancel(ctx), oauth2.HTTPClient, s.http)
 	source := oauth2.ReuseTokenSource(token, s.oauth(c).TokenSource(refreshCtx, token))
 	refused := &refusals{base: &oauth2.Transport{Source: source, Base: s.http.Transport}}
-	authed := &http.Client{Timeout: timeout, Transport: refused}
+	authed := &http.Client{Timeout: timeout, Transport: refused, CheckRedirect: withinOrigin(c.Resource)}
 
 	client := mcp.NewClient(&mcp.Implementation{Name: "taiga", Version: "1"}, nil)
 	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{

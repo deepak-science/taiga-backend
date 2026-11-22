@@ -29,11 +29,13 @@ RETURNING
   *;
 
 -- name: ReplaceSourceClient :one
+-- Only in place of the registration that was read: no row means another request replaced it first.
 UPDATE source_clients
 SET
   registration = $2
 WHERE
   id = $1
+  AND registration = sqlc.arg(was)
 RETURNING
   *;
 

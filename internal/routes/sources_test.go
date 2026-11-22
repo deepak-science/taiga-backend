@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"gitea.deepak.science/deepak/taiga/internal/coros"
+	"gitea.deepak.science/deepak/taiga/internal/filerepo"
 	"gitea.deepak.science/deepak/taiga/internal/jobs"
 	"gitea.deepak.science/deepak/taiga/internal/models"
 	"gitea.deepak.science/deepak/taiga/internal/routes"
@@ -33,6 +35,7 @@ type sourcesAPI struct {
 	toker  tokens.Toker
 	fake   *testsupport.FakeCOROS
 	worker *jobs.Worker
+	repo   filerepo.FileRepo
 	// now is the clock the worker and the connections go by.
 	now time.Time
 }
@@ -41,7 +44,7 @@ func newSourcesAPI(t *testing.T) *sourcesAPI {
 	t.Helper()
 	m, repo, toker := testsupport.NewModel(t), testsupport.NewFileRepo(t), testsupport.NewToker(t)
 	// A little ahead of the real clock, which is what the sync endpoint queues by, so what it queues is always due.
-	a := &sourcesAPI{t: t, m: m, toker: toker, fake: testsupport.NewFakeCOROS(t), now: time.Now().UTC().Truncate(time.Second).Add(time.Minute)}
+	a := &sourcesAPI{t: t, m: m, repo: repo, toker: toker, fake: testsupport.NewFakeCOROS(t), now: time.Now().UTC().Truncate(time.Second).Add(time.Minute)}
 	// The callback URL needs the server's address, which needs a handler first.
 	var handler http.Handler
 	a.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { handler.ServeHTTP(w, r) }))
@@ -811,4 +814,60 @@ func TestASyncAfterTheKeyChangedAsksToReconnect(t *testing.T) {
 	assert.True(t, conn.NeedsReconnect, "retrying can't read what's stored; connecting again is the way out")
 	_, body := alice.get("/jobs?state=dead")
 	assert.JSONEq(t, "[]", string(body))
+}
+
+func TestTheFirstSyncGoesBackAWeekAndNoFurther(t *testing.T) {
+	a := newSourcesAPI(t)
+	alice := a.user("alice@example.com")
+	a.fake.Add(a.run(1, 7*24*time.Hour-time.Hour), a.run(2, 7*24*time.Hour+12*time.Hour))
+	a.connect(alice)
+	a.sync()
+	assert.Len(t, a.workouts(alice), 1, "the one from seven and a half days ago is left to an export")
+	assert.Equal(t, 1, a.fileRequests())
+}
+
+func TestOneFileMakesOneWorkoutHoweverManyAsk(t *testing.T) {
+	a := newSourcesAPI(t)
+	alice := a.user("alice@example.com")
+	_, file := alice.uploadFile(a.run(1, time.Hour).File)
+	user, err := a.toker.DecodeTokenString(alice.token)
+	require.NoError(t, err)
+	repo := a.repo
+
+	// A sync and an upload of the same run, and a few more for good measure.
+	var wg sync.WaitGroup
+	created := make([]bool, 6)
+	for i := range created {
+		wg.Go(func() {
+			_, made, err := a.m.CreateWorkoutFromActivityFile(t.Context(), file.ID, user, repo)
+			assert.NoError(t, err)
+			created[i] = made
+		})
+	}
+	wg.Wait()
+	made := 0
+	for _, c := range created {
+		if c {
+			made++
+		}
+	}
+	assert.Equal(t, 1, made)
+	assert.Len(t, a.workouts(alice), 1)
+}
+
+func TestTwoReplacingARegistrationKeepTheFirst(t *testing.T) {
+	a := newSourcesAPI(t)
+	alice := a.user("alice@example.com")
+	a.connect(alice)
+	conn, _ := a.connection(alice)
+	row, err := a.m.SourceClientByID(t.Context(), conn.ClientID)
+	require.NoError(t, err)
+
+	// Both read the same unreadable registration and registered anew; the second to write finds it gone.
+	first, err := a.m.ReplaceSourceClient(t.Context(), row.ID, row.Registration, "first")
+	require.NoError(t, err)
+	assert.Equal(t, "first", first.Registration)
+	second, err := a.m.ReplaceSourceClient(t.Context(), row.ID, row.Registration, "second")
+	require.NoError(t, err)
+	assert.Equal(t, "first", second.Registration, "a sign-in started with the first still finds it at its callback")
 }
