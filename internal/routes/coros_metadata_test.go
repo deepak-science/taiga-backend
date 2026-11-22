@@ -220,3 +220,34 @@ func TestAnActivityCOROSHasNothingForDoesNotKeepTheRestWaiting(t *testing.T) {
 	require.NotNil(t, conn.LastSyncedAt)
 	assert.Contains(t, conn.LastError, "COROS's own figures for 1 of them couldn't be read")
 }
+
+func TestTimeRunningOutWhileKeepingFiguresDoesNotFailTheSync(t *testing.T) {
+	for name, answer := range map[string]func() (*coros.Detail, error){
+		"storing them":          func() (*coros.Detail, error) { return &coros.Detail{Reply: "Training Load: 120"}, nil },
+		"marking a reply tried": func() (*coros.Detail, error) { return nil, coros.ErrUnexpectedReply },
+	} {
+		t.Run(name, func(t *testing.T) {
+			a := newSourcesAPI(t)
+			alice := a.user("alice@example.com")
+			a.connect(alice)
+			a.sync()
+			conn, user := a.connection(alice)
+
+			// COROS answers, and the sync's deadline passes before the answer is kept.
+			ctx, cancel := context.WithCancel(t.Context())
+			activity := a.run(1, time.Hour)
+			src := &stubSource{
+				activities: []coros.Activity{{ID: activity.ID, SportType: 100, Start: activity.Start}},
+				files:      func(coros.Activity) ([][]byte, error) { return [][]byte{activity.File}, nil },
+				detail: func(context.Context, coros.Activity) (*coros.Detail, error) {
+					cancel()
+					return answer()
+				},
+			}
+			res, err := a.m.SyncSource(ctx, conn, src, a.repo, a.now, user)
+			require.NoError(t, err, "the activity came in, and a failed job would stop the hourly syncs")
+			assert.Equal(t, 1, res.Imported)
+			assert.Contains(t, a.sources(alice).Connections[0].LastError, "couldn't be fetched")
+		})
+	}
+}

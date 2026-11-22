@@ -88,6 +88,11 @@ func (m *storeModel) WorkoutCOROSMetadata(ctx context.Context, workoutID int32, 
 	}, nil
 }
 
+// outOfTime is what the connection says when the sync's time ran out before the figures were all kept.
+func outOfTime(ctx context.Context) string {
+	return fmt.Sprintf("the activities came in, but COROS's own figures for them couldn't be fetched: %v", ctx.Err())
+}
+
 // fetchSourceDetails asks the source for its own figures on the workouts that came from it and have none, newest first.
 // It goes by what's stored and not by what the sync just listed, so one that failed is asked again next time.
 // It returns how many it stored and, as words for the connection, why any couldn't be; only a failure that ends the sync (the grant gone) is an error.
@@ -115,6 +120,9 @@ func (m *storeModel) fetchSourceDetails(ctx context.Context, conn *SourceConnect
 			}
 			// So the ones not yet tried come before it next time.
 			if err := q.MarkSourceDetailTried(ctx, &db.MarkSourceDetailTriedParams{UserID: userToken.ID, Kind: conn.Kind, ExternalID: row.ExternalID, DetailTriedAt: timestamptz(now)}); err != nil {
+				if ctx.Err() != nil {
+					return stored, outOfTime(ctx), nil
+				}
 				return stored, "", err
 			}
 			continue
@@ -161,6 +169,10 @@ func (m *storeModel) fetchSourceDetails(ctx context.Context, conn *SourceConnect
 			kept = true
 			return q.UpsertCOROSMetadata(ctx, params)
 		})
+		// The sync's deadline can pass in a write as well as in a call, and the activities are in either way.
+		if err != nil && ctx.Err() != nil {
+			return stored, outOfTime(ctx), nil
+		}
 		if err != nil {
 			// A delete that lands between the check and the insert fails the insert on its foreign key, which is the workout being gone and no fault of the sync.
 			if _, gone := q.GetWorkout(ctx, &db.GetWorkoutParams{ID: row.WorkoutID, UserID: userToken.ID}); IsNotFound(gone) {

@@ -108,10 +108,11 @@ func BuildSeries(run *Run, maxPoints int) *Series {
 		VerticalRatioPct:      column(form(func(f *Form) float64 { return f.VerticalRatioPct }), 1),
 	}
 	// A watch that measures no power in a sport writes 0 throughout, which is no column; a stop in a run that does have it is a real 0.
-	if !anyPositive(s.PowerWatts) {
+	// It goes by every record, since the ones kept may all be stops.
+	if !anyPositive(run.Records, func(f *Form) float64 { return f.PowerWatts }) {
 		s.PowerWatts = nil
 	}
-	if !anyPositive(s.EffortPaceMPS) {
+	if !anyPositive(run.Records, func(f *Form) float64 { return f.EffortPaceMPS }) {
 		s.EffortPaceMPS = nil
 	}
 	// Time and distance are the x axes, so keep them present even when empty.
@@ -130,9 +131,9 @@ func BuildSeries(run *Run, maxPoints int) *Series {
 	return s
 }
 
-func anyPositive(v Values) bool {
-	for _, x := range v {
-		if x > 0 {
+func anyPositive(records []*RecordData, get func(*Form) float64) bool {
+	for _, r := range records {
+		if r.Form != nil && get(r.Form) > 0 {
 			return true
 		}
 	}
