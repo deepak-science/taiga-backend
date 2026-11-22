@@ -1,0 +1,63 @@
+package coros
+
+import (
+	"os"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// The testdata files are what COROS's server sent on 2026-11-21, byte for byte but for the ids, places and coordinates, which are made up.
+
+func TestParseTheListAsCOROSSendsIt(t *testing.T) {
+	raw, err := os.ReadFile("testdata/sport-records.txt")
+	require.NoError(t, err)
+	require.Equal(t, byte('"'), raw[0], "the list arrives as a JSON string, quotes and escaped newlines included")
+
+	activities, err := parseActivities(unquote(string(raw)))
+	require.NoError(t, err)
+	require.Len(t, activities, 6)
+
+	// Oldest first, though COROS lists newest first.
+	assert.Equal(t, Activity{
+		ID:        "400000000000005570",
+		SportType: 100,
+		Name:      "Outdoor Run — 2026-11-14",
+		Start:     time.Unix(1794676869, 0).UTC(),
+		End:       time.Unix(1794679092, 0).UTC(),
+	}, activities[0])
+
+	// An indoor session has no coordinates and a line break in the middle of its figures; neither matters.
+	gym := activities[1]
+	assert.Equal(t, "Gym Cardio — 2026-11-15", gym.Name)
+	assert.Equal(t, 400, gym.SportType)
+	assert.Equal(t, time.Unix(1794752085, 0).UTC(), gym.Start)
+
+	assert.Equal(t, 1004, activities[2].SportType)
+	assert.Equal(t, "Pickleball — 2026-11-18", activities[3].Name)
+	assert.Equal(t, "400000000000002856", activities[5].ID)
+}
+
+func TestTheListUnquotedIsNotReadAsIs(t *testing.T) {
+	raw, err := os.ReadFile("testdata/sport-records.txt")
+	require.NoError(t, err)
+	// Without undoing the quoting the whole reply is one line, and no entry starts one.
+	_, err = parseActivities(string(raw))
+	assert.ErrorIs(t, err, ErrUnexpectedReply)
+}
+
+func TestFileLinksAsCOROSSendsThem(t *testing.T) {
+	raw, err := os.ReadFile("testdata/fit-urls.txt")
+	require.NoError(t, err)
+	// Plain text, unlike the list.
+	assert.Equal(t, string(raw), unquote(string(raw)))
+	assert.Equal(t, []string{"https://s3.coros.com/fit/v2/400000000000000000/400000000000001234_0123456789.fit"}, fileURLs(string(raw)))
+}
+
+func TestBriefKeepsLinksOut(t *testing.T) {
+	raw, err := os.ReadFile("testdata/fit-urls.txt")
+	require.NoError(t, err)
+	assert.NotContains(t, brief(string(raw)), "s3.coros.com", "a link works for anyone who has it, so it can't go into an error or a log")
+}
