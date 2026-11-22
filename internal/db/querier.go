@@ -20,11 +20,16 @@ type Querier interface {
 	// A deleted workout leaves the stretches cut from it standing, without the pointer back.
 	ClearStretchSourceWorkout(ctx context.Context, arg *ClearStretchSourceWorkoutParams) error
 	CountDeviceAuthorizations(ctx context.Context) (int64, error)
+	CountSourceActivities(ctx context.Context, arg *CountSourceActivitiesParams) (int64, error)
+	CountSourceFilesSince(ctx context.Context, arg *CountSourceFilesSinceParams) (int32, error)
 	CreateActivityFile(ctx context.Context, arg *CreateActivityFileParams) (*ActivityFile, error)
 	CreateCliSession(ctx context.Context, arg *CreateCliSessionParams) (*CliSession, error)
 	CreateDeviceAuthorization(ctx context.Context, arg *CreateDeviceAuthorizationParams) (*DeviceAuthorization, error)
 	CreateIdentity(ctx context.Context, arg *CreateIdentityParams) (*UserIdentity, error)
 	CreateRoute(ctx context.Context, arg *CreateRouteParams) (*Route, error)
+	CreateSourceActivity(ctx context.Context, arg *CreateSourceActivityParams) error
+	// Two first connections at once both register; the second to land keeps the first's row.
+	CreateSourceClient(ctx context.Context, arg *CreateSourceClientParams) (*SourceClient, error)
 	CreateStretch(ctx context.Context, arg *CreateStretchParams) (*Stretch, error)
 	CreateStretchEffort(ctx context.Context, arg *CreateStretchEffortParams) error
 	//
@@ -59,10 +64,12 @@ type Querier interface {
 	// SQLite doesn't enforce ON DELETE CASCADE without a per-connection pragma, so a deleted route clears its own.
 	DeleteRouteOverridesByRoute(ctx context.Context, arg *DeleteRouteOverridesByRouteParams) error
 	DeleteSegmentsByWorkout(ctx context.Context, arg *DeleteSegmentsByWorkoutParams) error
+	DeleteSourceConnection(ctx context.Context, arg *DeleteSourceConnectionParams) (int64, error)
 	DeleteStretch(ctx context.Context, arg *DeleteStretchParams) error
 	// SQLite doesn't enforce ON DELETE CASCADE without a per-connection pragma, so a deleted stretch clears its own efforts.
 	DeleteStretchEffortsByStretch(ctx context.Context, arg *DeleteStretchEffortsByStretchParams) error
 	DeleteStretchEffortsByWorkout(ctx context.Context, arg *DeleteStretchEffortsByWorkoutParams) error
+	DeleteSyncSourceJobs(ctx context.Context, userID int32) error
 	DeleteWorkout(ctx context.Context, arg *DeleteWorkoutParams) error
 	DeleteWorkoutRoute(ctx context.Context, arg *DeleteWorkoutRouteParams) error
 	DeleteWorkoutRoutesByUser(ctx context.Context, userID int32) error
@@ -74,13 +81,19 @@ type Querier interface {
 	EnqueueDetectRoutes(ctx context.Context, arg *EnqueueDetectRoutesParams) error
 	EnqueueFetchWeather(ctx context.Context, arg *EnqueueFetchWeatherParams) error
 	EnqueueProcessWorkout(ctx context.Context, arg *EnqueueProcessWorkoutParams) error
+	// Every connection that can sync. One whose last sync died waits for a retry through /jobs or POST /sources/{id}/sync, so an outage doesn't leave a dead job every sweep.
+	EnqueueSourceSyncsDue(ctx context.Context, runAt pgtype.Timestamptz) (int64, error)
 	// Every user's file-backed workouts not built by the current processor; one already queued is skipped by idx_jobs_pending.
 	EnqueueStaleWorkouts(ctx context.Context, arg *EnqueueStaleWorkoutsParams) (int64, error)
+	// One pending sync per user (idx_jobs_pending).
+	EnqueueSyncSource(ctx context.Context, arg *EnqueueSyncSourceParams) error
 	EnqueueUserWorkouts(ctx context.Context, arg *EnqueueUserWorkoutsParams) (int64, error)
 	// Every user's tracked workouts that ended by the cutoff and have no reading from the source, newest first.
 	// One whose last fetch died waits for a retry through /jobs, so an outage doesn't queue it again every sweep; one with a fetch pending is left out so it doesn't use up the limit.
 	EnqueueWeatherDue(ctx context.Context, arg *EnqueueWeatherDueParams) (int64, error)
+	FailSourceSync(ctx context.Context, arg *FailSourceSyncParams) error
 	FinishJob(ctx context.Context, arg *FinishJobParams) error
+	FinishSourceSync(ctx context.Context, arg *FinishSourceSyncParams) error
 	// The earliest start in [window_from, window_to), excluded workouts included since they're still listed; no rows when the window is empty.
 	FirstWorkoutStartInWindow(ctx context.Context, arg *FirstWorkoutStartInWindowParams) (pgtype.Timestamptz, error)
 	GetActivityFile(ctx context.Context, arg *GetActivityFileParams) (*ActivityFile, error)
@@ -93,6 +106,11 @@ type Querier interface {
 	GetPendingDeviceAuthorization(ctx context.Context, arg *GetPendingDeviceAuthorizationParams) (*DeviceAuthorization, error)
 	GetRoute(ctx context.Context, arg *GetRouteParams) (*Route, error)
 	GetRouteOverride(ctx context.Context, arg *GetRouteOverrideParams) (*RouteOverride, error)
+	GetSourceActivity(ctx context.Context, arg *GetSourceActivityParams) (*SourceActivity, error)
+	GetSourceClient(ctx context.Context, arg *GetSourceClientParams) (*SourceClient, error)
+	GetSourceClientByID(ctx context.Context, id int32) (*SourceClient, error)
+	GetSourceConnection(ctx context.Context, arg *GetSourceConnectionParams) (*SourceConnection, error)
+	GetSourceConnectionByKind(ctx context.Context, arg *GetSourceConnectionByKindParams) (*SourceConnection, error)
 	GetStretch(ctx context.Context, arg *GetStretchParams) (*Stretch, error)
 	GetUser(ctx context.Context, id int32) (*GetUserRow, error)
 	//
@@ -132,6 +150,7 @@ type Querier interface {
 	ListSegmentEffortsBySport(ctx context.Context, arg *ListSegmentEffortsBySportParams) ([]*ListSegmentEffortsBySportRow, error)
 	// Distance segments shortest first, then duration segments shortest first.
 	ListSegmentsByWorkout(ctx context.Context, arg *ListSegmentsByWorkoutParams) ([]*WorkoutSegment, error)
+	ListSourceConnections(ctx context.Context, userID int32) ([]*SourceConnection, error)
 	ListStretchEffortsByStretch(ctx context.Context, arg *ListStretchEffortsByStretchParams) ([]*ListStretchEffortsByStretchRow, error)
 	// Every effort with when its workout started, newest first; the stretch list sums them per stretch.
 	ListStretchEffortsByUser(ctx context.Context, userID int32) ([]*ListStretchEffortsByUserRow, error)
@@ -162,6 +181,7 @@ type Querier interface {
 	// This query is useful for auth only and for nothing else, which should discourage misuse
 	SelectEmailPasswordForAuth(ctx context.Context, email string) (*SelectEmailPasswordForAuthRow, error)
 	SetRouteRepresentative(ctx context.Context, arg *SetRouteRepresentativeParams) error
+	SetSourceCredentials(ctx context.Context, arg *SetSourceCredentialsParams) error
 	SetWorkoutDuplicateOf(ctx context.Context, arg *SetWorkoutDuplicateOfParams) error
 	TouchCliSession(ctx context.Context, arg *TouchCliSessionParams) error
 	TouchDeviceAuthorization(ctx context.Context, arg *TouchDeviceAuthorizationParams) error
@@ -170,6 +190,8 @@ type Querier interface {
 	// Everything reprocessing rebuilds from the activity file, and the corrections it applied over it.
 	UpdateWorkoutDerived(ctx context.Context, arg *UpdateWorkoutDerivedParams) (*Workout, error)
 	UpsertRouteOverride(ctx context.Context, arg *UpsertRouteOverrideParams) error
+	// Connecting again replaces the tokens and clears the fault, and carries on from where the syncs had got to.
+	UpsertSourceConnection(ctx context.Context, arg *UpsertSourceConnectionParams) (*SourceConnection, error)
 	UpsertWorkoutSeries(ctx context.Context, arg *UpsertWorkoutSeriesParams) error
 	UpsertWorkoutTrack(ctx context.Context, arg *UpsertWorkoutTrackParams) error
 	UpsertWorkoutWeather(ctx context.Context, arg *UpsertWorkoutWeatherParams) error

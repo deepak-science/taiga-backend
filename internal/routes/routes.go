@@ -7,6 +7,7 @@ import (
 	"gitea.deepak.science/deepak/taiga/internal/filerepo"
 	"gitea.deepak.science/deepak/taiga/internal/models"
 	"gitea.deepak.science/deepak/taiga/internal/oidc"
+	"gitea.deepak.science/deepak/taiga/internal/sources"
 	"gitea.deepak.science/deepak/taiga/internal/tokens"
 	"github.com/go-chi/chi/v5"
 )
@@ -20,6 +21,7 @@ type options struct {
 	registrationOpen bool
 	passwordLogin    bool
 	oidc             *oidc.Registry
+	sources          *sources.Manager
 }
 
 type Option func(*options)
@@ -39,6 +41,11 @@ func WithOIDC(r *oidc.Registry) Option {
 	return func(o *options) { o.oidc = r }
 }
 
+// WithSources lets users connect accounts elsewhere to import from; without it there is nothing to connect.
+func WithSources(g *sources.Manager) Option {
+	return func(o *options) { o.sources = g }
+}
+
 // New creates a new handlers instance
 func New(m models.Model, tok tokens.Toker, fileRepo filerepo.FileRepo, opts ...Option) http.Handler {
 	o := options{registrationOpen: true, passwordLogin: true, oidc: &oidc.Registry{}}
@@ -55,6 +62,9 @@ func New(m models.Model, tok tokens.Toker, fileRepo filerepo.FileRepo, opts ...O
 	r.Mount("/health", newHealthRouter(m))
 	r.Mount("/auth", newAuthRouter(m, tok, o))
 
+	// Where the source sends the browser back, which arrives with a cookie and no token.
+	r.Get("/sources/{source}/callback", sourceCallback(o.sources))
+
 	// authenticated routes
 	r.Group(func(r chi.Router) {
 		r.Use(tok.Authenticator)
@@ -64,6 +74,10 @@ func New(m models.Model, tok tokens.Toker, fileRepo filerepo.FileRepo, opts ...O
 		r.Mount("/jobs", newJobRouter(m))
 		r.Mount("/routes", newRouteRouter(m))
 		r.Mount("/stretches", newStretchRouter(m))
+		r.Get("/sources", getSources(m, o.sources))
+		r.Post("/sources/{source}", connectSource(o.sources))
+		r.Delete("/sources/{source}", disconnectSource(m, o.sources))
+		r.Post("/sources/{source}/sync", syncSource(m, o.sources))
 	})
 
 	return r

@@ -81,6 +81,18 @@ type WeatherConfig struct {
 	BaseURL string `mapstructure:"base_url"`
 }
 
+// SourcesConfig turns on importing from accounts elsewhere (docs/sources.md).
+type SourcesConfig struct {
+	Coros CorosConfig `mapstructure:"coros"`
+}
+
+// CorosConfig lets users connect their COROS accounts, which registers this deployment with COROS and then asks it hourly for each connected user's new activities.
+type CorosConfig struct {
+	Enabled bool `mapstructure:"enabled"`
+	// The MCP server to use; empty means COROS's own.
+	Endpoint string `mapstructure:"endpoint"`
+}
+
 type Config struct {
 	App      AppConfig      `mapstructure:"app"`
 	Auth     AuthConfig     `mapstructure:"auth"`
@@ -88,6 +100,7 @@ type Config struct {
 	Tokens   TokensConfig   `mapstructure:"tokens"`
 	FileRepo FileRepoConfig `mapstructure:"file_repo"`
 	Weather  WeatherConfig  `mapstructure:"weather"`
+	Sources  SourcesConfig  `mapstructure:"sources"`
 }
 
 // Load reads configuration from environment variables and config files
