@@ -121,7 +121,7 @@ The FIT file is the source of truth; everything taiga computes from it (summary,
   - Leases (5 min) so a crashed worker's job is claimed again; exponential backoff from 30s; dead after 5 attempts, or at once for errors a retry can't fix.
   - On boot the worker queues `process_workout` for every stale workout. `POST /workouts/reprocess` queues all of a user's; `GET /jobs`, `POST /jobs/{id}/retry` to watch and retry.
 - [x] Standard distances gained `3k` and `2mi`; existing workouts pick them up through the above.
-- [ ] Client side: a reprocess action and dead jobs, as part of the admin panel (see Later).
+- [ ] Client side: a reprocess action and dead jobs, as part of the admin panel (M18).
 
 **Deferred:**
 - **Async uploads.** Parsing takes milliseconds, so `202` plus polling in both clients isn't worth it yet. Uploads that genuinely run in the background arrive with M8's `sync_source` jobs.
@@ -167,7 +167,7 @@ The FIT file is the source of truth; everything taiga computes from it (summary,
 
 ## M7 — Heart rate (lower priority)
 
-- [ ] Average and max HR per workout from the FIT session (`avg_heart_rate`, `max_heart_rate`); HR is already in the M6 series. Old workouts pick these up through M5 reprocessing.
+- [ ] Average and max HR per workout from the FIT session (`avg_heart_rate`, `max_heart_rate`); HR is already in the M6 series. Old workouts pick these up through M5 reprocessing. Now part of M16, with the rest of what the file has.
 - [ ] A per-user max HR (and optionally resting HR) setting, defaulting to the highest HR seen across the user's workouts.
 - [ ] Time in HR zones per workout, derived from that setting. Changing the setting enqueues stats jobs rather than reprocessing files.
 
@@ -205,9 +205,11 @@ What this makes of the plan:
 - [x] **The MCP client** is the official Go SDK (`modelcontextprotocol/go-sdk`), which also serves the stand-in the tests run against (`testsupport.NewFakeCOROS`).
 - [x] **Tried against COROS** (2026-11-21, from `localhost`): it registered with no approval, signed in, imported the week's six activities and fetched nothing on the next sync. What it sent is written down in `docs/sources.md` and kept as the parser's test files. Two things it turned up: the list arrives as a JSON string, quotes and all, and COROS registers taiga with no client secret whatever is asked for.
 - [x] **Refreshing works** (same day): with the stored token treated as expired, three syncs in a row each refreshed, got a new token pair, and saved it for the next. So a client with no secret is refreshed, and the rotation is kept.
+- [x] **Two rounds of review** (#110, same day) closed gaps the first run couldn't show. File requests are counted when COROS issues the links (`source_file_requests`), not when the import works; a refresh is saved before the session opens; a window too full for one list is asked for in halves; a stored registration that can't be read after a key change is replaced on connecting, and marks the connection `needs_reconnect` in a sync.
 - [ ] COROS promises nothing about its replies, and reworded the FIT tools' five days before that run (`docs/sources.md`, "How much of this will hold"). The terms are still unread.
 - [ ] Pickleball arrives as FIT sport `racket`, so it is named "Madison evening racket"; `sportNouns` has no better word for it.
-- [ ] **Frontend**: a "Sources" part of the account page (connect, last synced, the error or "connect again", sync now, disconnect), and landing on `#/account?source=coros` or `?source_error=`.
+- [ ] **Frontend**: an "Imported from" part of the account page (connect, last synced, the error or "connect again", sync now, disconnect), landing on `#/account?source=coros` or `?source_error=`. Built on taiga-frontend's `coros-source` branch and tried against COROS from the browser (2026-11-21: connected, six activities imported); not yet committed or merged.
+  - `taco` can't start a connection: the callback is tied to a cookie in the browser that began it. It could list connections and ask for a sync.
 - [ ] **History.** A new connection starts a week back, since older runs are already here from exports and each file asked for counts against the 50 a day. To backfill a fresh account: walk back in windows, and match on start time first so a run already held costs no request.
 - [ ] **Which sports.** Everything comes across, as an export does. A per-connection list of sport codes (100–103 running, 900 walking) would keep the rest out.
 - [ ] Not handled: connecting again while a sync is running can leave the old session's refreshed tokens saved over the new ones, which shows as "connect again" once more.
@@ -499,6 +501,85 @@ Does it hold on a coast, in hills, in a desert? The same comparison at the middl
 - **So:** the ranking stays one list with ERA5 first; nothing here argues for ranking each variable separately. A heat adjustment shouldn't take a single dew point on trust in dry country on a hot day.
 - **What this doesn't show.** The samples are small and each is a few days of one season. The station is up to 52km from the activity (Yucatán), and in the Black Hills up to 230m higher or lower than the cell.
 
+## M16 — More from each workout
+
+**Goal:** keep what a run's file and its source already know and taiga drops, for tracking over time. None of it replaces taiga's own figures: best efforts, splits and routes stay computed from the records.
+
+### Survey (2026-11-21)
+
+One COROS PACE 4 run's FIT file, and one call each to COROS's activity detail, fitness and training load tools.
+
+- **Kept today:** distance, time, pace, sport, source, name, place and zone; the track; a series of speed, altitude, heart rate and cadence; best efforts.
+- **In the file and dropped:**
+  - Session and each lap: average, max and min heart rate, ascent and descent, calories, elapsed against timer time, total steps (`total_cycles`), average power, step length, vertical oscillation, ground contact time (`stance_time`), vertical ratio, wrist temperature.
+  - Every record: power, step length, vertical oscillation, ground contact time, vertical ratio.
+  - "Effort Pace", a COROS developer field (m/s) on every record, lap and the session: its grade-adjusted pace.
+  - Laps: five in that run, one a mile, each with the session's fields.
+- **Only at COROS, per activity** (`getActivityDetail`, prose like the list): Training Load, Aerobic and Anaerobic Training Effect, Training Focus ("Threshold"), Performance ("Best"), and Adjusted Pace, Moving Average Pace and Best Kilometer.
+- **Only at COROS, per day:** VO2max, running level, threshold pace and predicted 5k, 10k, half and marathon times (`queryFitnessAssessmentOverview`); short- and long-term load, their ratio and a comment (`queryTrainingLoadAssessment`); and recovery, resting heart rate, sleep, HRV and stress from tools of their own.
+
+### Tasks
+
+- [ ] **From the file** (an `extractorVersion` bump, so every FIT workout gets them on reprocessing):
+  - Summary: average, max and min heart rate; ascent and descent; calories; elapsed and moving time; total steps; averages of power, effort pace, step length, vertical oscillation, ground contact time and vertical ratio.
+  - Series columns: power, effort pace, step length, vertical oscillation, ground contact time, vertical ratio. Null where a sample is missing and omitted when never recorded, like the columns there now.
+  - Laps as recorded, with their own figures: the lap button is used now and then for intervals, and taiga's mile splits don't show those.
+  - Not wrist temperature: the weather lookup is the better reading.
+- [ ] **COROS's own figures for an activity** (`coros_metadata`, beside the workout the way `workout_weather` is: not derived from the file, so reprocessing leaves it alone). All of what `getActivityDetail` gives, the three paces included, for tracking; none of it feeds best efforts.
+  - A third tool for taiga to call, where `docs/sources.md` and the code now allow two. One call per activity, and whether those are limited isn't known.
+  - Filled by the sync for each activity it deals with. Runs uploaded by hand before the connection could get theirs too: the list reaches back years, and an activity matches a workout by its start.
+  - The reply is prose again, so the same rule as the list: what can't be read fails loudly, and the wording gets a test file.
+- [ ] **Frontend:** the new summary figures and laps on the workout page, the new columns as lines on its graph, and COROS's figures where it has them.
+- [ ] **Other sources.** See what the Endomondo JSON, Google Fit's TCX and a Garmin FIT have that corresponds (heart rate summaries, ascent, calories, laps, running dynamics), and read it into the same fields.
+- [ ] **Later: daily fitness** from COROS, a row per user and day, which is a new kind of data here: the fitness assessment (VO2max, running level, threshold pace, race predictions) and training load first. The predictions set against actual best efforts is the picture worth having. Recovery, sleep, HRV and stress only if taiga is to be a health log too.
+- [ ] **Later: form over a long run.** With ground contact time in the series, show it rising as a run goes on, and compare that across runs.
+
+## M17 — Metrics, for Grafana
+
+**Goal:** see from Grafana what the deployment is doing: requests, the job queue, and what it asks of COROS and the weather provider. The homelab already runs the Prometheus operator and Grafana, and scrapes taiga's Postgres through a `PodMonitor` (`k8s-manifests/taiga/02-podmonitor.yaml` in proxmox-homelab); the backend itself exports nothing yet.
+
+- [ ] **`GET /metrics`** in Prometheus's text format (`prometheus/client_golang`), with Go's runtime and process collectors. On a port of its own (`app.metrics_port`), off unless set, so it is never reachable through the frontend's `/api` proxy and needs no sign-in of its own.
+- [ ] **Requests:** a count and a duration histogram by method, route and status. The route is chi's pattern (`/workouts/{id}`), never the path, so ids don't become label values.
+- [ ] **Jobs:**
+  - As they run: a count by kind and outcome (done, retried, dead) and a duration histogram by kind.
+  - The queue as it stands, read from the `jobs` table on each scrape: how many by kind and state, and the age of the oldest queued one. That is what an alert on a stuck worker or a pile of dead jobs needs.
+- [ ] **Sources:**
+  - Syncs by outcome (done, failed, needs reconnecting) and their duration; activities listed, imported, already had, unreadable and waiting.
+  - File requests made of COROS, and how many of the day's 45 are used. With one user that is a single number; with more it's the highest, never a label per user.
+  - Connections by state (fine, failing, needs reconnecting), and token refreshes.
+- [ ] **Outbound calls:** a count and duration by destination (COROS, Open-Meteo, the OIDC issuers) and outcome, so a slow or failing provider shows apart from taiga's own faults.
+- [ ] **Storage and the database:** file repo reads and writes by backend and outcome; the pool's open and waiting connections. Postgres's own figures already come from CNPG.
+- [ ] **No per-user labels anywhere.** Label values are kinds, routes, states and outcomes: a fixed handful each. Who did what stays in the log.
+- [ ] **In the homelab** (proxmox-homelab, on its taiga branch): a `PodMonitor` for the backend's metrics port, a dashboard kept as JSON beside the manifests (requests and errors, queue depth and oldest job, dead jobs, syncs and the COROS allowance), and alerts for dead jobs, a queue that isn't draining, and a connection that needs reconnecting.
+- [ ] **Frontend:** nothing from the browser. nginx's request log, or its stub status through an exporter, if the static side ever needs watching.
+
+## M18 — Admins
+
+**Goal:** tell the person running the deployment from the people using it, and give the first a place to run it from. Today every account is the same, and running it means `kubectl exec`.
+
+### The separation
+
+- [ ] **A role on the account** (`users.is_admin`, false for everyone), checked from the database on each admin request and not carried in the token: tokens last two hours, and taking the role away should work at once.
+- [ ] **Making the first admin** can't go through the API. `useradd -admin`, and a command to grant or revoke the role on an existing account; optionally `auth.admins`, a list of emails given the role at boot, for a deployment configured by env alone.
+- [ ] **Later, from the provider:** an OIDC group or claim (authentik's groups) that grants the role at sign-in, per provider, off by default.
+- [ ] **`/admin/...` routes** behind one middleware that answers `404` to anyone else, so the surface doesn't show. Everything they do is logged with who did it.
+- [ ] **What an admin still can't do:** read another user's workouts, tracks or files through the admin routes, or see anyone's COROS tokens. Running the deployment needs counts, states and errors; it doesn't need the runs.
+- [ ] `GET /auth/providers` or the token's own lookup tells the frontend whether to show the admin link; the `404` is the real control, as with registration.
+
+### What it's for
+
+- [ ] **Accounts:** list them (email, created, last seen, ways to sign in, how many workouts), create one in place of `useradd`, close and reopen registration, disable an account, and end its sessions. Deleting an account and everything it owns is its own piece of work: files are shared by hash.
+- [ ] **Jobs across users:** queued, running and dead, with the last error; retry or drop one; queue reprocessing for one user or everyone. Each user's own `/jobs` stays as it is.
+- [ ] **Sources:** connections by state, the last error on each, the day's COROS allowance per user, and the deployment's registration with COROS (when it was made; replace it).
+- [ ] **Files that failed to parse,** by user and reason, as counts.
+- [ ] **The deployment:** version, processor version and how many workouts are behind it, migration version, which optional parts are on (weather, sources, the OIDC providers).
+
+### The screens
+
+- [ ] **Frontend `#/admin`**, shown only to admins: accounts, jobs, sources and the deployment page above. This is the "Admin panel" that M5's client-side item waits on.
+- [ ] **`taco admin ...`** for the same calls, so the runbook's `kubectl exec` lines go away.
+- [ ] The figures on these pages and the ones M17 exports should come from the same queries, so Grafana and the admin page never disagree.
+
 ## Later
 
 - **Faster CI.** Backend runs took 12–14½ minutes (November 2026): the flake check, a second build of the binary, the image publish and a binary-cache upload of everything. Now a branch run takes about 2 minutes with the dependency cache restored (3¼ when the dependencies changed), plus a minute to publish on master. What's left:
@@ -510,4 +591,4 @@ Does it hold on a coast, in hills, in a desert? The same comparison at the middl
 - **`taco` sets itself up.**
   - **Built** (taiga-cliclient#45): `taco init <server>` finds the API (at the address given, or under `/api` there) and writes `~/.config/taco/config.toml` beside the credentials; `--config-file` and a `config.toml` in the working directory still win. Quiet unless `-v`.
   - Left: more than one server. The credentials are already kept per backend, so a named profile (`--profile test`) is the config's half of that.
-- **Admin panel** in the frontend, for running the deployment rather than looking at runs: the job queue (queued, running, dead jobs with their last error, retry), reprocess one or all workouts, files that failed to parse, and eventually account management in place of `kubectl exec … useradd`. Needs a notion of an admin user first.
+- **Admin panel:** now M18.
