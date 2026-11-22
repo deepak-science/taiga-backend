@@ -167,20 +167,14 @@ func putActivityFileFunc(m models.Model) http.HandlerFunc {
 		dec := json.NewDecoder(r.Body)
 		dec.DisallowUnknownFields()
 
+		// Only the timestamp: which stored content a file points at is set by uploading it, never by naming a hash, since a hash can be known without having the content.
 		var updateReq struct {
-			Timestamp    *time.Time `json:"timestamp"`
-			FileRepoHash *string    `json:"file_repo_hash"`
+			Timestamp *time.Time `json:"timestamp"`
 		}
 		err = dec.Decode(&updateReq)
 		if err != nil {
 			badRequestError(w, err)
 			return
-		}
-		if updateReq.FileRepoHash != nil {
-			if err := filerepo.CheckHash(*updateReq.FileRepoHash); err != nil {
-				badRequestError(w, err)
-				return
-			}
 		}
 
 		// Get current activity file to get existing values
@@ -198,13 +192,8 @@ func putActivityFileFunc(m models.Model) http.HandlerFunc {
 			timestamp = currentFile.Timestamp.Time
 		}
 
-		fileRepoHash := updateReq.FileRepoHash
-		if fileRepoHash == nil {
-			fileRepoHash = currentFile.FileRepoHash
-		}
-
 		log.Printf("Updating activity file %v", activityFileID)
-		activityFile, err := m.UpdateActivityFile(ctx, activityFileID, timestamp, fileRepoHash, userToken)
+		activityFile, err := m.UpdateActivityFile(ctx, activityFileID, timestamp, currentFile.FileRepoHash, userToken)
 		if err != nil {
 			log.Printf("Error updating activity file! %v", err)
 			serverError(w, err)

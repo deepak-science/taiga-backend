@@ -419,18 +419,29 @@ func TestWorkoutWeather(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, status)
 }
 
-func TestActivityFileHashMustBeAHash(t *testing.T) {
+func TestAnActivityFileCannotBePointedAtOtherContent(t *testing.T) {
 	srv, m, toker := newAPI(t)
 	alice := newUserClient(t, srv, m, toker, "alice@example.com")
+	bob := newUserClient(t, srv, m, toker, "bob@example.com")
 	status, af := alice.uploadFile(fourKFIT(t))
 	require.Equal(t, http.StatusCreated, status)
+	_, bobs := bob.uploadFile([]byte("bob's file, whose hash alice has come by"))
+	require.NotNil(t, bobs.FileRepoHash)
 
-	for _, hash := range []string{"../../../../etc/passwd", "ab", "", strings.Repeat("A", 64), strings.Repeat("a", 62) + "/."} {
+	// A real hash of someone else's content, and things that aren't hashes at all: the field isn't one a request can set.
+	for _, hash := range []string{*bobs.FileRepoHash, "../../../../etc/passwd", "ab", ""} {
 		status, _ := alice.put(fmt.Sprintf("/activity_files/%d", af.ID), fmt.Sprintf(`{"file_repo_hash": %q}`, hash))
 		assert.Equal(t, http.StatusBadRequest, status, hash)
 	}
-
 	status, body := alice.get(fmt.Sprintf("/activity_files/%d/download", af.ID))
 	require.Equal(t, http.StatusOK, status)
 	assert.Equal(t, fourKFIT(t), body)
+
+	// The timestamp still can be, and the content stays put.
+	status, body = alice.put(fmt.Sprintf("/activity_files/%d", af.ID), `{"timestamp": "2026-11-01T07:00:00Z"}`)
+	require.Equal(t, http.StatusOK, status, string(body))
+	var updated models.ActivityFile
+	require.NoError(t, json.Unmarshal(body, &updated))
+	assert.Equal(t, af.FileRepoHash, updated.FileRepoHash)
+	assert.True(t, updated.Timestamp.Time.Equal(routeDay))
 }

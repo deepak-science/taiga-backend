@@ -317,7 +317,7 @@ weather:
 - `GET /activity_files` - List all activity files for authenticated user (newest first); `?without_workout=true` lists only files with no workout, e.g. ones that failed to parse
 - `GET /activity_files/{id}` - Get specific activity file metadata
 - `POST /activity_files` - Upload new activity file (multipart form with `file` and optional `timestamp`); `201` when new, `200` with the existing file when the user already uploaded the same content
-- `PUT /activity_files/{id}` - Update activity file metadata (timestamp, file_repo_hash); `400` unless the hash is a lowercase hex SHA-256
+- `PUT /activity_files/{id}` - Update the activity file's `timestamp`; nothing else can be set, and `400` for any other field
 - `DELETE /activity_files/{id}` - Delete the activity file record (stored content is shared by hash and kept); `409` while workouts still reference it
 - `GET /activity_files/{id}/download` - Download the actual file content
 
