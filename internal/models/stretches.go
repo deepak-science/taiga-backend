@@ -1,6 +1,7 @@
 package models
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -38,6 +39,8 @@ type StretchEffort struct {
 	DistanceMeters     float64            `json:"distance_meters"`
 	// WalkedFraction is null when the workout can't tell walking from running.
 	WalkedFraction *float64 `json:"walked_fraction"`
+	// RouteID is the route the workout is on; null when it's on none.
+	RouteID *int32 `json:"route_id"`
 }
 
 // StretchSummary is a stretch with figures over its efforts (those in the window, if one was given).
@@ -61,6 +64,27 @@ type StretchDetail struct {
 	// [lat, lon] pairs, first at the start.
 	Points  [][2]float64     `json:"points"`
 	Efforts []*StretchEffort `json:"efforts"`
+	// Routes are the routes those efforts were run on, most efforts first.
+	Routes []*StretchRoute `json:"routes"`
+}
+
+// StretchRoute is a route some of a stretch's efforts were run on, with how many.
+type StretchRoute struct {
+	ID   int32   `json:"id"`
+	Name *string `json:"name"`
+	// DistanceMiles is the representative run's, as a route's own is.
+	DistanceMiles *float64 `json:"distance_miles"`
+	EffortCount   int      `json:"effort_count"`
+	WorkoutCount  int      `json:"workout_count"`
+}
+
+// RouteStretch is a stretch some of a route's runs pass, with figures over those runs alone.
+type RouteStretch struct {
+	StretchSummary
+	// RunCount is how many runs the route has (in the window), to set WorkoutCount against.
+	RunCount int `json:"run_count"`
+	// MissedWorkoutIDs are the route's runs with no pass over it, newest first.
+	MissedWorkoutIDs []int32 `json:"missed_workout_ids"`
 }
 
 // WorkoutStretchEffort is a pass as listed on the workout that made it.
@@ -68,7 +92,75 @@ type WorkoutStretchEffort struct {
 	StretchID     int32   `json:"stretch_id"`
 	Name          string  `json:"name"`
 	StretchMeters float64 `json:"stretch_meters"`
+	// BestSeconds is the fastest pass any workout has made over the stretch, and Rank where this one stands among all EffortCount of them, 1 the fastest.
+	BestSeconds float64 `json:"best_seconds"`
+	Rank        int     `json:"rank"`
+	EffortCount int     `json:"effort_count"`
 	StretchEffort
+}
+
+// workoutRouteIDs is the route each of the user's routed workouts is on.
+func workoutRouteIDs(ctx context.Context, q db.Querier, userToken *tokens.UserToken) (map[int32]int32, error) {
+	memberships, err := q.ListWorkoutRoutesByUser(ctx, userToken.ID)
+	if err != nil {
+		return nil, err
+	}
+	routeOf := make(map[int32]int32, len(memberships))
+	for _, wr := range memberships {
+		routeOf[wr.WorkoutID] = wr.RouteID
+	}
+	return routeOf, nil
+}
+
+// routeIDOf is the workout's route as an effort carries it.
+func routeIDOf(routeOf map[int32]int32, workoutID int32) *int32 {
+	if id, ok := routeOf[workoutID]; ok {
+		return &id
+	}
+	return nil
+}
+
+// stretchRoutes counts the efforts by the route they were run on.
+func stretchRoutes(ctx context.Context, q db.Querier, efforts []*StretchEffort, userToken *tokens.UserToken) ([]*StretchRoute, error) {
+	out := []*StretchRoute{}
+	byID := map[int32]*StretchRoute{}
+	seen := map[int32]bool{}
+	for _, e := range efforts {
+		if e.RouteID == nil {
+			continue
+		}
+		r := byID[*e.RouteID]
+		if r == nil {
+			route, err := q.GetRoute(ctx, &db.GetRouteParams{ID: *e.RouteID, UserID: userToken.ID})
+			// Regrouping can delete a route between the two reads.
+			if IsNotFound(err) {
+				e.RouteID = nil
+				continue
+			}
+			if err != nil {
+				return nil, err
+			}
+			r = &StretchRoute{ID: route.ID, Name: route.Name}
+			if route.RepresentativeWorkoutID != nil {
+				rep, err := q.GetWorkout(ctx, &db.GetWorkoutParams{ID: *route.RepresentativeWorkoutID, UserID: userToken.ID})
+				if err != nil && !IsNotFound(err) {
+					return nil, err
+				}
+				if err == nil {
+					r.DistanceMiles = rep.DistanceMiles
+				}
+			}
+			byID[r.ID] = r
+			out = append(out, r)
+		}
+		r.EffortCount++
+		if !seen[e.WorkoutID] {
+			seen[e.WorkoutID] = true
+			r.WorkoutCount++
+		}
+	}
+	slices.SortStableFunc(out, func(a, b *StretchRoute) int { return b.EffortCount - a.EffortCount })
+	return out, nil
 }
 
 func summarizeStretch(s *db.Stretch, efforts []*StretchEffort) *StretchSummary {
@@ -133,16 +225,25 @@ func stretchDetail(ctx context.Context, q db.Querier, id int32, window Window, u
 	if err != nil {
 		return nil, err
 	}
+	routeOf, err := workoutRouteIDs(ctx, q, userToken)
+	if err != nil {
+		return nil, err
+	}
 	efforts := []*StretchEffort{}
 	for _, r := range rows {
 		if window.Contains(r.StartTime.Time) {
 			efforts = append(efforts, &StretchEffort{
 				WorkoutID: r.WorkoutID, WorkoutName: r.WorkoutName, StartTime: r.StartTime, StartOffsetSeconds: r.StartOffsetSeconds, EndOffsetSeconds: r.EndOffsetSeconds,
 				DurationSeconds: r.DurationSeconds, StartMeters: r.StartMeters, DistanceMeters: r.DistanceMeters, WalkedFraction: r.WalkedFraction,
+				RouteID: routeIDOf(routeOf, r.WorkoutID),
 			})
 		}
 	}
-	detail := &StretchDetail{StretchSummary: *summarizeStretch(s, efforts), Efforts: efforts}
+	routes, err := stretchRoutes(ctx, q, efforts, userToken)
+	if err != nil {
+		return nil, err
+	}
+	detail := &StretchDetail{StretchSummary: *summarizeStretch(s, efforts), Efforts: efforts, Routes: routes}
 	if err := json.Unmarshal(s.Points, &detail.Points); err != nil {
 		return nil, fmt.Errorf("decoding stretch %d: %w", id, err)
 	}
@@ -319,11 +420,94 @@ func (m *storeModel) WorkoutStretchEfforts(ctx context.Context, workoutID int32,
 		return nil, err
 	}
 	out := make([]*WorkoutStretchEffort, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, &WorkoutStretchEffort{StretchID: r.StretchID, Name: r.Name, StretchMeters: r.Meters, StretchEffort: StretchEffort{
-			WorkoutID: r.WorkoutID, WorkoutName: workout.Name, StartTime: workout.StartTime, StartOffsetSeconds: r.StartOffsetSeconds, EndOffsetSeconds: r.EndOffsetSeconds,
-			DurationSeconds: r.DurationSeconds, StartMeters: r.StartMeters, DistanceMeters: r.DistanceMeters, WalkedFraction: r.WalkedFraction,
-		}})
+	if len(rows) == 0 {
+		return out, nil
 	}
+	var routeID *int32
+	if id, err := q.GetWorkoutRouteID(ctx, &db.GetWorkoutRouteIDParams{WorkoutID: workoutID, UserID: userToken.ID}); err == nil {
+		routeID = &id
+	} else if !IsNotFound(err) {
+		return nil, err
+	}
+	// Every effort over each stretch, to say where this workout's stand among them.
+	all, err := q.ListStretchEffortsByUser(ctx, userToken.ID)
+	if err != nil {
+		return nil, err
+	}
+	times := map[int32][]float64{}
+	for _, e := range all {
+		times[e.StretchID] = append(times[e.StretchID], e.DurationSeconds)
+	}
+	for _, r := range rows {
+		effort := &WorkoutStretchEffort{StretchID: r.StretchID, Name: r.Name, StretchMeters: r.Meters, BestSeconds: r.DurationSeconds, Rank: 1, EffortCount: len(times[r.StretchID]), StretchEffort: StretchEffort{
+			WorkoutID: r.WorkoutID, WorkoutName: workout.Name, StartTime: workout.StartTime, StartOffsetSeconds: r.StartOffsetSeconds, EndOffsetSeconds: r.EndOffsetSeconds,
+			DurationSeconds: r.DurationSeconds, StartMeters: r.StartMeters, DistanceMeters: r.DistanceMeters, WalkedFraction: r.WalkedFraction, RouteID: routeID,
+		}}
+		for _, seconds := range times[r.StretchID] {
+			effort.BestSeconds = min(effort.BestSeconds, seconds)
+			if seconds < r.DurationSeconds {
+				effort.Rank++
+			}
+		}
+		out = append(out, effort)
+	}
+	return out, nil
+}
+
+// RouteStretches lists the stretches the route's runs (in the window) pass, in the order the route comes to them, with which of its runs didn't.
+func (m *storeModel) RouteStretches(ctx context.Context, id int32, window Window, userToken *tokens.UserToken) ([]*RouteStretch, error) {
+	route, err := m.Route(ctx, id, window, userToken)
+	if err != nil {
+		return nil, err
+	}
+	q, err := m.store.GetQuerier()
+	if err != nil {
+		return nil, err
+	}
+	stretches, err := q.ListStretchesByUser(ctx, userToken.ID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := q.ListStretchEffortsByUser(ctx, userToken.ID)
+	if err != nil {
+		return nil, err
+	}
+	onRoute := make(map[int32]bool, len(route.Workouts))
+	for _, w := range route.Workouts {
+		onRoute[w.ID] = true
+	}
+	efforts := map[int32][]*StretchEffort{}
+	passed := map[int32]map[int32]bool{}
+	along := map[int32]float64{}
+	for _, r := range rows {
+		if !onRoute[r.WorkoutID] {
+			continue
+		}
+		efforts[r.StretchID] = append(efforts[r.StretchID], &StretchEffort{
+			WorkoutID: r.WorkoutID, WorkoutName: r.WorkoutName, StartTime: r.StartTime, StartOffsetSeconds: r.StartOffsetSeconds, EndOffsetSeconds: r.EndOffsetSeconds,
+			DurationSeconds: r.DurationSeconds, StartMeters: r.StartMeters, DistanceMeters: r.DistanceMeters, WalkedFraction: r.WalkedFraction, RouteID: &route.ID,
+		})
+		if passed[r.StretchID] == nil {
+			passed[r.StretchID] = map[int32]bool{}
+		}
+		passed[r.StretchID][r.WorkoutID] = true
+		along[r.StretchID] += r.StartMeters
+	}
+	out := []*RouteStretch{}
+	for _, s := range stretches {
+		if len(efforts[s.ID]) == 0 {
+			continue
+		}
+		rs := &RouteStretch{StretchSummary: *summarizeStretch(s, efforts[s.ID]), RunCount: len(route.Workouts), MissedWorkoutIDs: []int32{}}
+		for _, w := range route.Workouts {
+			if !passed[s.ID][w.ID] {
+				rs.MissedWorkoutIDs = append(rs.MissedWorkoutIDs, w.ID)
+			}
+		}
+		along[s.ID] /= float64(len(efforts[s.ID]))
+		out = append(out, rs)
+	}
+	// By how far into a run its passes begin, on average, which is the order the route comes to them.
+	slices.SortStableFunc(out, func(a, b *RouteStretch) int { return cmp.Compare(along[a.ID], along[b.ID]) })
 	return out, nil
 }

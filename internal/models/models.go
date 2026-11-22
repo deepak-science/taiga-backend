@@ -135,6 +135,8 @@ type Model interface {
 	RenameStretch(ctx context.Context, id int32, name string, userToken *tokens.UserToken) (*StretchDetail, error)
 	DeleteStretch(ctx context.Context, id int32, userToken *tokens.UserToken) error
 	WorkoutStretchEfforts(ctx context.Context, workoutID int32, userToken *tokens.UserToken) ([]*WorkoutStretchEffort, error)
+	// RouteStretches are the stretches a route's runs pass; not-found if the route isn't the user's.
+	RouteStretches(ctx context.Context, id int32, window Window, userToken *tokens.UserToken) ([]*RouteStretch, error)
 	Jobs(ctx context.Context, state string, limit int32, userToken *tokens.UserToken) ([]*Job, error)
 	Job(ctx context.Context, id int32, userToken *tokens.UserToken) (*Job, error)
 	RetryDeadJob(ctx context.Context, id int32, now time.Time, userToken *tokens.UserToken) (*Job, error)
