@@ -589,6 +589,9 @@ One COROS PACE 4 run's FIT file, and one call each to COROS's activity detail, f
 
 ## Later
 
+- **Repository settings in Terraform.** Master here only takes pull requests (the `default-branch` ruleset), so `just release` can't push, and `seal` works only because the release app is on the ruleset's bypass list (`Integration`, `always`; set by hand 2026-11-22). taiga-frontend has no ruleset at all, so the two have already drifted apart.
+  - A root in proxmox-homelab's `iac-live` (beside `github-oidc`, which already has the `deepak-science` GitHub provider), with `drift-ci` catching hand edits: import the backend's `default-branch` and Copilot rulesets, give the frontend the same, and put the release app on both bypass lists by its App ID.
+  - Once the frontend has the ruleset, its local `just release` stops working too: both release through `seal`, or a release PR as with #117.
 - **Faster CI.** Backend runs took 12–14½ minutes (November 2026): the flake check, a second build of the binary, the image publish and a binary-cache upload of everything. Now a branch run takes about 2 minutes with the dependency cache restored (3¼ when the dependencies changed), plus a minute to publish on master. What's left:
   - The Determinate installer still lists FlakeHub's cache as a substituter, and every lookup there fails with 401 (some 400 a run). Harmless so far, but one run stalled 2½ minutes during those lookups; dropping it from the substituters would rule that out.
   - Run formatting, lint and tests as parallel jobs, so a formatting failure reports in seconds.
