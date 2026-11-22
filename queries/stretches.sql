@@ -158,15 +158,21 @@ ORDER BY
   stretch_efforts.start_offset_seconds;
 
 -- name: ListStretchEffortsByRoute :many
--- The efforts of a route's runs, newest run first and each run's passes in the order it made them.
+-- The efforts of a route's runs, newest run first and each run's passes in the order it made them, with what a summary of each stretch needs.
 SELECT
   stretch_efforts.*,
   workouts.start_time,
-  workouts.name AS workout_name
+  workouts.name AS workout_name,
+  stretches.name AS stretch_name,
+  stretches.sport AS stretch_sport,
+  stretches.meters AS stretch_meters,
+  stretches.source_workout_id AS stretch_source_workout_id,
+  stretches.created_at AS stretch_created_at
 FROM
   stretch_efforts
   JOIN workout_routes ON workout_routes.workout_id = stretch_efforts.workout_id
   JOIN workouts ON workouts.id = stretch_efforts.workout_id
+  JOIN stretches ON stretches.id = stretch_efforts.stretch_id
 WHERE
   workout_routes.route_id = $1
   AND stretch_efforts.user_id = $2

@@ -210,11 +210,17 @@ const listStretchEffortsByRoute = `-- name: ListStretchEffortsByRoute :many
 SELECT
   stretch_efforts.id, stretch_efforts.stretch_id, stretch_efforts.workout_id, stretch_efforts.user_id, stretch_efforts.start_offset_seconds, stretch_efforts.end_offset_seconds, stretch_efforts.duration_seconds, stretch_efforts.start_meters, stretch_efforts.distance_meters, stretch_efforts.walked_fraction,
   workouts.start_time,
-  workouts.name AS workout_name
+  workouts.name AS workout_name,
+  stretches.name AS stretch_name,
+  stretches.sport AS stretch_sport,
+  stretches.meters AS stretch_meters,
+  stretches.source_workout_id AS stretch_source_workout_id,
+  stretches.created_at AS stretch_created_at
 FROM
   stretch_efforts
   JOIN workout_routes ON workout_routes.workout_id = stretch_efforts.workout_id
   JOIN workouts ON workouts.id = stretch_efforts.workout_id
+  JOIN stretches ON stretches.id = stretch_efforts.stretch_id
 WHERE
   workout_routes.route_id = $1
   AND stretch_efforts.user_id = $2
@@ -229,21 +235,26 @@ type ListStretchEffortsByRouteParams struct {
 }
 
 type ListStretchEffortsByRouteRow struct {
-	ID                 int32              `json:"id"`
-	StretchID          int32              `json:"stretch_id"`
-	WorkoutID          int32              `json:"workout_id"`
-	UserID             int32              `json:"user_id"`
-	StartOffsetSeconds float64            `json:"start_offset_seconds"`
-	EndOffsetSeconds   float64            `json:"end_offset_seconds"`
-	DurationSeconds    float64            `json:"duration_seconds"`
-	StartMeters        float64            `json:"start_meters"`
-	DistanceMeters     float64            `json:"distance_meters"`
-	WalkedFraction     *float64           `json:"walked_fraction"`
-	StartTime          pgtype.Timestamptz `json:"start_time"`
-	WorkoutName        string             `json:"workout_name"`
+	ID                     int32              `json:"id"`
+	StretchID              int32              `json:"stretch_id"`
+	WorkoutID              int32              `json:"workout_id"`
+	UserID                 int32              `json:"user_id"`
+	StartOffsetSeconds     float64            `json:"start_offset_seconds"`
+	EndOffsetSeconds       float64            `json:"end_offset_seconds"`
+	DurationSeconds        float64            `json:"duration_seconds"`
+	StartMeters            float64            `json:"start_meters"`
+	DistanceMeters         float64            `json:"distance_meters"`
+	WalkedFraction         *float64           `json:"walked_fraction"`
+	StartTime              pgtype.Timestamptz `json:"start_time"`
+	WorkoutName            string             `json:"workout_name"`
+	StretchName            string             `json:"stretch_name"`
+	StretchSport           string             `json:"stretch_sport"`
+	StretchMeters          float64            `json:"stretch_meters"`
+	StretchSourceWorkoutID *int32             `json:"stretch_source_workout_id"`
+	StretchCreatedAt       pgtype.Timestamptz `json:"stretch_created_at"`
 }
 
-// The efforts of a route's runs, newest run first and each run's passes in the order it made them.
+// The efforts of a route's runs, newest run first and each run's passes in the order it made them, with what a summary of each stretch needs.
 func (q *Queries) ListStretchEffortsByRoute(ctx context.Context, arg *ListStretchEffortsByRouteParams) ([]*ListStretchEffortsByRouteRow, error) {
 	rows, err := q.db.Query(ctx, listStretchEffortsByRoute, arg.RouteID, arg.UserID)
 	if err != nil {
@@ -266,6 +277,11 @@ func (q *Queries) ListStretchEffortsByRoute(ctx context.Context, arg *ListStretc
 			&i.WalkedFraction,
 			&i.StartTime,
 			&i.WorkoutName,
+			&i.StretchName,
+			&i.StretchSport,
+			&i.StretchMeters,
+			&i.StretchSourceWorkoutID,
+			&i.StretchCreatedAt,
 		); err != nil {
 			return nil, err
 		}

@@ -123,6 +123,17 @@ func routeIDOf(routeOf map[int32]int32, workoutID int32) *int32 {
 // stretchRoutes counts the efforts by the route they were run on.
 func stretchRoutes(ctx context.Context, q db.Querier, efforts []*StretchEffort, userToken *tokens.UserToken) ([]*StretchRoute, error) {
 	out := []*StretchRoute{}
+	if !slices.ContainsFunc(efforts, func(e *StretchEffort) bool { return e.RouteID != nil }) {
+		return out, nil
+	}
+	names, err := q.ListRouteNamesByUser(ctx, userToken.ID)
+	if err != nil {
+		return nil, err
+	}
+	routes := make(map[int32]*db.ListRouteNamesByUserRow, len(names))
+	for _, n := range names {
+		routes[n.ID] = n
+	}
 	byID := map[int32]*StretchRoute{}
 	seen := map[int32]bool{}
 	for _, e := range efforts {
@@ -131,25 +142,13 @@ func stretchRoutes(ctx context.Context, q db.Querier, efforts []*StretchEffort, 
 		}
 		r := byID[*e.RouteID]
 		if r == nil {
-			route, err := q.GetRoute(ctx, &db.GetRouteParams{ID: *e.RouteID, UserID: userToken.ID})
+			route := routes[*e.RouteID]
 			// Regrouping can delete a route between the two reads.
-			if IsNotFound(err) {
+			if route == nil {
 				e.RouteID = nil
 				continue
 			}
-			if err != nil {
-				return nil, err
-			}
-			r = &StretchRoute{ID: route.ID, Name: route.Name}
-			if route.RepresentativeWorkoutID != nil {
-				rep, err := q.GetWorkout(ctx, &db.GetWorkoutParams{ID: *route.RepresentativeWorkoutID, UserID: userToken.ID})
-				if err != nil && !IsNotFound(err) {
-					return nil, err
-				}
-				if err == nil {
-					r.DistanceMiles = rep.DistanceMiles
-				}
-			}
+			r = &StretchRoute{ID: route.ID, Name: route.Name, DistanceMiles: route.DistanceMiles}
 			byID[r.ID] = r
 			out = append(out, r)
 		}
@@ -496,6 +495,7 @@ func (m *storeModel) RouteStretches(ctx context.Context, id int32, window Window
 		inWindow[w.ID] = true
 	}
 	efforts := map[int32][]*StretchEffort{}
+	stretches := map[int32]*db.Stretch{}
 	passed := map[int32]map[int32]bool{}
 	// Each run's first pass over each stretch, from any date, so the order doesn't move with the window.
 	firstPass := map[int32]map[int32]float64{}
@@ -516,18 +516,11 @@ func (m *storeModel) RouteStretches(ctx context.Context, id int32, window Window
 			DurationSeconds: r.DurationSeconds, StartMeters: r.StartMeters, DistanceMeters: r.DistanceMeters, WalkedFraction: r.WalkedFraction, RouteID: &route.ID,
 		})
 		passed[r.StretchID][r.WorkoutID] = true
+		stretches[r.StretchID] = &db.Stretch{ID: r.StretchID, Name: r.StretchName, Sport: r.StretchSport, Meters: r.StretchMeters, SourceWorkoutID: r.StretchSourceWorkoutID, CreatedAt: r.StretchCreatedAt}
 	}
 	along := map[int32]float64{}
 	for stretchID, stretchEfforts := range efforts {
-		s, err := q.GetStretch(ctx, &db.GetStretchParams{ID: stretchID, UserID: userToken.ID})
-		// Deleted since its efforts were read.
-		if IsNotFound(err) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		rs := &RouteStretch{StretchSummary: *summarizeStretch(s, stretchEfforts), RunCount: len(route.Workouts), MissedWorkoutIDs: []int32{}}
+		rs := &RouteStretch{StretchSummary: *summarizeStretch(stretches[stretchID], stretchEfforts), RunCount: len(route.Workouts), MissedWorkoutIDs: []int32{}}
 		for _, w := range route.Workouts {
 			if !passed[stretchID][w.ID] {
 				rs.MissedWorkoutIDs = append(rs.MissedWorkoutIDs, w.ID)

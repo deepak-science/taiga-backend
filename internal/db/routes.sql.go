@@ -311,6 +311,45 @@ func (q *Queries) GetWorkoutTrack(ctx context.Context, arg *GetWorkoutTrackParam
 	return track, err
 }
 
+const listRouteNamesByUser = `-- name: ListRouteNamesByUser :many
+SELECT
+  routes.id,
+  routes.name,
+  workouts.distance_miles
+FROM
+  routes
+  LEFT JOIN workouts ON workouts.id = routes.representative_workout_id
+WHERE
+  routes.user_id = $1
+`
+
+type ListRouteNamesByUserRow struct {
+	ID            int32    `json:"id"`
+	Name          *string  `json:"name"`
+	DistanceMiles *float64 `json:"distance_miles"`
+}
+
+// Each route with what it's called by: its name, and its representative run's distance.
+func (q *Queries) ListRouteNamesByUser(ctx context.Context, userID int32) ([]*ListRouteNamesByUserRow, error) {
+	rows, err := q.db.Query(ctx, listRouteNamesByUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*ListRouteNamesByUserRow{}
+	for rows.Next() {
+		var i ListRouteNamesByUserRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.DistanceMiles); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRouteOverridesByUser = `-- name: ListRouteOverridesByUser :many
 SELECT
   workout_id, user_id, route_id, with_group, created_at

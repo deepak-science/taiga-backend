@@ -150,6 +150,8 @@ type Querier interface {
 	ListIdentitiesByUser(ctx context.Context, userID int32) ([]*UserIdentity, error)
 	ListJobsByUser(ctx context.Context, arg *ListJobsByUserParams) ([]*Job, error)
 	ListJobsByUserAndState(ctx context.Context, arg *ListJobsByUserAndStateParams) ([]*Job, error)
+	// Each route with what it's called by: its name, and its representative run's distance.
+	ListRouteNamesByUser(ctx context.Context, userID int32) ([]*ListRouteNamesByUserRow, error)
 	ListRouteOverridesByUser(ctx context.Context, userID int32) ([]*RouteOverride, error)
 	ListRoutesByUser(ctx context.Context, userID int32) ([]*Route, error)
 	// Every segment of the user's workouts of one sport, for picking each year's best at each segment in Go.
@@ -160,7 +162,7 @@ type Querier interface {
 	// An activity recorded in parts is matched by its first file.
 	ListSourceActivitiesWithoutMetadata(ctx context.Context, arg *ListSourceActivitiesWithoutMetadataParams) ([]*ListSourceActivitiesWithoutMetadataRow, error)
 	ListSourceConnections(ctx context.Context, userID int32) ([]*SourceConnection, error)
-	// The efforts of a route's runs, newest run first and each run's passes in the order it made them.
+	// The efforts of a route's runs, newest run first and each run's passes in the order it made them, with what a summary of each stretch needs.
 	ListStretchEffortsByRoute(ctx context.Context, arg *ListStretchEffortsByRouteParams) ([]*ListStretchEffortsByRouteRow, error)
 	ListStretchEffortsByStretch(ctx context.Context, arg *ListStretchEffortsByStretchParams) ([]*ListStretchEffortsByStretchRow, error)
 	// Every effort with when its workout started, newest first; the stretch list sums them per stretch.
