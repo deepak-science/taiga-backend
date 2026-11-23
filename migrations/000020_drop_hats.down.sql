@@ -8,6 +8,6 @@ CREATE TABLE hats (
   UNIQUE (user_id, id)
 );
 
-CREATE TRIGGER set_updated BEFORE
-UPDATE ON hats FOR EACH ROW
+CREATE TRIGGER set_updated
+BEFORE UPDATE ON hats FOR EACH ROW
 EXECUTE PROCEDURE trigger_set_timestamp ();
