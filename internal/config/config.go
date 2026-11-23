@@ -14,6 +14,8 @@ import (
 type AppConfig struct {
 	Port        string `mapstructure:"port"`
 	Environment string `mapstructure:"environment"`
+	// Where GET /metrics is served, apart from the API so the frontend's proxy never reaches it; empty for off.
+	MetricsPort string `mapstructure:"metrics_port"`
 }
 
 type TokensConfig struct {

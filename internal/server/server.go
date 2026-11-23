@@ -17,6 +17,7 @@ import (
 	"gitea.deepak.science/deepak/taiga/internal/config"
 	"gitea.deepak.science/deepak/taiga/internal/filerepo"
 	"gitea.deepak.science/deepak/taiga/internal/jobs"
+	"gitea.deepak.science/deepak/taiga/internal/metrics"
 	"gitea.deepak.science/deepak/taiga/internal/models"
 	"gitea.deepak.science/deepak/taiga/internal/oidc"
 	"gitea.deepak.science/deepak/taiga/internal/routes"
@@ -30,7 +31,9 @@ type Server struct {
 	config *config.Config
 	model  models.Model
 	server *http.Server
-	worker *jobs.Worker
+	// metrics serves GET /metrics on its own port; nil when app.metrics_port is unset.
+	metrics *http.Server
+	worker  *jobs.Worker
 
 	mu         sync.Mutex
 	stopWorker func()
@@ -61,6 +64,11 @@ func New(cfg *config.Config) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize filerepo: %w", err)
 	}
+	backend := cfg.FileRepo.Type
+	if backend == "" {
+		backend = "local"
+	}
+	fileRepo = metrics.FileRepo(fileRepo, backend)
 
 	// The flow cookie's key comes from the token signing key, so it survives restarts and is shared by replicas without another secret to manage.
 	privateKey, err := os.ReadFile(cfg.Tokens.PrivateKeyPath)
@@ -101,6 +109,8 @@ func New(cfg *config.Config) (*Server, error) {
 
 	// Add middleware
 	r.Use(middleware.Logger)
+	// Outside Recoverer, so a panic counts as the 500 it becomes.
+	r.Use(metrics.Middleware)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Timeout(30 * time.Second))
@@ -147,13 +157,40 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, fmt.Errorf("weather.provider must be \"open-meteo\" or empty, got %q", cfg.Weather.Provider)
 	}
 
+	// On a port of its own, so the frontend's /api proxy never reaches it and it needs no sign-in.
+	var metricsServer *http.Server
+	if cfg.App.MetricsPort != "" {
+		metrics.SetState(m)
+		mux := http.NewServeMux()
+		mux.Handle("GET /metrics", metrics.Handler())
+		metricsServer = &http.Server{
+			Addr:              ":" + cfg.App.MetricsPort,
+			Handler:           mux,
+			ReadHeaderTimeout: 5 * time.Second,
+			WriteTimeout:      15 * time.Second,
+		}
+		log.Printf("Metrics on port %s", cfg.App.MetricsPort)
+	}
+
 	return &Server{
-		config: cfg,
-		model:  m,
-		server: server,
-		worker: worker,
+		config:  cfg,
+		model:   m,
+		server:  server,
+		metrics: metricsServer,
+		worker:  worker,
 	}, nil
 }
+
+// MetricsHandler is what the metrics port serves, nil when it's off.
+func (s *Server) MetricsHandler() http.Handler {
+	if s.metrics == nil {
+		return nil
+	}
+	return s.metrics.Handler
+}
+
+// Handler is what the API port serves.
+func (s *Server) Handler() http.Handler { return s.server.Handler }
 
 // Start runs the job worker and serves HTTP until Shutdown.
 func (s *Server) Start() error {
@@ -166,6 +203,14 @@ func (s *Server) Start() error {
 		defer close(done)
 		s.worker.Run(ctx)
 	}()
+	if s.metrics != nil {
+		go func() {
+			// Metrics going dark is no reason to stop serving the API.
+			if err := s.metrics.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+				log.Printf("metrics server: %v", err)
+			}
+		}()
+	}
 
 	err := s.server.ListenAndServe()
 	if !errors.Is(err, http.ErrServerClosed) {
@@ -187,6 +232,11 @@ func (s *Server) haltWorker() {
 // Shutdown stops taking requests, lets the current job finish, then closes the store.
 func (s *Server) Shutdown(ctx context.Context) error {
 	err := s.server.Shutdown(ctx)
+	if s.metrics != nil {
+		if mErr := s.metrics.Shutdown(ctx); mErr != nil {
+			log.Printf("Error shutting down metrics server: %v", mErr)
+		}
+	}
 	s.haltWorker()
 	if s.model != nil {
 		if err := s.model.Close(); err != nil {

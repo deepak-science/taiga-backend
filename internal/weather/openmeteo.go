@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"gitea.deepak.science/deepak/taiga/internal/metrics"
 )
 
 // OpenMeteoArchive is Open-Meteo's historical API: hourly values for any coordinates, no key for personal use.
@@ -32,7 +34,7 @@ func NewOpenMeteo(baseURL string) *OpenMeteo {
 	if baseURL == "" {
 		baseURL = OpenMeteoArchive
 	}
-	return &OpenMeteo{BaseURL: baseURL, Client: &http.Client{Timeout: openMeteoTimeout}}
+	return &OpenMeteo{BaseURL: baseURL, Client: &http.Client{Timeout: openMeteoTimeout, Transport: metrics.Transport("open-meteo", nil)}}
 }
 
 // The archive's hourly variables; precipitation at an hour is what fell in the hour before it.

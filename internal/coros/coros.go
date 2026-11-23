@@ -18,6 +18,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
 	"golang.org/x/oauth2"
+
+	"gitea.deepak.science/deepak/taiga/internal/metrics"
 )
 
 const (
@@ -77,7 +79,7 @@ func New(endpoint, redirectURL string) *Service {
 		endpoint = DefaultEndpoint
 	}
 	s := &Service{endpoint: endpoint, redirectURL: redirectURL}
-	s.http = &http.Client{Timeout: timeout, CheckRedirect: s.checkRedirect}
+	s.http = &http.Client{Timeout: timeout, CheckRedirect: s.checkRedirect, Transport: metrics.Transport("coros", nil)}
 	return s
 }
 

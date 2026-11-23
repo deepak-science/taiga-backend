@@ -20,6 +20,7 @@ import (
 
 	"gitea.deepak.science/deepak/taiga/internal/coros"
 	"gitea.deepak.science/deepak/taiga/internal/filerepo"
+	"gitea.deepak.science/deepak/taiga/internal/metrics"
 	"gitea.deepak.science/deepak/taiga/internal/models"
 	"gitea.deepak.science/deepak/taiga/internal/secretbox"
 	"gitea.deepak.science/deepak/taiga/internal/tokens"
@@ -274,7 +275,9 @@ func (g *Manager) Sync(ctx context.Context, fileRepo filerepo.FileRepo, userToke
 	ctx, cancel := context.WithTimeout(ctx, syncTimeout)
 	defer cancel()
 
+	started := time.Now()
 	res, err := g.sync(ctx, conn, fileRepo, userToken)
+	recordSync(err, time.Since(started), res)
 	if err == nil {
 		log.Printf("sources: synced user %d with COROS: %+v", userToken.ID, *res)
 		return res, nil
@@ -289,6 +292,21 @@ func (g *Manager) Sync(ctx context.Context, fileRepo filerepo.FileRepo, userToke
 		return &models.SyncResult{}, nil
 	}
 	return res, err
+}
+
+// recordSync counts a sync by outcome; a failed one still counts what it got through, and the files it spent.
+func recordSync(err error, took time.Duration, res *models.SyncResult) {
+	outcome := "done"
+	if errors.Is(err, coros.ErrAuthorization) {
+		outcome = "needs_reconnect"
+	} else if err != nil {
+		outcome = "failed"
+	}
+	var a metrics.SyncActivities
+	if res != nil {
+		a = metrics.SyncActivities{Listed: res.Listed, Imported: res.Imported, AlreadyHad: res.AlreadyHad, Unreadable: res.Unreadable, Waiting: res.Waiting, Detailed: res.Detailed, Matched: res.Matched, Files: res.Files}
+	}
+	metrics.Sync(coros.Kind, outcome, took, a)
 }
 
 func (g *Manager) sync(ctx context.Context, conn *models.SourceConnection, fileRepo filerepo.FileRepo, userToken *tokens.UserToken) (*models.SyncResult, error) {
@@ -314,11 +332,13 @@ func (g *Manager) sync(ctx context.Context, conn *models.SourceConnection, fileR
 			return nil
 		}
 		token = fresh
+		metrics.TokenRefresh(coros.Kind, "refreshed")
 		return g.m.SetSourceCredentials(context.WithoutCancel(ctx), conn.ID, g.seal(fresh), userToken)
 	}
 	// Past the deadline too: a refresh cut off after COROS answered would spend the token and keep nothing.
 	fresh, err := g.coros.Refresh(context.WithoutCancel(ctx), client, token)
 	if err != nil {
+		metrics.TokenRefresh(coros.Kind, "failed")
 		return nil, err
 	}
 	if err := keep(fresh); err != nil {

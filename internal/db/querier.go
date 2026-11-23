@@ -20,7 +20,11 @@ type Querier interface {
 	// A deleted workout leaves the stretches cut from it standing, without the pointer back.
 	ClearStretchSourceWorkout(ctx context.Context, arg *ClearStretchSourceWorkoutParams) error
 	CountDeviceAuthorizations(ctx context.Context) (int64, error)
+	// For metrics: every user's jobs, never broken down by user.
+	CountJobsByKindAndState(ctx context.Context) ([]*CountJobsByKindAndStateRow, error)
 	CountSourceActivities(ctx context.Context, arg *CountSourceActivitiesParams) (int64, error)
+	// For metrics: every user's connections, by kind and state.
+	CountSourceConnectionsByState(ctx context.Context) ([]*CountSourceConnectionsByStateRow, error)
 	CountSourceFilesSince(ctx context.Context, arg *CountSourceFilesSinceParams) (int32, error)
 	CreateActivityFile(ctx context.Context, arg *CreateActivityFileParams) (*ActivityFile, error)
 	CreateCliSession(ctx context.Context, arg *CreateCliSessionParams) (*CliSession, error)
@@ -193,7 +197,11 @@ type Querier interface {
 	LockUser(ctx context.Context, id int32) error
 	MarkSourceDetailTried(ctx context.Context, arg *MarkSourceDetailTriedParams) error
 	MarkSourceMatchTried(ctx context.Context, arg *MarkSourceMatchTriedParams) error
+	// The most files any one user has had issued since then, which is how close the busiest is to the daily limit.
+	MaxSourceFilesSince(ctx context.Context, arg *MaxSourceFilesSinceParams) (int32, error)
 	MoveWorkoutRoutes(ctx context.Context, arg *MoveWorkoutRoutesParams) error
+	// When the longest-waiting job of a kind that could run now became due; one waiting out a retry's backoff isn't late.
+	OldestDueJob(ctx context.Context, arg *OldestDueJobParams) (pgtype.Timestamptz, error)
 	RecordSourceFileRequest(ctx context.Context, arg *RecordSourceFileRequestParams) error
 	RenameRoute(ctx context.Context, arg *RenameRouteParams) (*Route, error)
 	RenameStretch(ctx context.Context, arg *RenameStretchParams) (*Stretch, error)

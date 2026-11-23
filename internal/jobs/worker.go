@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gitea.deepak.science/deepak/taiga/internal/filerepo"
+	"gitea.deepak.science/deepak/taiga/internal/metrics"
 	"gitea.deepak.science/deepak/taiga/internal/models"
 	"gitea.deepak.science/deepak/taiga/internal/sources"
 	"gitea.deepak.science/deepak/taiga/internal/tokens"
@@ -108,15 +109,21 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 
+	// The wall clock, not w.Now, which tests stand still.
+	started := time.Now()
 	jobErr := w.run(ctx, job)
+	took := time.Since(started)
 	now = w.Now()
 	switch {
 	case jobErr == nil:
+		metrics.Job(job.Kind, "done", took)
 		err = w.m.FinishJob(ctx, job.ID, now)
 	case permanent(jobErr) || job.Attempts >= MaxAttempts:
+		metrics.Job(job.Kind, "dead", took)
 		log.Printf("jobs: job %d (%s) is dead after %d attempts: %v", job.ID, job.Kind, job.Attempts, jobErr)
 		err = w.m.KillJob(ctx, job.ID, jobErr, now)
 	default:
+		metrics.Job(job.Kind, "retried", took)
 		retryAt := now.Add(baseBackoff << (job.Attempts - 1))
 		log.Printf("jobs: job %d (%s) failed, retrying at %v: %v", job.ID, job.Kind, retryAt, jobErr)
 		err = w.m.RetryJobLater(ctx, job.ID, retryAt, jobErr, now)

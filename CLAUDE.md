@@ -81,6 +81,10 @@ This is the taiga API: upload FIT files (or Endomondo export JSON, or TCX such a
 
 - **internal/jobs**: The in-process worker that drains the `jobs` table (see Reprocessing below)
 
+- **internal/metrics**: Prometheus metrics on a port of their own, `app.metrics_port`, off unless set (`docs/metrics.md`)
+  - Requests by chi route pattern, jobs, syncs, outbound calls (`metrics.Transport`) and the file repo (`metrics.FileRepo`) as they happen; the queue, connections, COROS allowance and pool read at each scrape (`models.MetricsSnapshot`)
+  - Never a per-user label
+
 - **internal/migration**: golang-migrate wrapper used on startup and by `cmd/migrate`
 
 - **internal/testsupport**: Real dependencies for integration tests (see Testing below)
@@ -254,6 +258,7 @@ go run cmd/migrate/main.go -command=goto -version=2
 app:
   port: "8080"
   environment: "development"
+  metrics_port: ""                 # serves GET /metrics on this port when set; never through the API port (docs/metrics.md)
 
 auth:
   registration: "open"             # "open" or "closed"; defaults to open only in development

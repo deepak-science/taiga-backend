@@ -162,3 +162,30 @@ INSERT INTO
 VALUES
   ($1, 'process_workout', $2, $3)
 ON CONFLICT DO NOTHING;
+
+-- name: CountJobsByKindAndState :many
+-- For metrics: every user's jobs, never broken down by user.
+SELECT
+  kind,
+  state,
+  COUNT(*) AS jobs
+FROM
+  jobs
+GROUP BY
+  kind,
+  state;
+
+-- name: OldestDueJob :one
+-- When the longest-waiting job of a kind that could run now became due; one waiting out a retry's backoff isn't late.
+SELECT
+  run_at
+FROM
+  jobs
+WHERE
+  kind = $1
+  AND state = 'queued'
+  AND run_at <= $2
+ORDER BY
+  run_at
+LIMIT
+  1;

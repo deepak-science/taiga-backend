@@ -416,3 +416,38 @@ DELETE FROM source_match_attempts
 WHERE
   workout_id = $1
   AND user_id = $2;
+
+-- name: CountSourceConnectionsByState :many
+-- For metrics: every user's connections, by kind and state.
+SELECT
+  kind,
+  CAST(
+    CASE
+      WHEN needs_reconnect THEN 'needs_reconnect'
+      WHEN last_error <> '' THEN 'failing'
+      ELSE 'ok'
+    END AS TEXT
+  ) AS state,
+  COUNT(*) AS connections
+FROM
+  source_connections
+GROUP BY
+  kind,
+  state;
+
+-- name: MaxSourceFilesSince :one
+-- The most files any one user has had issued since then, which is how close the busiest is to the daily limit.
+SELECT
+  CAST(COALESCE(MAX(per_user.files), 0) AS INTEGER) AS files
+FROM
+  (
+    SELECT
+      SUM(files) AS files
+    FROM
+      source_file_requests
+    WHERE
+      kind = $1
+      AND requested_at > $2
+    GROUP BY
+      user_id
+  ) AS per_user;
