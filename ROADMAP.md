@@ -608,20 +608,21 @@ The files are the source of truth, and the rest of a workout (summary, segments,
 
 ### Format
 
-- [ ] **One archive** (tar or zip, streamed both ways, never held in memory) holding a `manifest.json` with a format version, the processor version and when it was made, one JSON document per kind above, and `files/<sha256>`.
-- [ ] Refer to things by content (file hashes), never database ids, so an archive goes into any deployment, SQLite or Postgres.
-- [ ] Import checks every file against its hash, refuses a newer format version, and reads older ones.
+- [x] **One archive** (tar or zip, streamed both ways, never held in memory) holding a `manifest.json` with a format version, the processor version and when it was made, one JSON document per kind above, and `files/<sha256>`.
+- [x] Refer to things by content (file hashes), never database ids, so an archive goes into any deployment, SQLite or Postgres.
+- [x] Import checks every file against its hash, refuses a newer format version, and reads older ones.
 
 ### Per user
 
-- [ ] **Export:** `GET /export` streams the signed-in user's archive. `taco export > taiga.tar`.
+- [x] **Export:** `GET /export` streams the signed-in user's archive (`docs/backup.md`), `?fetched=false` without weather and COROS's figures.
+  - [x] `taco export > taiga.tar`, or `-o taiga.tar` (taiga-cliclient#46).
 - [ ] **Import:** into the signed-in account, and idempotent. Files dedupe by hash as uploads do, and state is matched by file hash, so importing the same archive twice, or into an account that already has some of it, changes nothing the second time. Then queue reprocessing and route detection, and the derived data rebuilds through the queue. Too large for the 32MB upload limit, so either a streamed endpoint with a limit of its own, or only through the CLI below to start with.
 - [ ] Conflicts: where the account and the archive disagree (a correction, a route name), the archive wins, or there's an option to say so. Decide when building it.
 
 ### The whole deployment
 
-- [ ] **`cmd/backup`** (in the image beside `useradd`): every user's archive in one go. This one includes accounts, password hashes and linked OIDC identities so a restore can sign in. `cmd/restore` reads it into an empty deployment.
-- [ ] **In the homelab** (proxmox-homelab): a CronJob running `cmd/backup` nightly to somewhere off the cluster (the NAS, or S3), keeping a few weeks. This adds to CNPG's and the PVC's own backups, it doesn't replace them: it's the copy that survives a schema mistake and that a fresh deployment can read.
+- [x] **`cmd/backup`** (in the image beside `useradd`): every user's archive in one go. This one includes accounts, password hashes and linked OIDC identities so a restore can sign in. `cmd/restore` reads it into an empty deployment. Restoring makes every workout again from its file and puts the rest back over it (`docs/backup.md`).
+- [ ] **In the homelab** (proxmox-homelab#33, not yet deployed): a CronJob running `cmd/backup` nightly to somewhere off the cluster (the NAS, or S3), keeping a few weeks. This adds to CNPG's and the PVC's own backups, it doesn't replace them: it's the copy that survives a schema mistake and that a fresh deployment can read.
 - [ ] **A dev stack from it:** restore last night's backup into a throwaway deployment (local SQLite, or a second namespace) to try a migration or a processor change on real data before it reaches the real one. That's the dev/prod split there isn't one of yet.
 
 ### Before an upgrade
@@ -634,7 +635,7 @@ A dependency bump can break things nothing tests for (sql-formatter changing mig
 
 ### Proving it
 
-- [ ] **A round trip in the tests:** build an account with every kind of state above, export, import into a fresh deployment, reprocess, export again, and compare. A new table that holds user state fails it until the export knows about it.
+- [x] **A round trip in the tests** (`cmd/restore`): a deployment with every kind of state above, backed up, restored into a fresh one, detected, backed up again, and compared. A new table that holds user state shows up as a difference once the test makes some.
 - [ ] **A restore drill** in the runbook, run once for real against a nightly backup.
 
 ## Later

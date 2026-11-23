@@ -29,3 +29,7 @@ func (m *errorStore) GetQuerier() (db.Querier, error) {
 func (m *errorStore) InTx(ctx context.Context, fn func(db.Querier) error) error {
 	return fmt.Errorf("error store can't actually query")
 }
+
+func (m *errorStore) InSnapshot(ctx context.Context, fn func(db.Querier) error) error {
+	return m.InTx(ctx, fn)
+}

@@ -21,6 +21,8 @@ type Store interface {
 	GetQuerier() (db.Querier, error)
 	// InTx runs fn in one transaction, committing if it returns nil and rolling back otherwise.
 	InTx(ctx context.Context, fn func(db.Querier) error) error
+	// InSnapshot runs fn in one read-only transaction whose every query sees the same snapshot.
+	InSnapshot(ctx context.Context, fn func(db.Querier) error) error
 	// PoolStats is the connection pool as it stands, for metrics.
 	PoolStats() metrics.PoolStats
 }

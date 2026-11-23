@@ -165,6 +165,60 @@ func (q *Queries) ListWorkoutWeather(ctx context.Context, arg *ListWorkoutWeathe
 	return items, nil
 }
 
+const listWorkoutWeatherByUser = `-- name: ListWorkoutWeatherByUser :many
+SELECT
+  workout_id, source, user_id, fetched_at, latitude, longitude, asked_start, asked_end, start_temperature_c, start_dew_point_c, start_humidity_pct, start_wind_speed_mps, start_wind_direction_deg, start_cloud_cover_pct, end_temperature_c, end_dew_point_c, end_humidity_pct, end_wind_speed_mps, end_wind_direction_deg, end_cloud_cover_pct, precipitation_mm
+FROM
+  workout_weather
+WHERE
+  user_id = $1
+ORDER BY
+  workout_id,
+  source
+`
+
+func (q *Queries) ListWorkoutWeatherByUser(ctx context.Context, userID int32) ([]*WorkoutWeather, error) {
+	rows, err := q.db.Query(ctx, listWorkoutWeatherByUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*WorkoutWeather{}
+	for rows.Next() {
+		var i WorkoutWeather
+		if err := rows.Scan(
+			&i.WorkoutID,
+			&i.Source,
+			&i.UserID,
+			&i.FetchedAt,
+			&i.Latitude,
+			&i.Longitude,
+			&i.AskedStart,
+			&i.AskedEnd,
+			&i.StartTemperatureC,
+			&i.StartDewPointC,
+			&i.StartHumidityPct,
+			&i.StartWindSpeedMps,
+			&i.StartWindDirectionDeg,
+			&i.StartCloudCoverPct,
+			&i.EndTemperatureC,
+			&i.EndDewPointC,
+			&i.EndHumidityPct,
+			&i.EndWindSpeedMps,
+			&i.EndWindDirectionDeg,
+			&i.EndCloudCoverPct,
+			&i.PrecipitationMm,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const upsertWorkoutWeather = `-- name: UpsertWorkoutWeather :exec
 INSERT INTO
   workout_weather (

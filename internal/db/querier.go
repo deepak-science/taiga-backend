@@ -26,6 +26,7 @@ type Querier interface {
 	// For metrics: every user's connections, by kind and state.
 	CountSourceConnectionsByState(ctx context.Context) ([]*CountSourceConnectionsByStateRow, error)
 	CountSourceFilesSince(ctx context.Context, arg *CountSourceFilesSinceParams) (int32, error)
+	CountUsers(ctx context.Context) (int64, error)
 	CreateActivityFile(ctx context.Context, arg *CreateActivityFileParams) (*ActivityFile, error)
 	CreateCliSession(ctx context.Context, arg *CreateCliSessionParams) (*CliSession, error)
 	CreateDeviceAuthorization(ctx context.Context, arg *CreateDeviceAuthorizationParams) (*DeviceAuthorization, error)
@@ -148,6 +149,7 @@ type Querier interface {
 	ListActivityFilesWithoutWorkout(ctx context.Context, userID *int32) ([]*ActivityFile, error)
 	// A distance segment ranks by time, a duration segment by distance covered; only workouts of one sport starting in [window_from, window_to) compete.
 	ListBestSegmentsByName(ctx context.Context, arg *ListBestSegmentsByNameParams) ([]*ListBestSegmentsByNameRow, error)
+	ListCOROSMetadataByUser(ctx context.Context, userID int32) ([]*CorosMetadatum, error)
 	ListCliSessionsByUser(ctx context.Context, userID int32) ([]*CliSession, error)
 	// What a total needs of each counted workout starting in [window_from, window_to), oldest first; an excluded workout stays out of stats.
 	// Bucketing by local week, month or year happens in Go, since the two databases share no date functions.
@@ -165,10 +167,12 @@ type Querier interface {
 	ListSegmentEffortsForMedals(ctx context.Context, userID int32) ([]*ListSegmentEffortsForMedalsRow, error)
 	// Distance segments shortest first, then duration segments shortest first.
 	ListSegmentsByWorkout(ctx context.Context, arg *ListSegmentsByWorkoutParams) ([]*WorkoutSegment, error)
+	ListSourceActivitiesByUser(ctx context.Context, userID int32) ([]*SourceActivity, error)
 	// The source's activities whose workout has none of the source's own figures yet: those never tried first, newest first, then the ones whose reply couldn't be read, longest since first, so a run of unreadable ones can't keep the rest from being asked for.
 	// An activity recorded in parts is matched by its first file.
 	ListSourceActivitiesWithoutMetadata(ctx context.Context, arg *ListSourceActivitiesWithoutMetadataParams) ([]*ListSourceActivitiesWithoutMetadataRow, error)
 	ListSourceConnections(ctx context.Context, userID int32) ([]*SourceConnection, error)
+	ListSourceMatchAttemptsByUser(ctx context.Context, userID int32) ([]*SourceMatchAttempt, error)
 	// The efforts of a route's runs, newest run first and each run's passes in the order it made them, with what a summary of each stretch needs.
 	ListStretchEffortsByRoute(ctx context.Context, arg *ListStretchEffortsByRouteParams) ([]*ListStretchEffortsByRouteRow, error)
 	ListStretchEffortsByStretch(ctx context.Context, arg *ListStretchEffortsByStretchParams) ([]*ListStretchEffortsByStretchRow, error)
@@ -181,6 +185,7 @@ type Querier interface {
 	ListStretchEffortsOverWorkoutStretches(ctx context.Context, arg *ListStretchEffortsOverWorkoutStretchesParams) ([]*ListStretchEffortsOverWorkoutStretchesRow, error)
 	ListStretchesByUser(ctx context.Context, userID int32) ([]*Stretch, error)
 	ListStretchesByUserAndSport(ctx context.Context, arg *ListStretchesByUserAndSportParams) ([]*Stretch, error)
+	ListUsers(ctx context.Context) ([]*User, error)
 	ListWorkoutRoutesByUser(ctx context.Context, userID int32) ([]*WorkoutRoute, error)
 	// Oldest first, the order route detection assigns runs in; routes only group runs of one sport.
 	// A duplicate is left out even before reprocessing drops its track, since the same job marks it.
@@ -188,6 +193,7 @@ type Querier interface {
 	// The workouts a new stretch is matched against: tracked (so scored, with GPS) and not a copy of another.
 	ListWorkoutTracksByUserAndSport(ctx context.Context, arg *ListWorkoutTracksByUserAndSportParams) ([]*ListWorkoutTracksByUserAndSportRow, error)
 	ListWorkoutWeather(ctx context.Context, arg *ListWorkoutWeatherParams) ([]*WorkoutWeather, error)
+	ListWorkoutWeatherByUser(ctx context.Context, userID int32) ([]*WorkoutWeather, error)
 	ListWorkoutsByUser(ctx context.Context, userID int32) ([]*Workout, error)
 	// Starting in [window_from, window_to); callers pass far-off bounds for an open end, so the same SQL runs on SQLite.
 	ListWorkoutsByUserInWindow(ctx context.Context, arg *ListWorkoutsByUserInWindowParams) ([]*Workout, error)
@@ -220,6 +226,7 @@ type Querier interface {
 	// For an activity dealt with before the sport code was kept.
 	SetSourceActivitySportType(ctx context.Context, arg *SetSourceActivitySportTypeParams) error
 	SetSourceCredentials(ctx context.Context, arg *SetSourceCredentialsParams) error
+	SetStretchSourceWorkout(ctx context.Context, arg *SetStretchSourceWorkoutParams) error
 	SetWorkoutDuplicateOf(ctx context.Context, arg *SetWorkoutDuplicateOfParams) error
 	// What the file states for the whole workout; part of what reprocessing rebuilds.
 	SetWorkoutFigures(ctx context.Context, arg *SetWorkoutFiguresParams) (*Workout, error)

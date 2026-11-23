@@ -209,3 +209,8 @@ func (s *sqliteStore) InTx(ctx context.Context, fn func(db.Querier) error) error
 	}
 	return tx.Commit()
 }
+
+// InSnapshot is an ordinary transaction, since SQLite's are serializable.
+func (s *sqliteStore) InSnapshot(ctx context.Context, fn func(db.Querier) error) error {
+	return s.InTx(ctx, fn)
+}

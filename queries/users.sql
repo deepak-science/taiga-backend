@@ -95,3 +95,17 @@ SET
   updated_at = updated_at
 WHERE
   id = $1;
+
+-- name: ListUsers :many
+SELECT
+  *
+FROM
+  users
+ORDER BY
+  id;
+
+-- name: CountUsers :one
+SELECT
+  COUNT(*)
+FROM
+  users;

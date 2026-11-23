@@ -204,3 +204,11 @@ SET
 WHERE
   source_workout_id = $1
   AND user_id = $2;
+
+-- name: SetStretchSourceWorkout :exec
+UPDATE stretches
+SET
+  source_workout_id = $3
+WHERE
+  id = $1
+  AND user_id = $2;
