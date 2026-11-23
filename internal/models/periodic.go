@@ -154,8 +154,13 @@ func (m *storeModel) YearlyBests(ctx context.Context, sport string, loc *time.Lo
 
 // better ranks as ListBestSegmentsByName does: faster over a distance, farther over a duration.
 func better(a, b *SegmentEffort) bool {
-	if a.Kind == workouts.KindDuration {
-		return a.DistanceMeters > b.DistanceMeters
+	return outranks(a.Kind, a.DistanceMeters, a.DurationSeconds, b.DistanceMeters, b.DurationSeconds)
+}
+
+// outranks is whether effort a beats effort b at a segment of kind: faster over a distance, farther over a duration.
+func outranks(kind string, aMeters, aSeconds, bMeters, bSeconds float64) bool {
+	if kind == workouts.KindDuration {
+		return aMeters > bMeters
 	}
-	return a.DurationSeconds < b.DurationSeconds
+	return aSeconds < bSeconds
 }

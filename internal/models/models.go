@@ -101,6 +101,8 @@ type Model interface {
 	BestSegments(ctx context.Context, name, sport string, limit int32, window Window, userToken *tokens.UserToken) ([]*SegmentEffort, error)
 	// YearlyBests is the best effort at every standard segment in each local year, for one sport.
 	YearlyBests(ctx context.Context, sport string, loc *time.Location, userToken *tokens.UserToken) ([]*YearBests, error)
+	// Medals is the medals each workout's segments hold now (gold all time, silver its local year, bronze its local month), keyed by workout id.
+	Medals(ctx context.Context, loc *time.Location, userToken *tokens.UserToken) (map[int32][]*SegmentMedal, error)
 	CompareWorkouts(ctx context.Context, workoutIDs []int32, userToken *tokens.UserToken) ([]*WorkoutComparison, error)
 	WorkoutSeries(ctx context.Context, workoutID int32, userToken *tokens.UserToken) ([]byte, error)
 	// WorkoutLaps is the laps the workout's file recorded, as stored JSON; an empty list when there are none.

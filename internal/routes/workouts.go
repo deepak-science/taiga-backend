@@ -79,6 +79,12 @@ func getWorkoutFunc(m models.Model) http.HandlerFunc {
 	}
 }
 
+// listedWorkout is a workout with the medals its segments hold, so a list can show them without fetching each workout's segments.
+type listedWorkout struct {
+	*models.Workout
+	Medals []*models.SegmentMedal `json:"medals"`
+}
+
 func getWorkoutsFunc(m models.Model) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -95,14 +101,32 @@ func getWorkoutsFunc(m models.Model) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		loc, err := parseLocation(r.URL.Query())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		workouts, err := m.Workouts(ctx, query, userToken)
 		if err != nil {
 			notFoundHandler(w, r)
 			return
 		}
+		medals, err := m.Medals(ctx, loc, userToken)
+		if err != nil {
+			serverError(w, err)
+			return
+		}
+		listed := make([]listedWorkout, 0, len(workouts))
+		for _, workout := range workouts {
+			held := medals[workout.ID]
+			if held == nil {
+				held = []*models.SegmentMedal{}
+			}
+			listed = append(listed, listedWorkout{Workout: workout, Medals: held})
+		}
 
 		w.Header().Add("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(workouts); err != nil {
+		if err := json.NewEncoder(w).Encode(listed); err != nil {
 			serverError(w, err)
 		}
 	}

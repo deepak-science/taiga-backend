@@ -242,6 +242,67 @@ func (q *Queries) ListSegmentEffortsBySport(ctx context.Context, arg *ListSegmen
 	return items, nil
 }
 
+const listSegmentEffortsForMedals = `-- name: ListSegmentEffortsForMedals :many
+SELECT
+  workout_segments.id,
+  workout_segments.workout_id,
+  workout_segments.name,
+  workout_segments.kind,
+  workout_segments.distance_meters,
+  workout_segments.duration_seconds,
+  workouts.sport,
+  workouts.start_time AS workout_start_time
+FROM
+  workout_segments
+  JOIN workouts ON workouts.id = workout_segments.workout_id
+WHERE
+  workout_segments.user_id = $1
+ORDER BY
+  workouts.start_time,
+  workout_segments.id
+`
+
+type ListSegmentEffortsForMedalsRow struct {
+	ID               int32              `json:"id"`
+	WorkoutID        int32              `json:"workout_id"`
+	Name             string             `json:"name"`
+	Kind             string             `json:"kind"`
+	DistanceMeters   float64            `json:"distance_meters"`
+	DurationSeconds  float64            `json:"duration_seconds"`
+	Sport            string             `json:"sport"`
+	WorkoutStartTime pgtype.Timestamptz `json:"workout_start_time"`
+}
+
+// Every segment of the user's workouts, oldest first so the earlier effort keeps a medal on a tie.
+func (q *Queries) ListSegmentEffortsForMedals(ctx context.Context, userID int32) ([]*ListSegmentEffortsForMedalsRow, error) {
+	rows, err := q.db.Query(ctx, listSegmentEffortsForMedals, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*ListSegmentEffortsForMedalsRow{}
+	for rows.Next() {
+		var i ListSegmentEffortsForMedalsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkoutID,
+			&i.Name,
+			&i.Kind,
+			&i.DistanceMeters,
+			&i.DurationSeconds,
+			&i.Sport,
+			&i.WorkoutStartTime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSegmentsByWorkout = `-- name: ListSegmentsByWorkout :many
 SELECT
   id, workout_id, user_id, name, distance_meters, duration_seconds, start_offset_seconds, end_offset_seconds, created_at, kind
