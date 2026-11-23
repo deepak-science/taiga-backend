@@ -589,6 +589,54 @@ One COROS PACE 4 run's FIT file, and one call each to COROS's activity detail, f
 - [ ] **`taco admin ...`** for the same calls, so the runbook's `kubectl exec` lines go away.
 - [ ] The figures on these pages and the ones M17 exports should come from the same queries, so Grafana and the admin page never disagree.
 
+## M19 — Export, import and backups
+
+**Goal:** a backup taiga writes and reads itself, one that outlives the database it came from and can stand up another deployment. `taiga.i.hruday.me` is meant as a test stack, but it holds the only copy of everything entered there and there is no separate prod. So for now it is prod, and a lost PVC or a bad migration loses data that no file brings back.
+
+### What a backup holds
+
+The files are the source of truth, and the rest of a workout (summary, segments, series, tracks, laps, routes, efforts, duplicates) is rebuilt from them by reprocessing and route detection. So a backup holds the files, plus whatever nothing can rebuild:
+
+- **Files:** each one's stored bytes, its timestamp, and its SHA-256.
+- **Hand-entered workouts,** in full, since they have no file.
+- **Corrections:** `sport_override` and `user_excluded_reason`.
+- **Stretches:** name, sport and points. The workout it was cut from is referred to by file hash, since ids change on import.
+- **Routes:** names, and the user's placements (`route_overrides`), saved as groups of workouts by file hash rather than route ids.
+- **What sources have already dealt with** (`source_activities`, `source_match_attempts`). Without it, a restored account re-imports runs the user deleted and spends COROS's 45 files a day doing so.
+- **Fetched data:** weather and COROS figures. Both can be fetched again, but it's slow and it tells the provider where and when again, so include it with what was asked and when. Skip on request.
+- **Never:** COROS tokens and the client registration (sealed under the signing key, and a restore should reconnect), CLI sessions, device sign-ins, jobs.
+
+### Format
+
+- [ ] **One archive** (tar or zip, streamed both ways, never held in memory) holding a `manifest.json` with a format version, the processor version and when it was made, one JSON document per kind above, and `files/<sha256>`.
+- [ ] Refer to things by content (file hashes), never database ids, so an archive goes into any deployment, SQLite or Postgres.
+- [ ] Import checks every file against its hash, refuses a newer format version, and reads older ones.
+
+### Per user
+
+- [ ] **Export:** `GET /export` streams the signed-in user's archive. `taco export > taiga.tar`.
+- [ ] **Import:** into the signed-in account, and idempotent. Files dedupe by hash as uploads do, and state is matched by file hash, so importing the same archive twice, or into an account that already has some of it, changes nothing the second time. Then queue reprocessing and route detection, and the derived data rebuilds through the queue. Too large for the 32MB upload limit, so either a streamed endpoint with a limit of its own, or only through the CLI below to start with.
+- [ ] Conflicts: where the account and the archive disagree (a correction, a route name), the archive wins, or there's an option to say so. Decide when building it.
+
+### The whole deployment
+
+- [ ] **`cmd/backup`** (in the image beside `useradd`): every user's archive in one go. This one includes accounts, password hashes and linked OIDC identities so a restore can sign in. `cmd/restore` reads it into an empty deployment.
+- [ ] **In the homelab** (proxmox-homelab): a CronJob running `cmd/backup` nightly to somewhere off the cluster (the NAS, or S3), keeping a few weeks. This adds to CNPG's and the PVC's own backups, it doesn't replace them: it's the copy that survives a schema mistake and that a fresh deployment can read.
+- [ ] **A dev stack from it:** restore last night's backup into a throwaway deployment (local SQLite, or a second namespace) to try a migration or a processor change on real data before it reaches the real one. That's the dev/prod split there isn't one of yet.
+
+### Before an upgrade
+
+A dependency bump can break things nothing tests for (sql-formatter changing migration layout, a FIT library reading a field differently, a driver change), and migrations run by themselves on boot (`db.auto_migrate_up`). So a deploy should be undoable from its own backup:
+
+- [ ] **A backup before every deploy:** the homelab runs `cmd/backup` as a pre-deploy Job (or an init container ahead of the server), so the archive is of the version before the new image migrates anything. Then rolling back means the old image plus that archive, even if the migration's `down` loses data.
+- [ ] **Rehearse risky ones:** for a bump that touches parsing, the database driver or migrations, restore the latest backup into the dev stack above, run the new image against it, reprocess, and diff what the old and new images derive from the same files (workouts, totals, best efforts, routes). Then "reprocessing changed every workout's distance" shows up on the dev stack, not as a surprise on the real one.
+- [ ] Keep bumps small enough to tell what broke: Go modules, the flake and the formatter in separate commits, so a bisect lands on one of them.
+
+### Proving it
+
+- [ ] **A round trip in the tests:** build an account with every kind of state above, export, import into a fresh deployment, reprocess, export again, and compare. A new table that holds user state fails it until the export knows about it.
+- [ ] **A restore drill** in the runbook, run once for real against a nightly backup.
+
 ## Later
 
 - **Repository settings in Terraform.** Master here only takes pull requests (the `default-branch` ruleset), so `just release` can't push, and `seal` works only because the release app is on the ruleset's bypass list (`Integration`, `always`; set by hand 2026-11-22). taiga-frontend has no ruleset at all, so the two have already drifted apart.
