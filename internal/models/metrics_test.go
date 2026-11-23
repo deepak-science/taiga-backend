@@ -52,6 +52,10 @@ func TestMetricsSnapshotCountsAcrossUsers(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, models.JobSyncSource, job.Kind)
 	require.NoError(t, m.KillJob(ctx, job.ID, errors.New("no"), t0))
+	// Bob's sync is claimed by a worker that then vanishes: its lease runs out at t0+1m.
+	job, err = m.ClaimJob(ctx, t0, t0.Add(time.Minute))
+	require.NoError(t, err)
+	require.Equal(t, models.JobSyncSource, job.Kind)
 	require.NoError(t, m.FailSourceSync(ctx, aliceConn.ID, "COROS was down", false, alice))
 	require.NoError(t, m.FailSourceSync(ctx, bobConn.ID, "turned away", true, bob))
 
@@ -79,11 +83,11 @@ func TestMetricsSnapshotCountsAcrossUsers(t *testing.T) {
 	}
 	assert.Equal(t, map[[2]string]int64{
 		{models.JobDetectRoutes, models.JobQueued}: 2,
-		{models.JobSyncSource, models.JobQueued}:   1,
+		{models.JobSyncSource, models.JobRunning}:  1,
 		{models.JobSyncSource, models.JobDead}:     1,
 	}, nonZero(jobs))
 	assert.Equal(t, 5*time.Minute, snap.OldestDue[models.JobDetectRoutes])
-	assert.Equal(t, 10*time.Minute, snap.OldestDue[models.JobSyncSource])
+	assert.Equal(t, 9*time.Minute, snap.OldestDue[models.JobSyncSource], "from when its lease ran out")
 	assert.Equal(t, time.Duration(0), snap.OldestDue[models.JobProcessWorkout])
 
 	conns := map[string]int64{}

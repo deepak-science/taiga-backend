@@ -332,13 +332,11 @@ func (g *Manager) sync(ctx context.Context, conn *models.SourceConnection, fileR
 			return nil
 		}
 		token = fresh
-		metrics.TokenRefresh(coros.Kind, "refreshed")
 		return g.m.SetSourceCredentials(context.WithoutCancel(ctx), conn.ID, g.seal(fresh), userToken)
 	}
 	// Past the deadline too: a refresh cut off after COROS answered would spend the token and keep nothing.
 	fresh, err := g.coros.Refresh(context.WithoutCancel(ctx), client, token)
 	if err != nil {
-		metrics.TokenRefresh(coros.Kind, "failed")
 		return nil, err
 	}
 	if err := keep(fresh); err != nil {

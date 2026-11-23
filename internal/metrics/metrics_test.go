@@ -78,6 +78,13 @@ func TestRequestsAreLabelledByRoutePatternNotPath(t *testing.T) {
 	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/nothing/here", nil))
 	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/or/here", nil))
 	assert.Equal(t, before+2, observed(t, "taiga_http_request_duration_seconds", map[string]string{"route": "/*", "status": "404"}))
+
+	// So is a method the client made up.
+	before = observed(t, "taiga_http_request_duration_seconds", map[string]string{"method": "other"})
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("BREW", "/widgets/1", nil))
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("XYZZY", "/widgets/1", nil))
+	assert.Equal(t, before+2, observed(t, "taiga_http_request_duration_seconds", map[string]string{"method": "other"}))
+	assert.Zero(t, observed(t, "taiga_http_request_duration_seconds", map[string]string{"method": "BREW"}))
 }
 
 func TestTransportCountsByDestinationAndOutcome(t *testing.T) {

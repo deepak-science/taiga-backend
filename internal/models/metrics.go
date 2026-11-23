@@ -40,15 +40,22 @@ func (m *storeModel) MetricsSnapshot(ctx context.Context, now time.Time) (*metri
 		snap.Jobs = append(snap.Jobs, metrics.JobCount{Kind: k[0], State: k[1], Jobs: n})
 	}
 
+	// A running job whose lease ran out is as claimable as a queued one that's due, so the longer of the two waits counts.
 	for _, kind := range JobKinds {
+		snap.OldestDue[kind] = 0
 		runAt, err := q.OldestDueJob(ctx, &db.OldestDueJobParams{Kind: kind, RunAt: timestamptz(now)})
-		switch {
-		case IsNotFound(err):
-			snap.OldestDue[kind] = 0
-		case err != nil:
+		if err != nil && !IsNotFound(err) {
 			return nil, err
-		default:
-			snap.OldestDue[kind] = max(now.Sub(runAt.Time), 0)
+		}
+		if err == nil {
+			snap.OldestDue[kind] = max(snap.OldestDue[kind], now.Sub(runAt.Time))
+		}
+		leaseUntil, err := q.OldestExpiredLease(ctx, &db.OldestExpiredLeaseParams{Kind: kind, LeaseUntil: timestamptz(now)})
+		if err != nil && !IsNotFound(err) {
+			return nil, err
+		}
+		if err == nil {
+			snap.OldestDue[kind] = max(snap.OldestDue[kind], now.Sub(leaseUntil.Time))
 		}
 	}
 

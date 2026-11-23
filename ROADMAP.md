@@ -551,7 +551,7 @@ One COROS PACE 4 run's FIT file, and one call each to COROS's activity detail, f
 - [x] **Requests:** a count and a duration histogram by method, route and status. The route is chi's pattern (`/workouts/{id}`), never the path, so ids don't become label values. A request turned away before its route is matched (a 401, a 404) counts under its mount's wildcard (`/workouts/*`).
 - [x] **Jobs:**
   - As they run: a count by kind and outcome (done, retried, dead) and a duration histogram by kind.
-  - The queue as it stands, read from the `jobs` table on each scrape: how many by kind and state, and how long the oldest job that could run has been due (one waiting out a backoff isn't late). That is what an alert on a stuck worker or a pile of dead jobs needs.
+  - The queue as it stands, read from the `jobs` table on each scrape: how many by kind and state, and how long the oldest job that could run has been due (one waiting out a backoff isn't late; a running one whose lease ran out is). That is what an alert on a stuck worker or a pile of dead jobs needs.
 - [x] **Sources:**
   - Syncs by outcome (done, failed, needs reconnecting) and their duration; activities listed, imported, already had, unreadable and waiting.
   - File requests made of COROS, and how many of the day's 45 are used. With one user that is a single number; with more it's the highest, never a label per user.

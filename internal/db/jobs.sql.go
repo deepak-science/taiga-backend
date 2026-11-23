@@ -428,6 +428,34 @@ func (q *Queries) OldestDueJob(ctx context.Context, arg *OldestDueJobParams) (pg
 	return run_at, err
 }
 
+const oldestExpiredLease = `-- name: OldestExpiredLease :one
+SELECT
+  lease_until
+FROM
+  jobs
+WHERE
+  kind = $1
+  AND state = 'running'
+  AND lease_until < $2
+ORDER BY
+  lease_until
+LIMIT
+  1
+`
+
+type OldestExpiredLeaseParams struct {
+	Kind       string             `json:"kind"`
+	LeaseUntil pgtype.Timestamptz `json:"lease_until"`
+}
+
+// When the longest-lapsed lease of a running job of a kind ran out; ClaimJob takes such a job again, so it's as due as a queued one.
+func (q *Queries) OldestExpiredLease(ctx context.Context, arg *OldestExpiredLeaseParams) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, oldestExpiredLease, arg.Kind, arg.LeaseUntil)
+	var lease_until pgtype.Timestamptz
+	err := row.Scan(&lease_until)
+	return lease_until, err
+}
+
 const requeueDeadJob = `-- name: RequeueDeadJob :one
 UPDATE jobs
 SET

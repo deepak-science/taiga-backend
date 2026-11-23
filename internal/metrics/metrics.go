@@ -108,8 +108,17 @@ func Middleware(next http.Handler) http.Handler {
 		if status == 0 {
 			status = http.StatusOK
 		}
-		requests.WithLabelValues(r.Method, route, strconv.Itoa(status)).Observe(time.Since(start).Seconds())
+		requests.WithLabelValues(method(r.Method), route, strconv.Itoa(status)).Observe(time.Since(start).Seconds())
 	})
+}
+
+// method keeps the label to the standard methods: the client picks the method, and each new label value is a series kept for good.
+func method(m string) string {
+	switch m {
+	case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions:
+		return m
+	}
+	return "other"
 }
 
 // Job records one job run; outcome is done, retried or dead.

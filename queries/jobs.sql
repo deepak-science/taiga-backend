@@ -189,3 +189,18 @@ ORDER BY
   run_at
 LIMIT
   1;
+
+-- name: OldestExpiredLease :one
+-- When the longest-lapsed lease of a running job of a kind ran out; ClaimJob takes such a job again, so it's as due as a queued one.
+SELECT
+  lease_until
+FROM
+  jobs
+WHERE
+  kind = $1
+  AND state = 'running'
+  AND lease_until < $2
+ORDER BY
+  lease_until
+LIMIT
+  1;

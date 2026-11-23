@@ -17,17 +17,17 @@ Go's runtime (`go_*`) and the process (`process_*`) come with the client library
 
 | Metric | Type | Labels | What |
 | --- | --- | --- | --- |
-| `taiga_http_request_duration_seconds` | histogram | `method`, `route`, `status` | Every API request. `route` is chi's pattern (`/workouts/{id}`), never the path. A request turned away before its route is matched (a 401 from the auth middleware, a 404) is under its mount's wildcard (`/workouts/*`, `/*`) |
+| `taiga_http_request_duration_seconds` | histogram | `method`, `route`, `status` | Every API request. `method` is a standard one or `other`. `route` is chi's pattern (`/workouts/{id}`), never the path. A request turned away before its route is matched (a 401 from the auth middleware, a 404) is under its mount's wildcard (`/workouts/*`, `/*`) |
 | `taiga_job_duration_seconds` | histogram | `kind`, `outcome` | Each job run; `outcome` is `done`, `retried` or `dead` |
 | `taiga_jobs` | gauge | `kind`, `state` | The `jobs` table at the scrape, every kind and state given even at 0 |
-| `taiga_jobs_oldest_due_seconds` | gauge | `kind` | How long the longest-waiting job of that kind that could run now has been due; 0 when none is. One waiting out a retry's backoff isn't counted |
+| `taiga_jobs_oldest_due_seconds` | gauge | `kind` | How long the longest-waiting job of that kind that could run now has been due, a running one whose lease ran out counting from then; 0 when none is. One waiting out a retry's backoff isn't counted |
 | `taiga_source_sync_duration_seconds` | histogram | `kind`, `outcome` | Each sync of a connection; `outcome` is `done`, `failed` or `needs_reconnect` (COROS ended the grant) |
 | `taiga_source_activities_total` | counter | `kind`, `result` | What syncs did with the activities: `listed`, `imported`, `already_had`, `unreadable`, `waiting`, `detailed`, `matched` (see `models.SyncResult`) |
 | `taiga_source_files_requested_total` | counter | `kind` | Files COROS issued links for, each counting against the day's limit |
 | `taiga_source_daily_files_used` | gauge | `kind` | The busiest user's files in the last 24 hours, read at the scrape |
 | `taiga_source_daily_files_limit` | gauge | `kind` | `models.SourceDailyFiles` (45) |
 | `taiga_source_connections` | gauge | `kind`, `state` | Connections that are `ok`, `failing` (the last sync left an error) or `needs_reconnect` |
-| `taiga_source_token_refreshes_total` | counter | `kind`, `outcome` | Token refreshes: `refreshed` (COROS issued new tokens) or `failed` |
+| `taiga_source_token_refreshes_total` | counter | `kind`, `outcome` | Every request for new tokens, before a sync and during one: `refreshed` or `failed` |
 | `taiga_outbound_request_duration_seconds` | histogram | `destination`, `outcome` | Calls taiga makes elsewhere, timed to the response headers: `destination` is `coros`, `open-meteo` or `oidc:<provider name>`; `outcome` is `2xx`…`5xx`, or `error` when there was no response |
 | `taiga_filerepo_operation_duration_seconds` | histogram | `backend`, `op`, `outcome` | File repo `store`, `exists` and `fetch` (timed to opening the file), `ok` or `error`, on `local` or `s3` |
 | `taiga_db_connections` | gauge | `state` | The pool's `in_use` and `idle` connections |

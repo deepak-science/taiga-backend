@@ -202,6 +202,8 @@ type Querier interface {
 	MoveWorkoutRoutes(ctx context.Context, arg *MoveWorkoutRoutesParams) error
 	// When the longest-waiting job of a kind that could run now became due; one waiting out a retry's backoff isn't late.
 	OldestDueJob(ctx context.Context, arg *OldestDueJobParams) (pgtype.Timestamptz, error)
+	// When the longest-lapsed lease of a running job of a kind ran out; ClaimJob takes such a job again, so it's as due as a queued one.
+	OldestExpiredLease(ctx context.Context, arg *OldestExpiredLeaseParams) (pgtype.Timestamptz, error)
 	RecordSourceFileRequest(ctx context.Context, arg *RecordSourceFileRequestParams) error
 	RenameRoute(ctx context.Context, arg *RenameRouteParams) (*Route, error)
 	RenameStretch(ctx context.Context, arg *RenameStretchParams) (*Stretch, error)
