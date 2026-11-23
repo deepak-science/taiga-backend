@@ -33,6 +33,51 @@ func (q *Queries) CountSourceActivities(ctx context.Context, arg *CountSourceAct
 	return count, err
 }
 
+const countSourceConnectionsByState = `-- name: CountSourceConnectionsByState :many
+SELECT
+  kind,
+  CAST(
+    CASE
+      WHEN needs_reconnect THEN 'needs_reconnect'
+      WHEN last_error <> '' THEN 'failing'
+      ELSE 'ok'
+    END AS TEXT
+  ) AS state,
+  COUNT(*) AS connections
+FROM
+  source_connections
+GROUP BY
+  kind,
+  state
+`
+
+type CountSourceConnectionsByStateRow struct {
+	Kind        string `json:"kind"`
+	State       string `json:"state"`
+	Connections int64  `json:"connections"`
+}
+
+// For metrics: every user's connections, by kind and state.
+func (q *Queries) CountSourceConnectionsByState(ctx context.Context) ([]*CountSourceConnectionsByStateRow, error) {
+	rows, err := q.db.Query(ctx, countSourceConnectionsByState)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*CountSourceConnectionsByStateRow{}
+	for rows.Next() {
+		var i CountSourceConnectionsByStateRow
+		if err := rows.Scan(&i.Kind, &i.State, &i.Connections); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countSourceFilesSince = `-- name: CountSourceFilesSince :one
 SELECT
   CAST(COALESCE(SUM(files), 0) AS INTEGER) AS files
@@ -769,6 +814,36 @@ func (q *Queries) MarkSourceMatchTried(ctx context.Context, arg *MarkSourceMatch
 		arg.TriedAt,
 	)
 	return err
+}
+
+const maxSourceFilesSince = `-- name: MaxSourceFilesSince :one
+SELECT
+  CAST(COALESCE(MAX(per_user.files), 0) AS INTEGER) AS files
+FROM
+  (
+    SELECT
+      SUM(files) AS files
+    FROM
+      source_file_requests
+    WHERE
+      kind = $1
+      AND requested_at > $2
+    GROUP BY
+      user_id
+  ) AS per_user
+`
+
+type MaxSourceFilesSinceParams struct {
+	Kind        string             `json:"kind"`
+	RequestedAt pgtype.Timestamptz `json:"requested_at"`
+}
+
+// The most files any one user has had issued since then, which is how close the busiest is to the daily limit.
+func (q *Queries) MaxSourceFilesSince(ctx context.Context, arg *MaxSourceFilesSinceParams) (int32, error) {
+	row := q.db.QueryRow(ctx, maxSourceFilesSince, arg.Kind, arg.RequestedAt)
+	var files int32
+	err := row.Scan(&files)
+	return files, err
 }
 
 const recordSourceFileRequest = `-- name: RecordSourceFileRequest :exec

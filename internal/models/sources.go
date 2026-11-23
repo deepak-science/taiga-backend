@@ -59,6 +59,8 @@ type SyncResult struct {
 	Unreadable int
 	// Waiting is how many were put off to the next sync: still being recorded, or the first one past the daily limit.
 	Waiting int
+	// Files is how many files the source issued links for, each counting against its daily limit.
+	Files int
 	// LimitReached says the sync stopped at the source's daily limit on files.
 	LimitReached bool
 	// Detailed is how many workouts got the source's own figures.
@@ -314,6 +316,7 @@ windows:
 				}
 				if spent > 0 {
 					used += int32(spent)
+					res.Files += spent
 					if recordErr := q.RecordSourceFileRequest(context.WithoutCancel(ctx), &db.RecordSourceFileRequestParams{UserID: userToken.ID, Kind: conn.Kind, ExternalID: a.ID, Files: int32(spent), RequestedAt: timestamptz(now)}); recordErr != nil {
 						return res, errors.Join(err, recordErr)
 					}

@@ -11,6 +11,7 @@ import (
 
 	"gitea.deepak.science/deepak/taiga/internal/config"
 	"gitea.deepak.science/deepak/taiga/internal/filerepo"
+	"gitea.deepak.science/deepak/taiga/internal/metrics"
 	"gitea.deepak.science/deepak/taiga/internal/store"
 	"gitea.deepak.science/deepak/taiga/internal/tokens"
 	"gitea.deepak.science/deepak/taiga/internal/weather"
@@ -143,6 +144,8 @@ type Model interface {
 	Job(ctx context.Context, id int32, userToken *tokens.UserToken) (*Job, error)
 	RetryDeadJob(ctx context.Context, id int32, now time.Time, userToken *tokens.UserToken) (*Job, error)
 	// The worker's side of the queue, across all users.
+	// MetricsSnapshot is the queue, connections and pool across every user, for a scrape.
+	MetricsSnapshot(ctx context.Context, now time.Time) (*metrics.Snapshot, error)
 	EnqueueStaleWorkouts(ctx context.Context, now time.Time) (int64, error)
 	ClaimJob(ctx context.Context, now, leaseUntil time.Time) (*Job, error)
 	FinishJob(ctx context.Context, id int32, now time.Time) error

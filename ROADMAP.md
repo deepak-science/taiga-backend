@@ -545,22 +545,22 @@ One COROS PACE 4 run's FIT file, and one call each to COROS's activity detail, f
 
 ## M17 — Metrics, for Grafana
 
-**Goal:** see from Grafana what the deployment is doing: requests, the job queue, and what it asks of COROS and the weather provider. The homelab already runs the Prometheus operator and Grafana, and scrapes taiga's Postgres through a `PodMonitor` (`k8s-manifests/taiga/02-podmonitor.yaml` in proxmox-homelab); the backend itself exports nothing yet.
+**Goal:** see from Grafana what the deployment is doing: requests, the job queue, and what it asks of COROS and the weather provider. The homelab already runs the Prometheus operator and Grafana, and scrapes taiga's Postgres through a `PodMonitor` (`k8s-manifests/taiga/02-podmonitor.yaml` in proxmox-homelab); the backend exports its own on `app.metrics_port`.
 
-- [ ] **`GET /metrics`** in Prometheus's text format (`prometheus/client_golang`), with Go's runtime and process collectors. On a port of its own (`app.metrics_port`), off unless set, so it is never reachable through the frontend's `/api` proxy and needs no sign-in of its own.
-- [ ] **Requests:** a count and a duration histogram by method, route and status. The route is chi's pattern (`/workouts/{id}`), never the path, so ids don't become label values.
-- [ ] **Jobs:**
+- [x] **`GET /metrics`** in Prometheus's text format (`prometheus/client_golang`), with Go's runtime and process collectors. On a port of its own (`app.metrics_port`), off unless set, so it is never reachable through the frontend's `/api` proxy and needs no sign-in of its own. What each metric is, and the PromQL for the alerts below: `docs/metrics.md`.
+- [x] **Requests:** a count and a duration histogram by method, route and status. The route is chi's pattern (`/workouts/{id}`), never the path, so ids don't become label values. A request turned away before its route is matched (a 401, a 404) counts under its mount's wildcard (`/workouts/*`).
+- [x] **Jobs:**
   - As they run: a count by kind and outcome (done, retried, dead) and a duration histogram by kind.
-  - The queue as it stands, read from the `jobs` table on each scrape: how many by kind and state, and the age of the oldest queued one. That is what an alert on a stuck worker or a pile of dead jobs needs.
-- [ ] **Sources:**
+  - The queue as it stands, read from the `jobs` table on each scrape: how many by kind and state, and how long the oldest job that could run has been due (one waiting out a backoff isn't late; a running one whose lease ran out is). That is what an alert on a stuck worker or a pile of dead jobs needs.
+- [x] **Sources:**
   - Syncs by outcome (done, failed, needs reconnecting) and their duration; activities listed, imported, already had, unreadable and waiting.
   - File requests made of COROS, and how many of the day's 45 are used. With one user that is a single number; with more it's the highest, never a label per user.
   - Connections by state (fine, failing, needs reconnecting), and token refreshes.
-- [ ] **Outbound calls:** a count and duration by destination (COROS, Open-Meteo, the OIDC issuers) and outcome, so a slow or failing provider shows apart from taiga's own faults.
-- [ ] **Storage and the database:** file repo reads and writes by backend and outcome; the pool's open and waiting connections. Postgres's own figures already come from CNPG.
-- [ ] **No per-user labels anywhere.** Label values are kinds, routes, states and outcomes: a fixed handful each. Who did what stays in the log.
+- [x] **Outbound calls:** a count and duration by destination (COROS, Open-Meteo, the OIDC issuers) and outcome, so a slow or failing provider shows apart from taiga's own faults.
+- [x] **Storage and the database:** file repo reads and writes by backend and outcome; the pool's open and waiting connections. Postgres's own figures already come from CNPG.
+- [x] **No per-user labels anywhere.** Label values are kinds, routes, states and outcomes: a fixed handful each. Who did what stays in the log.
 - [ ] **In the homelab** (proxmox-homelab, on its taiga branch): a `PodMonitor` for the backend's metrics port, a dashboard kept as JSON beside the manifests (requests and errors, queue depth and oldest job, dead jobs, syncs and the COROS allowance), and alerts for dead jobs, a queue that isn't draining, and a connection that needs reconnecting.
-- [ ] **Frontend:** nothing from the browser. nginx's request log, or its stub status through an exporter, if the static side ever needs watching.
+- [x] **Frontend:** nothing from the browser. nginx's request log, or its stub status through an exporter, if the static side ever needs watching.
 
 ## M18 — Admins
 

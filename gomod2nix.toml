@@ -67,6 +67,8 @@ cachePackages = [
   'github.com/aws/smithy-go/transport/http/protocol/awsquery',
   'github.com/aws/smithy-go/transport/http/protocol/restjson1',
   'github.com/aws/smithy-go/waiter',
+  'github.com/beorn7/perks/quantile',
+  'github.com/cespare/xxhash/v2',
   'github.com/coreos/go-oidc/v3/oidc',
   'github.com/dustin/go-humanize',
   'github.com/fsnotify/fsnotify',
@@ -122,8 +124,16 @@ cachePackages = [
   'github.com/muktihari/fit/profile/untyped/fieldnum',
   'github.com/muktihari/fit/profile/untyped/mesgnum',
   'github.com/muktihari/fit/proto',
+  'github.com/munnerz/goautoneg',
   'github.com/pelletier/go-toml/v2',
   'github.com/pelletier/go-toml/v2/unstable',
+  'github.com/prometheus/client_golang/prometheus',
+  'github.com/prometheus/client_golang/prometheus/collectors',
+  'github.com/prometheus/client_golang/prometheus/promhttp',
+  'github.com/prometheus/client_model/go',
+  'github.com/prometheus/common/expfmt',
+  'github.com/prometheus/common/model',
+  'github.com/prometheus/procfs',
   'github.com/remyoudompheng/bigfft',
   'github.com/sagikazarmark/locafero',
   'github.com/segmentio/asm/ascii',
@@ -170,6 +180,15 @@ cachePackages = [
   'golang.org/x/text/unicode/norm',
   'golang.org/x/text/width',
   'golang.org/x/time/rate',
+  'google.golang.org/protobuf/encoding/protodelim',
+  'google.golang.org/protobuf/encoding/prototext',
+  'google.golang.org/protobuf/encoding/protowire',
+  'google.golang.org/protobuf/proto',
+  'google.golang.org/protobuf/reflect/protoreflect',
+  'google.golang.org/protobuf/reflect/protoregistry',
+  'google.golang.org/protobuf/runtime/protoiface',
+  'google.golang.org/protobuf/runtime/protoimpl',
+  'google.golang.org/protobuf/types/known/timestamppb',
   'modernc.org/libc',
   'modernc.org/libc/sys/types',
   'modernc.org/libc/uuid/uuid',
@@ -253,6 +272,14 @@ cachePackages = [
     version = 'v1.28.9'
     hash = 'sha256-cFZrGKPhyidUTs7Ufpo4kF+v4JFWPrsa0xt50HpXSCI='
 
+  [mod.'github.com/beorn7/perks']
+    version = 'v1.0.1'
+    hash = 'sha256-h75GUqfwJKngCJQVE5Ao5wnO3cfKD9lSIteoLp/3xJ4='
+
+  [mod.'github.com/cespare/xxhash/v2']
+    version = 'v2.3.0'
+    hash = 'sha256-7hRlwSR+fos1kx4VZmJ/7snR7zHh8ZFKX+qqqqGcQpY='
+
   [mod.'github.com/coreos/go-oidc/v3']
     version = 'v3.21.0'
     hash = 'sha256-K2gE3Z7PPJU+EWcgAXxn/RlOtBVDJZXkruZOt58JllQ='
@@ -329,6 +356,10 @@ cachePackages = [
     version = 'v0.28.7'
     hash = 'sha256-g4waJwUEv2gvZYH3Tp2HHOAA1sBTej7i7cvy58fSQh8='
 
+  [mod.'github.com/munnerz/goautoneg']
+    version = 'v0.0.0-20191010083416-a7dc8b61c822'
+    hash = 'sha256-79URDDFenmGc9JZu+5AXHToMrtTREHb3BC84b/gym9Q='
+
   [mod.'github.com/ncruces/go-strftime']
     version = 'v1.1.0'
     hash = 'sha256-Q8VG+Tvb9/dr6p/wLbHwe4Myk8e+dtbVSlgoCfE6t3M='
@@ -336,6 +367,22 @@ cachePackages = [
   [mod.'github.com/pelletier/go-toml/v2']
     version = 'v2.4.3'
     hash = 'sha256-CyCjKBN+zUciGhQiaFpq54qv+NDITcuh5U2HmjArow4='
+
+  [mod.'github.com/prometheus/client_golang']
+    version = 'v1.25.0'
+    hash = 'sha256-PYAzSxsdlfkHDeLWtwTQriE43R1rZrHIl5nWJ9zeD9M='
+
+  [mod.'github.com/prometheus/client_model']
+    version = 'v0.6.3'
+    hash = 'sha256-uYXpFkXMT4AXWJShrCRnu51vhGQAuAU3LFQhhGVJ+74='
+
+  [mod.'github.com/prometheus/common']
+    version = 'v0.72.0'
+    hash = 'sha256-OXi+GGzrV31yeKtel2bImkF7PW4tKWyOcyTZB5WbkDI='
+
+  [mod.'github.com/prometheus/procfs']
+    version = 'v0.22.0'
+    hash = 'sha256-TRwVHKgW4NnPuC6Me38OD57ccM8AfnS7IxtcAx2TAH4='
 
   [mod.'github.com/remyoudompheng/bigfft']
     version = 'v0.0.0-20230129092748-24d4a6f8daec'
@@ -420,6 +467,10 @@ cachePackages = [
   [mod.'golang.org/x/time']
     version = 'v0.16.0'
     hash = 'sha256-OvekWcaTHMs5n3Img4EmYaORRgSmybBS+tObSnPqftY='
+
+  [mod.'google.golang.org/protobuf']
+    version = 'v1.36.12'
+    hash = 'sha256-MKd0AdkWEe2A79mGPzOY5I76nMqTsGJKQNPJOKyOwkQ='
 
   [mod.'modernc.org/libc']
     version = 'v1.82.12'

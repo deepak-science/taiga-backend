@@ -10,6 +10,7 @@ import (
 
 	"gitea.deepak.science/deepak/taiga/internal/config"
 	"gitea.deepak.science/deepak/taiga/internal/db"
+	"gitea.deepak.science/deepak/taiga/internal/metrics"
 	"gitea.deepak.science/deepak/taiga/internal/migration"
 )
 
@@ -20,6 +21,8 @@ type Store interface {
 	GetQuerier() (db.Querier, error)
 	// InTx runs fn in one transaction, committing if it returns nil and rolling back otherwise.
 	InTx(ctx context.Context, fn func(db.Querier) error) error
+	// PoolStats is the connection pool as it stands, for metrics.
+	PoolStats() metrics.PoolStats
 }
 
 func GetStore(cfg *config.Config) (Store, error) {

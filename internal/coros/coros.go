@@ -18,6 +18,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
 	"golang.org/x/oauth2"
+
+	"gitea.deepak.science/deepak/taiga/internal/metrics"
 )
 
 const (
@@ -77,7 +79,7 @@ func New(endpoint, redirectURL string) *Service {
 		endpoint = DefaultEndpoint
 	}
 	s := &Service{endpoint: endpoint, redirectURL: redirectURL}
-	s.http = &http.Client{Timeout: timeout, CheckRedirect: s.checkRedirect}
+	s.http = &http.Client{Timeout: timeout, CheckRedirect: s.checkRedirect, Transport: metrics.Transport("coros", nil)}
 	return s
 }
 
@@ -337,18 +339,36 @@ type Session struct {
 // A refresh token works once, so new ones are for saving before anything else is tried with them.
 func (s *Service) Refresh(ctx context.Context, c *Client, token *oauth2.Token) (*oauth2.Token, error) {
 	ctx = context.WithValue(ctx, oauth2.HTTPClient, s.http)
-	fresh, err := s.oauth(c).TokenSource(ctx, token).Token()
+	fresh, err := oauth2.ReuseTokenSource(token, s.refresher(ctx, c, token)).Token()
 	if err != nil {
 		return nil, (&refusals{}).authError(fmt.Errorf("refreshing the COROS tokens: %w", err))
 	}
 	return fresh, nil
 }
 
+// refresher asks COROS for new tokens each time it's called, counting each attempt; wrapped in oauth2.ReuseTokenSource, it's called only once the access token has run out.
+// It starts from the refresh token alone, so its own first call refreshes rather than handing back the access token it was given.
+func (s *Service) refresher(ctx context.Context, c *Client, token *oauth2.Token) oauth2.TokenSource {
+	return countedRefresh{s.oauth(c).TokenSource(ctx, &oauth2.Token{RefreshToken: token.RefreshToken})}
+}
+
+type countedRefresh struct{ base oauth2.TokenSource }
+
+func (r countedRefresh) Token() (*oauth2.Token, error) {
+	t, err := r.base.Token()
+	outcome := "refreshed"
+	if err != nil {
+		outcome = "failed"
+	}
+	metrics.TokenRefresh(Kind, outcome)
+	return t, err
+}
+
 // Open signs in to the server with the connection's tokens, refreshing them if they've run out: call Refresh first, since a refresh made here is lost if connecting then fails.
 // The tokens may be new afterwards: save what Token returns.
 func (s *Service) Open(ctx context.Context, c *Client, token *oauth2.Token) (*Session, error) {
 	refreshCtx := context.WithValue(context.WithoutCancel(ctx), oauth2.HTTPClient, s.http)
-	source := oauth2.ReuseTokenSource(token, s.oauth(c).TokenSource(refreshCtx, token))
+	source := oauth2.ReuseTokenSource(token, s.refresher(refreshCtx, c, token))
 	refused := &refusals{base: &oauth2.Transport{Source: source, Base: s.http.Transport}}
 	authed := &http.Client{Timeout: timeout, Transport: refused, CheckRedirect: withinOrigin(c.Resource)}
 

@@ -310,3 +310,30 @@ func TestDBConfigDSN(t *testing.T) {
 		})
 	}
 }
+
+func TestMetricsAreOffUnlessAPortIsSet(t *testing.T) {
+	srv, err := server.New(createTestConfig(t))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = srv.Shutdown(context.Background()) })
+	assert.Nil(t, srv.MetricsHandler())
+}
+
+func TestMetricsCountAPIRequestsByRoute(t *testing.T) {
+	cfg := createTestConfig(t)
+	cfg.App.MetricsPort = "9464"
+	srv, err := server.New(cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = srv.Shutdown(context.Background()) })
+	require.NotNil(t, srv.MetricsHandler())
+
+	srv.Handler().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/ping", nil))
+
+	rec := httptest.NewRecorder()
+	srv.MetricsHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), `taiga_http_request_duration_seconds_count{method="GET",route="/ping",status="200"}`)
+	// The API port doesn't serve them.
+	api := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(api, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	assert.NotContains(t, api.Body.String(), "taiga_http_request_duration_seconds")
+}

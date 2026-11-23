@@ -23,6 +23,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"gitea.deepak.science/deepak/taiga/internal/config"
+	"gitea.deepak.science/deepak/taiga/internal/metrics"
 )
 
 const (
@@ -106,7 +107,8 @@ func newProvider(ctx context.Context, pc config.OIDCProvider, api *url.URL) (*Pr
 		}
 		secret = strings.TrimSpace(string(raw))
 	}
-	client := &http.Client{Timeout: providerTimeout}
+	// Named by the provider's config name, a fixed handful, so each issuer's calls show apart.
+	client := &http.Client{Timeout: providerTimeout, Transport: metrics.Transport("oidc:"+pc.Name, nil)}
 	discovered, err := gooidc.NewProvider(gooidc.ClientContext(ctx, client), pc.Issuer)
 	if err != nil {
 		return nil, fmt.Errorf("discovery: %w", err)
