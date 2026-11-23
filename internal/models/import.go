@@ -17,7 +17,7 @@ import (
 	"gitea.deepak.science/deepak/taiga/internal/workouts"
 )
 
-// ImportReport is what bringing an archive into an account did; importing the same archive again reports nothing added or changed.
+// ImportReport is what bringing an archive into an account did; importing the same archive again reports nothing added or changed, though it lists the unreadable files again.
 type ImportReport struct {
 	// Files is how many the archive has, and FilesAdded how many of them the account didn't.
 	Files      int `json:"files"`
@@ -351,16 +351,28 @@ func importRoutes(ctx context.Context, q db.Querier, d *backup.Data, userID int3
 		target  int32
 		overlap int
 	}
+	// A merged route's runs that the user put there carry a placement; the rest are its base, which detection groups it by.
+	placedByUser := map[string]bool{}
+	for _, o := range d.RouteOverrides {
+		placedByUser[o.File] = true
+	}
 	placed := make([]placement, len(d.Routes))
 	for i, r := range d.Routes {
-		overlap := map[int32]int{}
+		overlap, base := map[int32]int{}, map[int32]int{}
 		for _, hash := range r.Workouts {
 			if id := ref(&hash); id != nil {
 				placed[i].runs = append(placed[i].runs, *id)
 				if rid, ok := on[*id]; ok {
 					overlap[rid]++
+					if !placedByUser[hash] {
+						base[rid]++
+					}
 				}
 			}
+		}
+		// The target is the account's route its base is on, so the archive's placements bring the merged runs to it: going by all its runs, a merged group bigger than the base would take the target, and the merge would point at itself.
+		if len(base) > 0 {
+			overlap = base
 		}
 		for rid, n := range overlap {
 			if p := &placed[i]; p.target == 0 || n > p.overlap || (n == p.overlap && rid < p.target) {
@@ -382,6 +394,10 @@ func importRoutes(ctx context.Context, q db.Querier, d *backup.Data, userID int3
 	changed := 0
 	routeIDs := map[string]int32{}
 	for i, r := range d.Routes {
+		// None of its runs made it (their files are unreadable here): a route made for it would hold nothing, and another would be made on every import.
+		if len(placed[i].runs) == 0 {
+			continue
+		}
 		target := placed[i].target
 		made := target == 0
 		if made {

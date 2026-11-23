@@ -135,7 +135,20 @@ func writeEntry(tw *tar.Writer, name string, b []byte, modTime time.Time) error 
 // The documents all come first, so a.Files is complete by the first call.
 // An archive cut short is an error, as is any entry that isn't one of the above.
 func Read(r io.Reader, store func(hash string, content io.Reader) error) (*Archive, error) {
+	return ReadWithin(r, store, 0)
+}
+
+// ReadWithin is Read with the documents together held to at most documentBytes (0 for no limit beyond each one's), for an archive from someone who mustn't be able to fill the process's memory: they're decoded whole and kept.
+func ReadWithin(r io.Reader, store func(hash string, content io.Reader) error, documentBytes int64) (*Archive, error) {
 	tr := tar.NewReader(r)
+	var read int64
+	readJSON := func(hdr *tar.Header, v any) error {
+		read += hdr.Size
+		if documentBytes > 0 && read > documentBytes {
+			return fmt.Errorf("%w: its documents are over %d bytes together", ErrInvalid, documentBytes)
+		}
+		return readDocument(tr, hdr, v)
+	}
 	next := func() (*tar.Header, error) {
 		hdr, err := tr.Next()
 		if err != nil && !errors.Is(err, io.EOF) {
@@ -152,7 +165,7 @@ func Read(r io.Reader, store func(hash string, content io.Reader) error) (*Archi
 		return nil, err
 	}
 	a := &Archive{}
-	if err := readJSON(tr, hdr, &a.Manifest); err != nil {
+	if err := readJSON(hdr, &a.Manifest); err != nil {
 		return nil, err
 	}
 	if a.Manifest.Format != Format {
@@ -172,7 +185,7 @@ func Read(r io.Reader, store func(hash string, content io.Reader) error) (*Archi
 		if err != nil {
 			return nil, err
 		}
-		if err := readJSON(tr, hdr, &a.Accounts); err != nil {
+		if err := readJSON(hdr, &a.Accounts); err != nil {
 			return nil, err
 		}
 	}
@@ -198,7 +211,7 @@ func Read(r io.Reader, store func(hash string, content io.Reader) error) (*Archi
 			if len(listed) > 0 || len(got) > 0 {
 				return nil, fmt.Errorf("%w: %s comes after the files", ErrInvalid, hdr.Name)
 			}
-			if err := readJSON(tr, hdr, v); err != nil {
+			if err := readJSON(hdr, v); err != nil {
 				return nil, err
 			}
 			delete(docs, hdr.Name)
@@ -247,7 +260,7 @@ func Read(r io.Reader, store func(hash string, content io.Reader) error) (*Archi
 	return a, nil
 }
 
-func readJSON(tr *tar.Reader, hdr *tar.Header, v any) error {
+func readDocument(tr *tar.Reader, hdr *tar.Header, v any) error {
 	if hdr.Size > maxDocumentSize {
 		return fmt.Errorf("%w: %s is over %d bytes", ErrInvalid, hdr.Name, maxDocumentSize)
 	}

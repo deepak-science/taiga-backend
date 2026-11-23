@@ -100,3 +100,21 @@ func TestImportTurnsAwayAFileOverItsLimit(t *testing.T) {
 	assert.Equal(t, http.StatusRequestEntityTooLarge, status)
 	assert.Contains(t, string(body), hash)
 }
+
+func TestImportTurnsAwayAFileThatDoesntMatchItsHash(t *testing.T) {
+	srv, m, toker := newAPI(t)
+	alice := newUserClient(t, srv, m, toker, "alice@example.com")
+	bob := newUserClient(t, srv, m, toker, "bob@example.com")
+	fit := testsupport.EncodeFIT(t, routeDay, []testsupport.Split{{Meters: 2000, Seconds: 600}})
+	alice.uploadWorkout(fit)
+	status, archive := alice.get("/export")
+	require.Equal(t, http.StatusOK, status, string(archive))
+
+	// One byte of the file's payload changed, so its bytes no longer match the name it's under.
+	at := bytes.Index(archive, fit)
+	require.GreaterOrEqual(t, at, 0)
+	archive[at+len(fit)/2] ^= 0xff
+	status, body := bob.importArchive(archive)
+	assert.Equal(t, http.StatusUnprocessableEntity, status)
+	assert.Contains(t, string(body), "doesn't match its hash")
+}

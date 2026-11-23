@@ -300,3 +300,67 @@ func TestImportNamesARouteTheAccountMergedOnce(t *testing.T) {
 	again := dst.importFrom(t, src, archive)
 	assert.Equal(t, 0, again.Routes, "not renamed back and forth")
 }
+
+func TestImportMergesRoutesTheArchiveHadMerged(t *testing.T) {
+	ctx := context.Background()
+	// A North of two runs, and a bigger South merged into it.
+	runs := [][]byte{
+		testsupport.EncodeFIT(t, day1, importSplits),
+		testsupport.EncodeFIT(t, day1.AddDate(0, 0, 1), importSplits),
+		testsupport.EncodeFITHeading(t, day1.AddDate(0, 0, 2), importSplits, 180),
+		testsupport.EncodeFITHeading(t, day1.AddDate(0, 0, 3), importSplits, 180),
+		testsupport.EncodeFITHeading(t, day1.AddDate(0, 0, 4), importSplits, 180),
+	}
+	upload := func(s *importSide) []*models.Workout {
+		var ws []*models.Workout
+		for _, r := range runs {
+			ws = append(ws, s.upload(t, r, day1))
+		}
+		s.detect(t)
+		return ws
+	}
+	src := newImportSide(t, "alice@example.com")
+	srcRuns := upload(src)
+	north, err := src.m.WorkoutRoute(ctx, srcRuns[0].ID, src.user)
+	require.NoError(t, err)
+	south, err := src.m.WorkoutRoute(ctx, srcRuns[2].ID, src.user)
+	require.NoError(t, err)
+	_, err = src.m.RenameRoute(ctx, north.ID, new("North"), src.user)
+	require.NoError(t, err)
+	_, err = src.m.MergeRoutes(ctx, north.ID, south.ID, src.user)
+	require.NoError(t, err)
+	src.detect(t)
+	archive := src.export(t)
+	require.Len(t, archive.Routes, 1)
+
+	// The account has them apart.
+	dst := newImportSide(t, "bob@example.com")
+	dstRuns := upload(dst)
+	report := dst.importFrom(t, src, archive)
+	assert.Equal(t, 1, report.Routes)
+
+	first, err := dst.m.WorkoutRoute(ctx, dstRuns[0].ID, dst.user)
+	require.NoError(t, err)
+	merged, err := dst.m.WorkoutRoute(ctx, dstRuns[4].ID, dst.user)
+	require.NoError(t, err)
+	assert.Equal(t, first.ID, merged.ID, "the south runs went to North, as in the archive")
+	assert.Equal(t, new("North"), merged.Name)
+	assert.Equal(t, userComparable(archive).Routes, userComparable(dst.export(t)).Routes)
+	assert.Equal(t, 0, dst.importFrom(t, src, archive).Routes)
+}
+
+func TestImportSkipsARouteNoneOfWhoseRunsMadeIt(t *testing.T) {
+	src := newImportSide(t, "alice@example.com")
+	richAccount(t, src)
+	archive := src.export(t)
+	// As if every one of its runs' files were unreadable here.
+	archive.Routes = append(archive.Routes, backup.Route{Key: "ghost", Name: new("Ghost"), Workouts: []string{strings.Repeat("ab", 32)}})
+
+	dst := newImportSide(t, "bob@example.com")
+	first := dst.importFrom(t, src, archive)
+	assert.Equal(t, 0, dst.importFrom(t, src, archive).Routes, "no new empty route each time")
+	for _, r := range dst.export(t).Routes {
+		assert.NotEqual(t, new("Ghost"), r.Name)
+	}
+	assert.Equal(t, len(archive.Routes)-1, first.Routes)
+}

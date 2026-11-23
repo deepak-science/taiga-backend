@@ -88,7 +88,7 @@ This is the taiga API: upload FIT files (or Endomondo export JSON, or TCX such a
 
 - **internal/backup**: The archive a user's export (`kind: user`) or the deployment's backup (`kind: deployment`) is written to (`docs/backup.md`)
   - A tar of `manifest.json`, one JSON document per kind of state nothing can rebuild from the files, then `files/<sha256>`; workouts referred to by file hash, never by id; a deployment's has `accounts.json` and each account's documents under `accounts/<key>/`, its files shared
-  - `Write` and `Read` both check each file against its hash; `Read` turns away a newer version, unknown entries or fields, and an archive cut short
+  - `Write` and `Read` both check each file against its hash; `Read` turns away a newer version, unknown entries or fields, and an archive cut short; `ReadWithin` also caps the documents together, for an archive from a user
   - `models.ImportAccount` reads a user's into an existing account, matching by file hash; `RestoreAccount` is the same into a new one
 
 - **internal/migration**: golang-migrate wrapper used on startup and by `cmd/migrate`
