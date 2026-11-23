@@ -621,7 +621,7 @@ The files are the source of truth, and the rest of a workout (summary, segments,
 
 ### The whole deployment
 
-- [ ] **`cmd/backup`** (in the image beside `useradd`): every user's archive in one go. This one includes accounts, password hashes and linked OIDC identities so a restore can sign in. `cmd/restore` reads it into an empty deployment.
+- [x] **`cmd/backup`** (in the image beside `useradd`): every user's archive in one go. This one includes accounts, password hashes and linked OIDC identities so a restore can sign in. `cmd/restore` reads it into an empty deployment. Restoring makes every workout again from its file and puts the rest back over it (`docs/backup.md`).
 - [ ] **In the homelab** (proxmox-homelab): a CronJob running `cmd/backup` nightly to somewhere off the cluster (the NAS, or S3), keeping a few weeks. This adds to CNPG's and the PVC's own backups, it doesn't replace them: it's the copy that survives a schema mistake and that a fresh deployment can read.
 - [ ] **A dev stack from it:** restore last night's backup into a throwaway deployment (local SQLite, or a second namespace) to try a migration or a processor change on real data before it reaches the real one. That's the dev/prod split there isn't one of yet.
 
@@ -635,7 +635,7 @@ A dependency bump can break things nothing tests for (sql-formatter changing mig
 
 ### Proving it
 
-- [ ] **A round trip in the tests:** build an account with every kind of state above, export, import into a fresh deployment, reprocess, export again, and compare. A new table that holds user state fails it until the export knows about it.
+- [x] **A round trip in the tests** (`cmd/restore`): a deployment with every kind of state above, backed up, restored into a fresh one, detected, backed up again, and compared. A new table that holds user state shows up as a difference once the test makes some.
 - [ ] **A restore drill** in the runbook, run once for real against a nightly backup.
 
 ## Later

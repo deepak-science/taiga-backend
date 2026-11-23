@@ -84,8 +84,8 @@ func TestExport(t *testing.T) {
 	assert.Equal(t, backup.Version, a.Manifest.Version)
 	assert.Equal(t, workouts.ProcessorVersion, a.Manifest.ProcessorVersion)
 	assert.True(t, a.Manifest.Fetched)
-	require.NotNil(t, a.Manifest.Account)
-	assert.Equal(t, "alice@example.com", a.Manifest.Account.Email)
+	require.NotNil(t, a.Manifest.Owner)
+	assert.Equal(t, "alice@example.com", a.Manifest.Owner.Email)
 
 	require.Len(t, a.Files, 4, "bob's isn't in it")
 	assert.Equal(t, firstFIT, files[hash(firstFIT)])

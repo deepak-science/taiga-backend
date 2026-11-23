@@ -11,6 +11,20 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countUsers = `-- name: CountUsers :one
+SELECT
+  COUNT(*)
+FROM
+  users
+`
+
+func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countUsers)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createUser = `-- name: CreateUser :one
 INSERT INTO
   users (email, display_name, password, email_verified)
@@ -161,6 +175,43 @@ func (q *Queries) GetUsersByEmail(ctx context.Context, lower string) ([]*GetUser
 			&i.ID,
 			&i.Email,
 			&i.DisplayName,
+			&i.EmailVerified,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUsers = `-- name: ListUsers :many
+SELECT
+  id, email, display_name, password, created_at, updated_at, email_verified
+FROM
+  users
+ORDER BY
+  id
+`
+
+func (q *Queries) ListUsers(ctx context.Context) ([]*User, error) {
+	rows, err := q.db.Query(ctx, listUsers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*User{}
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.DisplayName,
+			&i.Password,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 			&i.EmailVerified,
 		); err != nil {
 			return nil, err

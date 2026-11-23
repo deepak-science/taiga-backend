@@ -11,6 +11,7 @@ This is the taiga API: upload FIT files (or Endomondo export JSON, or TCX such a
 - **cmd/server**: Application entrypoint with graceful shutdown and automatic migrations
 - **cmd/migrate**: Standalone migration tool with up/down/steps/goto commands
 - **cmd/useradd**: Create an account while registration is closed
+- **cmd/backup**, **cmd/restore**: The whole deployment's backup, every account with its password hash and linked sign-ins (`docs/backup.md`); restore only into an empty deployment
 - **cmd/fit_view**: Utility for viewing FIT (Garmin) workout files
 
 - **internal/config**: Configuration management with Viper
@@ -85,8 +86,8 @@ This is the taiga API: upload FIT files (or Endomondo export JSON, or TCX such a
   - Requests by chi route pattern, jobs, syncs, outbound calls (`metrics.Transport`) and the file repo (`metrics.FileRepo`) as they happen; the queue, connections, COROS allowance and pool read at each scrape (`models.MetricsSnapshot`)
   - Never a per-user label
 
-- **internal/backup**: The archive a user's data is exported to (`docs/backup.md`)
-  - A tar of `manifest.json`, one JSON document per kind of state nothing can rebuild from the files, then `files/<sha256>`; workouts referred to by file hash, never by id
+- **internal/backup**: The archive a user's export (`kind: user`) or the deployment's backup (`kind: deployment`) is written to (`docs/backup.md`)
+  - A tar of `manifest.json`, one JSON document per kind of state nothing can rebuild from the files, then `files/<sha256>`; workouts referred to by file hash, never by id; a deployment's has `accounts.json` and each account's documents under `accounts/<key>/`, its files shared
   - `Write` and `Read` both check each file against its hash; `Read` turns away a newer version, unknown entries or fields, and an archive cut short
 
 - **internal/migration**: golang-migrate wrapper used on startup and by `cmd/migrate`
@@ -158,6 +159,8 @@ just exec-docker         # Run interactive shell in Docker container
 go run cmd/fit_view/main.go --filename file.fit  # View FIT workout files
 go run cmd/migrate/main.go [options]    # Manual database migrations
 go run cmd/useradd/main.go -email you@example.com  # Create an account while registration is closed (prompts for the password; in the cluster: kubectl -n taiga exec -it deploy/taiga-backend -- useradd -email ...)
+go run cmd/backup/main.go -o taiga.tar   # Back up every account (in the cluster: kubectl -n taiga exec deploy/taiga-backend -- backup > taiga.tar); never migrates
+go run cmd/restore/main.go -i taiga.tar  # Restore a backup into an empty deployment
 ```
 
 ## Project Structure

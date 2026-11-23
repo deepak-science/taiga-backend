@@ -13,26 +13,42 @@ const Format = "taiga-backup"
 // Version is the format this code writes; Read takes any version up to it.
 const Version = 1
 
+// The two kinds of archive: one user's export, and a whole deployment's backup.
+const (
+	KindUser       = "user"
+	KindDeployment = "deployment"
+)
+
 // Manifest is the archive's first entry.
 type Manifest struct {
-	Format           string    `json:"format"`
+	Format string `json:"format"`
+	// Kind is KindUser, whose documents are at the top, or KindDeployment, whose accounts.json comes next and each account's documents under accounts/<key>/.
+	Kind             string    `json:"kind"`
 	Version          int       `json:"version"`
 	ProcessorVersion string    `json:"processor_version"`
 	CreatedAt        time.Time `json:"created_at"`
 	// Fetched is false when the export left out weather and COROS's figures.
 	Fetched bool `json:"fetched"`
-	// Account is whose archive it is, for the reader; a restore never signs in with it.
-	Account *Account `json:"account,omitempty"`
+	// Owner is whose export it is, for the reader; nothing signs in with it.
+	Owner *Owner `json:"owner,omitempty"`
 }
 
-type Account struct {
+type Owner struct {
 	Email       string `json:"email"`
 	DisplayName string `json:"display_name"`
 }
 
 // Archive is everything an archive holds but the files' bytes.
 type Archive struct {
-	Manifest            Manifest
+	Manifest Manifest
+	// Data is a user export's documents; empty in a deployment's.
+	Data
+	// Accounts is a deployment's; empty in a user export.
+	Accounts []Account
+}
+
+// Data is one account's documents.
+type Data struct {
 	Files               []File
 	Workouts            []Workout
 	Corrections         []Correction
@@ -45,20 +61,74 @@ type Archive struct {
 	COROSMetadata       []COROSMetadata
 }
 
-// documents is each JSON entry after the manifest, in the order they're written.
-func (a *Archive) documents() []document {
+// documents is each of the account's JSON entries, in the order they're written, under prefix.
+func (d *Data) documents(prefix string) []document {
 	return []document{
-		{"files.json", &a.Files},
-		{"workouts.json", &a.Workouts},
-		{"corrections.json", &a.Corrections},
-		{"stretches.json", &a.Stretches},
-		{"routes.json", &a.Routes},
-		{"route_overrides.json", &a.RouteOverrides},
-		{"source_activities.json", &a.SourceActivities},
-		{"source_match_attempts.json", &a.SourceMatchAttempts},
-		{"weather.json", &a.Weather},
-		{"coros_metadata.json", &a.COROSMetadata},
+		{prefix + "files.json", &d.Files},
+		{prefix + "workouts.json", &d.Workouts},
+		{prefix + "corrections.json", &d.Corrections},
+		{prefix + "stretches.json", &d.Stretches},
+		{prefix + "routes.json", &d.Routes},
+		{prefix + "route_overrides.json", &d.RouteOverrides},
+		{prefix + "source_activities.json", &d.SourceActivities},
+		{prefix + "source_match_attempts.json", &d.SourceMatchAttempts},
+		{prefix + "weather.json", &d.Weather},
+		{prefix + "coros_metadata.json", &d.COROSMetadata},
 	}
+}
+
+// Account is one of a deployment's accounts, with what it takes to sign in to it again.
+type Account struct {
+	// Key names its directory, accounts/<key>/, within this archive only.
+	Key         string `json:"key"`
+	Email       string `json:"email"`
+	DisplayName string `json:"display_name"`
+	// Password is the stored bcrypt hash; null for an account that signs in only through a provider.
+	Password      []byte     `json:"password"`
+	EmailVerified bool       `json:"email_verified"`
+	CreatedAt     time.Time  `json:"created_at"`
+	Identities    []Identity `json:"identities"`
+	Data          `json:"-"`
+}
+
+// Identity is a linked sign-in at an OpenID Connect provider.
+type Identity struct {
+	Issuer      string    `json:"issuer"`
+	Subject     string    `json:"subject"`
+	EmailAtLink string    `json:"email_at_link"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+func (a *Archive) accountPrefix(key string) string { return "accounts/" + key + "/" }
+
+// documents is every document after the manifest (and accounts.json), in the order they're written.
+func (a *Archive) documents() []document {
+	if a.Manifest.Kind != KindDeployment {
+		return a.Data.documents("")
+	}
+	var docs []document
+	for i := range a.Accounts {
+		docs = append(docs, a.Accounts[i].documents(a.accountPrefix(a.Accounts[i].Key))...)
+	}
+	return docs
+}
+
+// AllFiles is every file the archive holds, each once.
+func (a *Archive) AllFiles() []File {
+	if a.Manifest.Kind != KindDeployment {
+		return a.Files
+	}
+	seen := map[string]bool{}
+	var files []File
+	for _, acct := range a.Accounts {
+		for _, f := range acct.Files {
+			if !seen[f.SHA256] {
+				seen[f.SHA256] = true
+				files = append(files, f)
+			}
+		}
+	}
+	return files
 }
 
 type document struct {

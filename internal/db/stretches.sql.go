@@ -738,3 +738,23 @@ func (q *Queries) RenameStretch(ctx context.Context, arg *RenameStretchParams) (
 	)
 	return &i, err
 }
+
+const setStretchSourceWorkout = `-- name: SetStretchSourceWorkout :exec
+UPDATE stretches
+SET
+  source_workout_id = $3
+WHERE
+  id = $1
+  AND user_id = $2
+`
+
+type SetStretchSourceWorkoutParams struct {
+	ID              int32  `json:"id"`
+	UserID          int32  `json:"user_id"`
+	SourceWorkoutID *int32 `json:"source_workout_id"`
+}
+
+func (q *Queries) SetStretchSourceWorkout(ctx context.Context, arg *SetStretchSourceWorkoutParams) error {
+	_, err := q.db.Exec(ctx, setStretchSourceWorkout, arg.ID, arg.UserID, arg.SourceWorkoutID)
+	return err
+}

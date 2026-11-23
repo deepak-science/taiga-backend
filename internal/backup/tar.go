@@ -18,6 +18,7 @@ import (
 
 const (
 	manifestName = "manifest.json"
+	accountsName = "accounts.json"
 	filesDir     = "files/"
 )
 
@@ -45,20 +46,23 @@ func Write(ctx context.Context, w io.Writer, a *Archive, open Opener) error {
 		}
 		return writeEntry(tw, name, b, modTime)
 	}
+	if err := checkKind(a); err != nil {
+		return err
+	}
 	if err := writeJSON(manifestName, a.Manifest); err != nil {
 		return err
+	}
+	if a.Manifest.Kind == KindDeployment {
+		if err := writeJSON(accountsName, a.Accounts); err != nil {
+			return err
+		}
 	}
 	for _, d := range a.documents() {
 		if err := writeJSON(d.name, d.v); err != nil {
 			return err
 		}
 	}
-	written := map[string]bool{}
-	for _, f := range a.Files {
-		if written[f.SHA256] {
-			continue
-		}
-		written[f.SHA256] = true
+	for _, f := range a.AllFiles() {
 		b, err := readFile(ctx, open, f.SHA256)
 		if err != nil {
 			return err
@@ -134,6 +138,21 @@ func Read(r io.Reader, store func(hash string, content []byte) error) (*Archive,
 	if a.Manifest.Version > Version {
 		return nil, fmt.Errorf("%w: it's format version %d, and this taiga reads up to %d; upgrade it first", ErrInvalid, a.Manifest.Version, Version)
 	}
+	if a.Manifest.Kind == KindDeployment {
+		hdr, err := next()
+		if errors.Is(err, io.EOF) || (err == nil && hdr.Name != accountsName) {
+			return nil, fmt.Errorf("%w: a deployment's backup has %s after its manifest", ErrInvalid, accountsName)
+		}
+		if err != nil {
+			return nil, err
+		}
+		if err := readJSON(tr, hdr, &a.Accounts); err != nil {
+			return nil, err
+		}
+	}
+	if err := checkKind(a); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalid, err)
+	}
 
 	docs := map[string]any{}
 	for _, d := range a.documents() {
@@ -164,10 +183,10 @@ func Read(r io.Reader, store func(hash string, content []byte) error) (*Archive,
 			return nil, fmt.Errorf("%w: unexpected entry %q", ErrInvalid, hdr.Name)
 		}
 		if len(docs) > 0 {
-			return nil, fmt.Errorf("%w: files start before %s", ErrInvalid, missing(docs))
+			return nil, fmt.Errorf("%w: files start before %s", ErrInvalid, missing(a, docs))
 		}
 		if len(listed) == 0 {
-			for _, f := range a.Files {
+			for _, f := range a.AllFiles() {
 				listed[f.SHA256] = true
 			}
 		}
@@ -190,9 +209,9 @@ func Read(r io.Reader, store func(hash string, content []byte) error) (*Archive,
 		}
 	}
 	if len(docs) > 0 {
-		return nil, fmt.Errorf("%w: it has no %s", ErrInvalid, missing(docs))
+		return nil, fmt.Errorf("%w: it has no %s", ErrInvalid, missing(a, docs))
 	}
-	for _, f := range a.Files {
+	for _, f := range a.AllFiles() {
 		if !got[f.SHA256] {
 			return nil, fmt.Errorf("%w: file %s is listed but not there; the archive may be cut short", ErrInvalid, f.SHA256)
 		}
@@ -220,11 +239,45 @@ func readJSON(tr *tar.Reader, hdr *tar.Header, v any) error {
 }
 
 // missing names one document still to come, for an error.
-func missing(docs map[string]any) string {
-	for _, d := range (&Archive{}).documents() {
+func missing(a *Archive, docs map[string]any) string {
+	for _, d := range a.documents() {
 		if _, ok := docs[d.name]; ok {
 			return d.name
 		}
 	}
 	return ""
+}
+
+// checkKind is whether the archive's kind is one there is, and a deployment's account keys can name directories.
+func checkKind(a *Archive) error {
+	switch a.Manifest.Kind {
+	case KindUser:
+		if len(a.Accounts) > 0 {
+			return errors.New("a user's export has no accounts")
+		}
+		return nil
+	case KindDeployment:
+	default:
+		return fmt.Errorf("kind %q", a.Manifest.Kind)
+	}
+	keys := map[string]bool{}
+	for _, acct := range a.Accounts {
+		if !validKey(acct.Key) || keys[acct.Key] {
+			return fmt.Errorf("account key %q", acct.Key)
+		}
+		keys[acct.Key] = true
+	}
+	return nil
+}
+
+func validKey(k string) bool {
+	if k == "" || len(k) > 64 {
+		return false
+	}
+	for _, c := range k {
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' {
+			return false
+		}
+	}
+	return true
 }

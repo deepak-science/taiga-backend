@@ -160,6 +160,12 @@ type Model interface {
 	WorkoutWeather(ctx context.Context, workoutID int32, userToken *tokens.UserToken) (*WorkoutWeather, error)
 	// Export is the user's backup (internal/backup) but the files' bytes; fetched false leaves out weather and COROS's figures.
 	Export(ctx context.Context, fetched bool, now time.Time, userToken *tokens.UserToken) (*backup.Archive, error)
+	// ExportDeployment is every account's, with their password hashes and linked sign-ins, for cmd/backup.
+	ExportDeployment(ctx context.Context, fetched bool, now time.Time) (*backup.Archive, error)
+	// CheckEmpty is ErrNotEmpty once the deployment has an account; restoring goes only into an empty one.
+	CheckEmpty(ctx context.Context) error
+	// RestoreAccount makes one of a backup's accounts again; its files' bytes must already be in fileRepo.
+	RestoreAccount(ctx context.Context, acct *backup.Account, fileRepo filerepo.FileRepo, now time.Time) (*RestoreReport, error)
 }
 
 type storeModel struct {

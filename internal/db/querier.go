@@ -26,6 +26,7 @@ type Querier interface {
 	// For metrics: every user's connections, by kind and state.
 	CountSourceConnectionsByState(ctx context.Context) ([]*CountSourceConnectionsByStateRow, error)
 	CountSourceFilesSince(ctx context.Context, arg *CountSourceFilesSinceParams) (int32, error)
+	CountUsers(ctx context.Context) (int64, error)
 	CreateActivityFile(ctx context.Context, arg *CreateActivityFileParams) (*ActivityFile, error)
 	CreateCliSession(ctx context.Context, arg *CreateCliSessionParams) (*CliSession, error)
 	CreateDeviceAuthorization(ctx context.Context, arg *CreateDeviceAuthorizationParams) (*DeviceAuthorization, error)
@@ -184,6 +185,7 @@ type Querier interface {
 	ListStretchEffortsOverWorkoutStretches(ctx context.Context, arg *ListStretchEffortsOverWorkoutStretchesParams) ([]*ListStretchEffortsOverWorkoutStretchesRow, error)
 	ListStretchesByUser(ctx context.Context, userID int32) ([]*Stretch, error)
 	ListStretchesByUserAndSport(ctx context.Context, arg *ListStretchesByUserAndSportParams) ([]*Stretch, error)
+	ListUsers(ctx context.Context) ([]*User, error)
 	ListWorkoutRoutesByUser(ctx context.Context, userID int32) ([]*WorkoutRoute, error)
 	// Oldest first, the order route detection assigns runs in; routes only group runs of one sport.
 	// A duplicate is left out even before reprocessing drops its track, since the same job marks it.
@@ -224,6 +226,7 @@ type Querier interface {
 	// For an activity dealt with before the sport code was kept.
 	SetSourceActivitySportType(ctx context.Context, arg *SetSourceActivitySportTypeParams) error
 	SetSourceCredentials(ctx context.Context, arg *SetSourceCredentialsParams) error
+	SetStretchSourceWorkout(ctx context.Context, arg *SetStretchSourceWorkoutParams) error
 	SetWorkoutDuplicateOf(ctx context.Context, arg *SetWorkoutDuplicateOfParams) error
 	// What the file states for the whole workout; part of what reprocessing rebuilds.
 	SetWorkoutFigures(ctx context.Context, arg *SetWorkoutFiguresParams) (*Workout, error)

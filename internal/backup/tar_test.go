@@ -40,15 +40,16 @@ func sample(t *testing.T) (*backup.Archive, files) {
 	now := time.Date(2026, 11, 23, 12, 0, 0, 0, time.UTC)
 	name, key := "Lake loop", "route-1"
 	return &backup.Archive{
-		Manifest: backup.Manifest{Format: backup.Format, Version: backup.Version, ProcessorVersion: "v1", CreatedAt: now, Fetched: true},
-		Files: []backup.File{
+		Manifest: backup.Manifest{Format: backup.Format, Kind: backup.KindUser, Version: backup.Version, ProcessorVersion: "v1", CreatedAt: now, Fetched: true},
+		Data: backup.Data{Files: []backup.File{
 			{SHA256: ha, Timestamp: now, CreatedAt: now, Workout: true},
 			{SHA256: hb, Timestamp: now, CreatedAt: now},
 		},
-		Corrections:    []backup.Correction{{File: ha, Sport: "walking"}},
-		Stretches:      []backup.Stretch{{Name: "Hill", Sport: "running", Meters: 500, Points: json.RawMessage(`[[43,-89],[43.01,-89]]`), SourceFile: &ha, CreatedAt: now}},
-		Routes:         []backup.Route{{Key: key, Name: &name, Representative: &ha, Workouts: []string{ha}, CreatedAt: now}},
-		RouteOverrides: []backup.RouteOverride{{File: ha, Route: &key, CreatedAt: now}},
+			Corrections:    []backup.Correction{{File: ha, Sport: "walking"}},
+			Stretches:      []backup.Stretch{{Name: "Hill", Sport: "running", Meters: 500, Points: json.RawMessage(`[[43,-89],[43.01,-89]]`), SourceFile: &ha, CreatedAt: now}},
+			Routes:         []backup.Route{{Key: key, Name: &name, Representative: &ha, Workouts: []string{ha}, CreatedAt: now}},
+			RouteOverrides: []backup.RouteOverride{{File: ha, Route: &key, CreatedAt: now}},
+		},
 	}, files{ha: a, hb: b}
 }
 
@@ -179,4 +180,48 @@ func TestReadRefusesADamagedArchive(t *testing.T) {
 			assert.ErrorIs(t, err, backup.ErrInvalid)
 		})
 	}
+}
+
+func TestADeploymentsAccountsShareTheirFiles(t *testing.T) {
+	one, f := sample(t)
+	c := []byte("carol's own file")
+	f[hashOf(c)] = c
+	now := one.Manifest.CreatedAt
+	a := &backup.Archive{
+		Manifest: backup.Manifest{Format: backup.Format, Kind: backup.KindDeployment, Version: backup.Version, CreatedAt: now},
+		Accounts: []backup.Account{
+			{Key: "account-1", Email: "alice@example.com", Password: []byte("$2a$10$hash"), EmailVerified: true, CreatedAt: now, Identities: []backup.Identity{{Issuer: "https://auth.example.com/", Subject: "a1", CreatedAt: now}}, Data: one.Data},
+			{Key: "account-2", Email: "carol@example.com", CreatedAt: now, Identities: []backup.Identity{}, Data: backup.Data{Files: append([]backup.File{one.Files[0]}, backup.File{SHA256: hashOf(c), Timestamp: now, CreatedAt: now})}},
+		},
+	}
+	stored := map[string]int{}
+	archive := write(t, a, f)
+	got, err := backup.Read(bytes.NewReader(archive), func(hash string, b []byte) error {
+		stored[hash]++
+		return nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, map[string]int{one.Files[0].SHA256: 1, one.Files[1].SHA256: 1, hashOf(c): 1}, stored, "a file two accounts have is in it once")
+	require.Len(t, got.Accounts, 2)
+	assert.Equal(t, a.Accounts[0].Password, got.Accounts[0].Password)
+	assert.Equal(t, a.Accounts[0].Identities, got.Accounts[0].Identities)
+	assert.Equal(t, one.Routes, got.Accounts[0].Routes)
+	assert.Equal(t, a.Accounts[1].Files, got.Accounts[1].Files)
+	assert.Empty(t, got.Files, "nothing at the top")
+
+	t.Run("an account's document left out", func(t *testing.T) {
+		damaged := entries(t, archive, func(name string, b []byte) []byte {
+			if name == "accounts/account-2/stretches.json" {
+				return nil
+			}
+			return b
+		})
+		_, err := backup.Read(bytes.NewReader(damaged), noStore)
+		assert.ErrorIs(t, err, backup.ErrInvalid)
+	})
+
+	t.Run("a key that isn't a name", func(t *testing.T) {
+		a.Accounts[1].Key = "../etc"
+		assert.Error(t, backup.Write(context.Background(), io.Discard, a, f.open))
+	})
 }
