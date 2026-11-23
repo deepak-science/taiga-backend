@@ -55,14 +55,22 @@ func (m *storeModel) importData(ctx context.Context, d *backup.Data, fileRepo fi
 	if err != nil {
 		return nil, err
 	}
-	existed := map[int32]bool{}
-	for _, w := range before {
-		existed[w.ID] = true
-	}
-
-	// Stretches go first, so making each new workout times it over them; the workouts already there are timed after.
-	stretches, err := m.importStretches(ctx, q, d, before, token)
-	if err != nil {
+	// Stretches go first, so making each new workout times it over them.
+	// A stretch made or reshaped here is timed over the workouts already there in the same transaction, so an import that stops can't leave it with its shape but not its efforts.
+	var stretches *importedStretches
+	if err := m.store.InTx(ctx, func(q db.Querier) error {
+		var err error
+		stretches, err = m.importStretches(ctx, q, d, before, token)
+		if err != nil {
+			return err
+		}
+		for _, s := range stretches.retime {
+			if err := timeStretch(ctx, q, s, func(int32) bool { return true }, token); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	report.Stretches = len(stretches.retime)
@@ -75,13 +83,21 @@ func (m *storeModel) importData(ctx context.Context, d *backup.Data, fileRepo fi
 		switch {
 		case IsNotFound(err):
 			af, err = q.CreateActivityFile(ctx, &db.CreateActivityFileParams{Timestamp: timestamptz(f.Timestamp), FileRepoHash: &hash, UserID: &userID})
+			if IsNotFound(err) {
+				// An upload or a sync added it since the lookup, and the insert gave way to it.
+				af, err = q.GetActivityFileByHash(ctx, &db.GetActivityFileByHashParams{UserID: &userID, FileRepoHash: &hash})
+				if err == nil && !sameInstant(af.Timestamp.Time, f.Timestamp) {
+					af, err = q.UpdateActivityFile(ctx, &db.UpdateActivityFileParams{ID: af.ID, UserID: &userID, Timestamp: timestamptz(f.Timestamp), FileRepoHash: &hash})
+				}
+			} else if err == nil {
+				report.FilesAdded++
+			}
 			if err != nil {
 				return nil, fmt.Errorf("file %s: %w", hash, err)
 			}
-			report.FilesAdded++
 		case err != nil:
 			return nil, err
-		case !af.Timestamp.Time.Equal(f.Timestamp):
+		case !sameInstant(af.Timestamp.Time, f.Timestamp):
 			if _, err := q.UpdateActivityFile(ctx, &db.UpdateActivityFileParams{ID: af.ID, UserID: &userID, Timestamp: timestamptz(f.Timestamp), FileRepoHash: &hash}); err != nil {
 				return nil, err
 			}
@@ -104,18 +120,6 @@ func (m *storeModel) importData(ctx context.Context, d *backup.Data, fileRepo fi
 			report.Workouts++
 		}
 	}
-	// Before any correction, whose reprocess replaces a workout's efforts over every stretch.
-	if err := m.store.InTx(ctx, func(q db.Querier) error {
-		for _, s := range stretches.retime {
-			if err := timeStretch(ctx, q, s, func(id int32) bool { return existed[id] }, token); err != nil {
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-
 	for _, w := range d.Workouts {
 		if slices.ContainsFunc(before, func(have *db.Workout) bool { return sameHandEntered(have, &w) }) {
 			continue
@@ -201,6 +205,11 @@ func sameTime(have pgtype.Timestamptz, t *time.Time) bool {
 	return sameSecond(have, timestamptz(*t))
 }
 
+// sameInstant goes to the microsecond, which is all Postgres keeps of an archive's nanoseconds from SQLite.
+func sameInstant(a, b time.Time) bool {
+	return a.Sub(b).Abs() < time.Microsecond
+}
+
 func sameFloat(a, b *float64) bool {
 	if a == nil || b == nil {
 		return a == b
@@ -281,14 +290,9 @@ func (m *storeModel) importStretches(ctx context.Context, q db.Querier, d *backu
 					current.Meters == shape.Meters && slices.Equal(current.Points, shape.Points)
 			})
 			if j >= 0 {
-				// Its efforts may not all have been timed before it stopped, so they're timed again.
-				st := have[j]
-				used[st.ID] = true
-				if err := q.DeleteStretchEffortsByStretch(ctx, &db.DeleteStretchEffortsByStretchParams{StretchID: st.ID, UserID: token.ID}); err != nil {
-					return nil, err
-				}
-				out.added[i] = st.ID
-				out.retime = append(out.retime, importedStretch{id: st.ID, sport: s.Sport, shape: shape})
+				// It was timed when it was made, in the same transaction; only its source is left to set.
+				used[have[j].ID] = true
+				out.added[i] = have[j].ID
 				continue
 			}
 		}
@@ -341,25 +345,44 @@ func importRoutes(ctx context.Context, q db.Querier, d *backup.Data, userID int3
 		on[wr.WorkoutID] = wr.RouteID
 	}
 
-	changed := 0
-	routeIDs := map[string]int32{}
-	for _, r := range d.Routes {
-		var runs []int32
+	// Each archive route's runs, and the account's route most of them are on (0 for none), from the memberships before any change.
+	type placement struct {
+		runs    []int32
+		target  int32
+		overlap int
+	}
+	placed := make([]placement, len(d.Routes))
+	for i, r := range d.Routes {
 		overlap := map[int32]int{}
 		for _, hash := range r.Workouts {
 			if id := ref(&hash); id != nil {
-				runs = append(runs, *id)
+				placed[i].runs = append(placed[i].runs, *id)
 				if rid, ok := on[*id]; ok {
 					overlap[rid]++
 				}
 			}
 		}
-		var target int32
 		for rid, n := range overlap {
-			if target == 0 || n > overlap[target] || (n == overlap[target] && rid < target) {
-				target = rid
+			if p := &placed[i]; p.target == 0 || n > p.overlap || (n == p.overlap && rid < p.target) {
+				p.target, p.overlap = rid, n
 			}
 		}
+	}
+	// Archive routes the account has as one (it merged them, say) share a target: the one with most runs there names it, the first on a tie, so importing again doesn't rename it back and forth.
+	namer := map[int32]int{}
+	for i, p := range placed {
+		if p.target == 0 {
+			continue
+		}
+		if j, ok := namer[p.target]; !ok || p.overlap > placed[j].overlap {
+			namer[p.target] = i
+		}
+	}
+
+	changed := 0
+	routeIDs := map[string]int32{}
+	for i, r := range d.Routes {
+		target := placed[i].target
 		made := target == 0
 		if made {
 			row, err := q.CreateRoute(ctx, &db.CreateRouteParams{UserID: userID, RepresentativeWorkoutID: ref(r.Representative)})
@@ -368,7 +391,8 @@ func importRoutes(ctx context.Context, q db.Querier, d *backup.Data, userID int3
 			}
 			target = row.ID
 		}
-		renamed := r.Name != nil && (names[target] == nil || *names[target] != *r.Name)
+		// An unnamed route in the archive leaves the account's name: like a correction the archive doesn't have, it isn't one to take away.
+		renamed := (made || namer[target] == i) && r.Name != nil && (names[target] == nil || *names[target] != *r.Name)
 		if renamed {
 			if _, err := q.RenameRoute(ctx, &db.RenameRouteParams{ID: target, UserID: userID, Name: r.Name}); err != nil {
 				return 0, err
@@ -379,7 +403,7 @@ func importRoutes(ctx context.Context, q db.Querier, d *backup.Data, userID int3
 			changed++
 		}
 		routeIDs[r.Key] = target
-		for _, id := range runs {
+		for _, id := range placed[i].runs {
 			if _, ok := on[id]; ok {
 				continue
 			}

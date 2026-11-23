@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +17,11 @@ import (
 
 // maxImportBytes bounds an import's body, which is streamed and never held whole.
 const maxImportBytes = 2 << 30
+
+// maxImportFileBytes bounds one file in it: uploads are 32MB, and the largest real activity file is a few.
+const maxImportFileBytes = 64 << 20
+
+var errImportFileTooLarge = fmt.Errorf("an imported file is at most %d bytes", maxImportFileBytes)
 
 // importWindow is how long importing may take once the archive is read: every workout new to the account is made from its file before the answer.
 const importWindow = 30 * time.Minute
@@ -41,7 +47,12 @@ func postImport(m models.Model, fileRepo filerepo.FileRepo) http.HandlerFunc {
 		body := &deadlineReader{r: http.MaxBytesReader(w, r.Body, maxImportBytes), rc: rc}
 		// The files go into the repo as they're read; they're content-addressed, so an archive turned away later leaves nothing wrong behind there.
 		a, err := backup.Read(body, func(hash string, content io.Reader) error {
-			stored, err := fileRepo.Store(ctx, content)
+			// The repo holds a file in memory to store it, so one is capped well under the body's limit.
+			capped := &io.LimitedReader{R: content, N: maxImportFileBytes + 1}
+			stored, err := fileRepo.Store(ctx, capped)
+			if capped.N == 0 {
+				return fmt.Errorf("%w: file %s", errImportFileTooLarge, hash)
+			}
 			if err != nil {
 				return fmt.Errorf("storing file %s: %w", hash, err)
 			}
@@ -50,10 +61,15 @@ func postImport(m models.Model, fileRepo filerepo.FileRepo) http.HandlerFunc {
 			}
 			return nil
 		})
+		// The server's write timeout runs from the request's start, so a long upload would leave no time for any answer, an error's included.
+		_ = rc.SetWriteDeadline(time.Now().Add(importWindow))
 		var tooLarge *http.MaxBytesError
 		switch {
 		case errors.As(err, &tooLarge):
 			http.Error(w, fmt.Sprintf("an import is at most %d bytes", maxImportBytes), http.StatusRequestEntityTooLarge)
+			return
+		case errors.Is(err, errImportFileTooLarge):
+			http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
 			return
 		case errors.Is(err, backup.ErrInvalid):
 			unprocessableError(w, err)
@@ -67,10 +83,16 @@ func postImport(m models.Model, fileRepo filerepo.FileRepo) http.HandlerFunc {
 			return
 		}
 
-		// The server's write timeout runs from the request's start, so it would cut the answer off.
-		_ = rc.SetWriteDeadline(time.Now().Add(importWindow))
+		// The work stops with the answer's deadline, rather than running on, holding the lock, for an answer no one gets; what it did stays, and importing again finishes it.
+		ctx, cancel := context.WithTimeout(ctx, importWindow)
+		defer cancel()
 		report, err := m.ImportAccount(ctx, &a.Data, fileRepo, time.Now(), userToken)
-		if err != nil {
+		switch {
+		// A document whose JSON reads but whose content doesn't, such as a stretch's points.
+		case errors.Is(err, backup.ErrInvalid):
+			unprocessableError(w, err)
+			return
+		case err != nil:
 			serverError(w, err)
 			return
 		}

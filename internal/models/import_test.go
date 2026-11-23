@@ -253,3 +253,50 @@ func TestImportFinishesAStretchAnEarlierImportLeftWithoutItsSource(t *testing.T)
 	assert.Equal(t, 1, stretches[0].EffortCount)
 	assert.Equal(t, userComparable(archive), userComparable(dst.export(t)))
 }
+
+func TestImportNamesARouteTheAccountMergedOnce(t *testing.T) {
+	ctx := context.Background()
+	runs := [][]byte{
+		testsupport.EncodeFIT(t, day1, importSplits),
+		testsupport.EncodeFIT(t, day1.AddDate(0, 0, 1), importSplits),
+		testsupport.EncodeFITHeading(t, day1.AddDate(0, 0, 2), importSplits, 180),
+		testsupport.EncodeFITHeading(t, day1.AddDate(0, 0, 3), importSplits, 180),
+	}
+	upload := func(s *importSide) []*models.Workout {
+		var ws []*models.Workout
+		for _, r := range runs {
+			ws = append(ws, s.upload(t, r, day1))
+		}
+		s.detect(t)
+		return ws
+	}
+	src := newImportSide(t, "alice@example.com")
+	srcRuns := upload(src)
+	for i, name := range map[int]string{0: "North", 2: "South"} {
+		route, err := src.m.WorkoutRoute(ctx, srcRuns[i].ID, src.user)
+		require.NoError(t, err)
+		_, err = src.m.RenameRoute(ctx, route.ID, new(name), src.user)
+		require.NoError(t, err)
+	}
+	archive := src.export(t)
+	require.Len(t, archive.Routes, 2)
+
+	// The account has the two as one.
+	dst := newImportSide(t, "bob@example.com")
+	dstRuns := upload(dst)
+	north, err := dst.m.WorkoutRoute(ctx, dstRuns[0].ID, dst.user)
+	require.NoError(t, err)
+	south, err := dst.m.WorkoutRoute(ctx, dstRuns[2].ID, dst.user)
+	require.NoError(t, err)
+	_, err = dst.m.MergeRoutes(ctx, north.ID, south.ID, dst.user)
+	require.NoError(t, err)
+	dst.detect(t)
+
+	report := dst.importFrom(t, src, archive)
+	assert.Equal(t, 1, report.Routes, "named once, by the first of the two")
+	merged, err := dst.m.WorkoutRoute(ctx, dstRuns[2].ID, dst.user)
+	require.NoError(t, err)
+	assert.Equal(t, new("North"), merged.Name)
+	again := dst.importFrom(t, src, archive)
+	assert.Equal(t, 0, again.Routes, "not renamed back and forth")
+}

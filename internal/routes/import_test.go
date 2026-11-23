@@ -2,7 +2,11 @@ package routes_test
 
 import (
 	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"testing"
 
@@ -77,4 +81,22 @@ func TestImport(t *testing.T) {
 		status, _ := anon.importArchive(archive)
 		assert.Equal(t, http.StatusUnauthorized, status)
 	})
+}
+
+func TestImportTurnsAwayAFileOverItsLimit(t *testing.T) {
+	srv, m, toker := newAPI(t)
+	bob := newUserClient(t, srv, m, toker, "bob@example.com")
+	big := bytes.Repeat([]byte("taiga"), (64<<20)/5+1)
+	sum := sha256.Sum256(big)
+	hash := hex.EncodeToString(sum[:])
+	a := &backup.Archive{Manifest: backup.Manifest{Format: backup.Format, Kind: backup.KindUser, Version: backup.Version, CreatedAt: routeDay}}
+	a.Files = []backup.File{{SHA256: hash, Timestamp: routeDay}}
+	var buf bytes.Buffer
+	require.NoError(t, backup.Write(t.Context(), &buf, a, func(context.Context, string) (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(big)), nil
+	}))
+
+	status, body := bob.importArchive(buf.Bytes())
+	assert.Equal(t, http.StatusRequestEntityTooLarge, status)
+	assert.Contains(t, string(body), hash)
 }

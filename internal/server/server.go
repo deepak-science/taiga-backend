@@ -118,7 +118,8 @@ func New(cfg *config.Config) (*Server, error) {
 
 	// CORS for development
 	if cfg.App.IsDevelopment() {
-		r.Use(middleware.AllowContentType("application/json", "multipart/form-data"))
+		// An import is a tar as the raw body.
+		r.Use(middleware.AllowContentType("application/json", "multipart/form-data", "application/x-tar"))
 		r.Use(func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Access-Control-Allow-Origin", "*")
