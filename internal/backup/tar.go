@@ -213,6 +213,9 @@ func readJSON(tr *tar.Reader, hdr *tar.Header, v any) error {
 	if err := dec.Decode(v); err != nil {
 		return fmt.Errorf("%w: reading %s: %w", ErrInvalid, hdr.Name, err)
 	}
+	if err := dec.Decode(&json.RawMessage{}); !errors.Is(err, io.EOF) {
+		return fmt.Errorf("%w: %s has more after its value", ErrInvalid, hdr.Name)
+	}
 	return nil
 }
 

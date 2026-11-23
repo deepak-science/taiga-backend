@@ -14,7 +14,7 @@ import (
 	"gitea.deepak.science/deepak/taiga/internal/workouts"
 )
 
-// Export is the user's archive but the files' bytes, read in one transaction so it's one moment's state.
+// Export is the user's archive but the files' bytes, read in one snapshot so it's one moment's state: a file a sync imports between two of its queries can't be left out while its source activity is kept.
 // fetched false leaves out weather and COROS's figures.
 func (m *storeModel) Export(ctx context.Context, fetched bool, now time.Time, userToken *tokens.UserToken) (*backup.Archive, error) {
 	a := &backup.Archive{Manifest: backup.Manifest{
@@ -24,7 +24,7 @@ func (m *storeModel) Export(ctx context.Context, fetched bool, now time.Time, us
 		CreatedAt:        now.UTC(),
 		Fetched:          fetched,
 	}}
-	err := m.store.InTx(ctx, func(q db.Querier) error {
+	err := m.store.InSnapshot(ctx, func(q db.Querier) error {
 		return exportInto(ctx, q, a, userToken.ID)
 	})
 	if err != nil {

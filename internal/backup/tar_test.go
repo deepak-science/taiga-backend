@@ -165,7 +165,13 @@ func TestReadRefusesADamagedArchive(t *testing.T) {
 		}),
 		"an unlisted file": entries(t, good, func(_ string, b []byte) []byte { return b }, [2]string{"files/" + hashOf([]byte("extra")), "extra"}),
 		"an unknown entry": entries(t, good, func(_ string, b []byte) []byte { return b }, [2]string{"notes.txt", "hi"}),
-		"cut short":        good[:len(good)/2],
+		"more after a document": entries(t, good, func(name string, b []byte) []byte {
+			if name == "workouts.json" {
+				return []byte(`[] {"unexpected":true}`)
+			}
+			return b
+		}),
+		"cut short": good[:len(good)/2],
 	}
 	for name, archive := range cases {
 		t.Run(name, func(t *testing.T) {

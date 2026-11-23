@@ -1,7 +1,6 @@
 package routes
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"log"
@@ -43,10 +42,9 @@ func getExport(m models.Model, fileRepo filerepo.FileRepo) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/x-tar")
 		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="taiga-%s.tar"`, now.UTC().Format("2006-01-02")))
 		w.WriteHeader(http.StatusOK)
-		// Not the request's context, which the router's timeout ends; a client that goes away fails the next write instead.
-		ctx := context.WithoutCancel(r.Context())
 		out := &deadlineWriter{w: w, rc: http.NewResponseController(w)}
-		if err := backup.Write(ctx, out, a, fileRepo.Fetch); err != nil {
+		// The router's timeout skips /export, so the request's context ends only when the client goes, which stops a read from the repo too.
+		if err := backup.Write(r.Context(), out, a, fileRepo.Fetch); err != nil {
 			log.Printf("export for user %d stopped: %v", userToken.ID, err)
 			// The status is already sent, so cutting the connection is the only way left to say it failed.
 			panic(http.ErrAbortHandler)

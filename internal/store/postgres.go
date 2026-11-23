@@ -81,3 +81,10 @@ func (s *pgStore) InTx(ctx context.Context, fn func(db.Querier) error) error {
 		return fn(db.New(tx))
 	})
 }
+
+// InSnapshot is REPEATABLE READ, since the default READ COMMITTED gives each statement a snapshot of its own.
+func (s *pgStore) InSnapshot(ctx context.Context, fn func(db.Querier) error) error {
+	return pgx.BeginTxFunc(ctx, s.pgPool, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
+		return fn(db.New(tx))
+	})
+}

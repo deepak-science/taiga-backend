@@ -12,7 +12,7 @@ curl -H "Authorization: Bearer $TOKEN" https://taiga.example.com/api/export -o t
 
 `?fetched=false` leaves out weather and COROS's figures. Both can be fetched again, but that's slow, and each lookup tells the provider again where and when the user ran.
 
-The documents are read in one transaction, so they are one moment's state; the file bytes are streamed after it. The router's 30-second timeout doesn't apply to it, and each write to the client gets its own two minutes. If the export fails after it has started, the connection is cut rather than ended cleanly, so a partial download never reads as a whole archive.
+The documents are read in one snapshot (REPEATABLE READ on PostgreSQL), so they are one moment's state; the file bytes are streamed after it. The router's 30-second timeout doesn't apply to it, and each write to the client gets its own two minutes. If the export fails after it has started, the connection is cut rather than ended cleanly, so a partial download never reads as a whole archive.
 
 ## What's in it
 
@@ -43,7 +43,7 @@ Never in it: COROS tokens and the client registration (sealed under the signing 
 
 - doesn't start with a manifest of format `taiga-backup`;
 - is of a newer version than this taiga reads;
-- has an entry it doesn't know, an unknown field in a document, or a document after the files;
+- has an entry it doesn't know, an unknown field in a document, anything after a document's JSON value, or a document after the files;
 - has a file whose bytes don't match its name, or that `files.json` doesn't list;
 - is missing a document, or a file `files.json` lists, which is how an archive cut short shows.
 
