@@ -282,7 +282,7 @@ Years of history (an Endomondo archive goes back to 2016) make an all-time list 
 - [x] **Longest run** (feedback 2026-11-21): the longest by distance and the longest by time, per sport, counted workouts only; the two can be different runs. Every sport of `GET /workouts/totals` carries `longest_by_distance` and `longest_by_time` (each with its workout's id, name, start, distance and time), so any window the best page offers has them, and `GET /workouts/totals/year` gives the same per local year, as the yearly bests are; the weekly and monthly totals carry them too, which is each week's long run. Time is start to end (`time_seconds`), as the totals sum it, so a long pause makes a run longer.
   - [x] Frontend (taiga-frontend#32): Farthest and Longest columns in the workout list's totals, and a "Longest runs" card on the best page, with each year's under all time.
 - [x] **Medals**, as Endomondo gave them (feedback 2026-11-22): an effort holds gold while it's the best ever at its segment and sport, silver while it's the best of its local calendar year, bronze while it's the best of its month, only the highest of them, and the earlier run keeps a tie. They're the standing now, not whether a run was a PB when it was run: a faster run takes the medal, so a year's and a month's only move while it lasts. Worked out on every request from the stored segments (`Medals`), never stored, so corrections and deletions move them at once. `GET /workouts` carries each workout's `medals` (`[{segment, medal}]`) and `GET /workouts/{id}/segments` each segment's `medal`, both at the local calendar of `?tz=`.
-  - [ ] Frontend: badges in the workout list and beside each segment on a workout's page.
+  - [x] Frontend (taiga-frontend#33): badges in the workout list and beside each segment on a workout's page.
 
 ## M12 — Workout names
 
@@ -559,7 +559,7 @@ One COROS PACE 4 run's FIT file, and one call each to COROS's activity detail, f
 - [x] **Outbound calls:** a count and duration by destination (COROS, Open-Meteo, the OIDC issuers) and outcome, so a slow or failing provider shows apart from taiga's own faults.
 - [x] **Storage and the database:** file repo reads and writes by backend and outcome; the pool's open and waiting connections. Postgres's own figures already come from CNPG.
 - [x] **No per-user labels anywhere.** Label values are kinds, routes, states and outcomes: a fixed handful each. Who did what stays in the log.
-- [ ] **In the homelab** (proxmox-homelab, on its taiga branch): a `PodMonitor` for the backend's metrics port, a dashboard kept as JSON beside the manifests (requests and errors, queue depth and oldest job, dead jobs, syncs and the COROS allowance), and alerts for dead jobs, a queue that isn't draining, and a connection that needs reconnecting.
+- [x] **In the homelab** (proxmox-homelab#31): a `PodMonitor` for the backend's metrics port, the Taiga dashboard as JSON in the k8s-platform root with the other dashboards (requests and errors, queue depth and oldest job, dead jobs, syncs and the COROS allowance), and alerts for dead jobs, a queue that isn't draining, a connection that needs reconnecting, and metrics gone missing.
 - [x] **Frontend:** nothing from the browser. nginx's request log, or its stub status through an exporter, if the static side ever needs watching.
 
 ## M18 — Admins
