@@ -622,7 +622,7 @@ The files are the source of truth, and the rest of a workout (summary, segments,
 ### The whole deployment
 
 - [x] **`cmd/backup`** (in the image beside `useradd`): every user's archive in one go. This one includes accounts, password hashes and linked OIDC identities so a restore can sign in. `cmd/restore` reads it into an empty deployment. Restoring makes every workout again from its file and puts the rest back over it (`docs/backup.md`).
-- [ ] **In the homelab** (proxmox-homelab): a CronJob running `cmd/backup` nightly to somewhere off the cluster (the NAS, or S3), keeping a few weeks. This adds to CNPG's and the PVC's own backups, it doesn't replace them: it's the copy that survives a schema mistake and that a fresh deployment can read.
+- [ ] **In the homelab** (proxmox-homelab#33, not yet deployed): a CronJob running `cmd/backup` nightly to somewhere off the cluster (the NAS, or S3), keeping a few weeks. This adds to CNPG's and the PVC's own backups, it doesn't replace them: it's the copy that survives a schema mistake and that a fresh deployment can read.
 - [ ] **A dev stack from it:** restore last night's backup into a throwaway deployment (local SQLite, or a second namespace) to try a migration or a processor change on real data before it reaches the real one. That's the dev/prod split there isn't one of yet.
 
 ### Before an upgrade
