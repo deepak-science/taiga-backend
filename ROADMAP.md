@@ -616,8 +616,9 @@ The files are the source of truth, and the rest of a workout (summary, segments,
 
 - [x] **Export:** `GET /export` streams the signed-in user's archive (`docs/backup.md`), `?fetched=false` without weather and COROS's figures.
   - [x] `taco export > taiga.tar`, or `-o taiga.tar` (taiga-cliclient#46).
-- [ ] **Import:** into the signed-in account, and idempotent. Files dedupe by hash as uploads do, and state is matched by file hash, so importing the same archive twice, or into an account that already has some of it, changes nothing the second time. Then queue reprocessing and route detection, and the derived data rebuilds through the queue. Too large for the 32MB upload limit, so either a streamed endpoint with a limit of its own, or only through the CLI below to start with.
-- [ ] Conflicts: where the account and the archive disagree (a correction, a route name), the archive wins, or there's an option to say so. Decide when building it.
+- [x] **Import:** `POST /import` streams a user's export into the signed-in account (`docs/backup.md`), with a 2GB limit of its own. It's idempotent: files dedupe by hash as uploads do, state is matched by file hash, and hand-entered workouts by start time, sport, distance and duration. Workouts are made in the request, as a restore makes them, and route detection is queued.
+  - [ ] `taco import`, and the frontend proxy's body limit and read timeout for `/api/import`.
+- [x] Conflicts: the archive wins over what the user set (corrections, route names and placements, stretch points, file timestamps), what only accumulates is merged, and nothing only the account has is removed.
 
 ### The whole deployment
 

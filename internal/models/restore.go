@@ -13,7 +13,6 @@ import (
 	"gitea.deepak.science/deepak/taiga/internal/db"
 	"gitea.deepak.science/deepak/taiga/internal/filerepo"
 	"gitea.deepak.science/deepak/taiga/internal/tokens"
-	"gitea.deepak.science/deepak/taiga/internal/workouts"
 )
 
 // ErrNotEmpty means a restore was pointed at a deployment that already has accounts.
@@ -21,15 +20,13 @@ var ErrNotEmpty = errors.New("this deployment already has accounts; restore only
 
 // RestoreReport is what restoring one account did, and what it couldn't.
 type RestoreReport struct {
-	UserID   int32
-	Workouts int
-	// Unreadable is the files whose workout this taiga couldn't make again, with why; they're kept as files without a workout.
-	Unreadable map[string]string
+	UserID int32
+	ImportReport
 }
 
 // RestoreAccount makes the account and everything of it the archive holds, in a deployment with no other account of that email.
 // The files' bytes must already be in fileRepo.
-// Workouts are made from their files as an upload makes them, so their derived data is this taiga's; the rest is put back over them.
+// It brings the data in as an import does, into an account with nothing to match.
 func (m *storeModel) RestoreAccount(ctx context.Context, acct *backup.Account, fileRepo filerepo.FileRepo, now time.Time) (*RestoreReport, error) {
 	q, err := m.store.GetQuerier()
 	if err != nil {
@@ -40,139 +37,18 @@ func (m *storeModel) RestoreAccount(ctx context.Context, acct *backup.Account, f
 		return nil, fmt.Errorf("creating the account: %w", err)
 	}
 	token := &tokens.UserToken{ID: user.ID, Email: user.Email}
-	report := &RestoreReport{UserID: user.ID, Unreadable: map[string]string{}}
+	report := &RestoreReport{UserID: user.ID}
 	for _, id := range acct.Identities {
 		if _, err := q.CreateIdentity(ctx, &db.CreateIdentityParams{UserID: user.ID, Issuer: id.Issuer, Subject: id.Subject, EmailAtLink: id.EmailAtLink}); err != nil {
 			return nil, fmt.Errorf("linking %s: %w", id.Issuer, err)
 		}
 	}
-	d := &acct.Data
-
-	// Stretches go first, so making each workout times it over them.
-	stretchIDs := make([]int32, len(d.Stretches))
-	for i, s := range d.Stretches {
-		row, err := q.CreateStretch(ctx, &db.CreateStretchParams{UserID: user.ID, Name: s.Name, Sport: s.Sport, Meters: s.Meters, Points: s.Points})
-		if err != nil {
-			return nil, fmt.Errorf("stretch %q: %w", s.Name, err)
-		}
-		stretchIDs[i] = row.ID
-	}
-
-	fileIDs := map[string]int32{}
-	workoutIDs := map[string]int32{}
-	for _, f := range d.Files {
-		hash := f.SHA256
-		af, err := q.CreateActivityFile(ctx, &db.CreateActivityFileParams{Timestamp: timestamptz(f.Timestamp), FileRepoHash: &hash, UserID: &user.ID})
-		if err != nil {
-			return nil, fmt.Errorf("file %s: %w", hash, err)
-		}
-		fileIDs[hash] = af.ID
-		if !f.Workout {
-			continue
-		}
-		w, _, err := m.CreateWorkoutFromActivityFile(ctx, af.ID, token, fileRepo)
-		if errors.Is(err, workouts.ErrUnreadableFile) || errors.Is(err, workouts.ErrUnsupportedActivity) {
-			report.Unreadable[hash] = err.Error()
-			continue
-		}
-		if err != nil {
-			return nil, fmt.Errorf("making the workout from %s: %w", hash, err)
-		}
-		workoutIDs[hash] = w.ID
-		report.Workouts++
-	}
-	for _, w := range d.Workouts {
-		if _, err := m.AddWorkout(ctx, &Workout{
-			DistanceMiles: w.DistanceMiles, TimeSeconds: w.TimeSeconds, SpeedMph: w.SpeedMph, PaceMinPerMile: w.PaceMinPerMile,
-			StartTime: optionalTimestamptz(w.StartTime), EndTime: optionalTimestamptz(w.EndTime), Sport: w.Sport, SubSport: w.SubSport,
-		}, token); err != nil {
-			return nil, fmt.Errorf("hand-entered workout: %w", err)
-		}
-		report.Workouts++
-	}
-	for _, c := range d.Corrections {
-		id, ok := workoutIDs[c.File]
-		if !ok {
-			continue
-		}
-		if _, err := m.CorrectWorkout(ctx, id, Corrections{Sport: c.Sport, ExcludedReason: c.ExcludedReason}, token, fileRepo); err != nil {
-			return nil, fmt.Errorf("correcting the workout from %s: %w", c.File, err)
-		}
-	}
-	ref := func(hash *string) *int32 {
-		if hash == nil {
-			return nil
-		}
-		if id, ok := workoutIDs[*hash]; ok {
-			return &id
-		}
-		return nil
-	}
-	for i, s := range d.Stretches {
-		if src := ref(s.SourceFile); src != nil {
-			if err := q.SetStretchSourceWorkout(ctx, &db.SetStretchSourceWorkoutParams{ID: stretchIDs[i], UserID: user.ID, SourceWorkoutID: src}); err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	if err := restoreRoutes(ctx, q, d, user.ID, ref); err != nil {
+	imported, err := m.importData(ctx, &acct.Data, fileRepo, now, token)
+	if err != nil {
 		return nil, err
 	}
-	if err := restoreSources(ctx, q, d, user.ID, fileIDs, workoutIDs); err != nil {
-		return nil, err
-	}
-	// After every reprocess above, which drops a reading whose workout's span moved.
-	if err := restoreFetched(ctx, q, d, user.ID, workoutIDs); err != nil {
-		return nil, err
-	}
-	// Detection finds the duplicates and regroups the routes, keeping the restored names; the server's worker runs it.
-	if err := q.EnqueueDetectRoutes(ctx, &db.EnqueueDetectRoutesParams{UserID: user.ID, RunAt: timestamptz(now)}); err != nil {
-		return nil, err
-	}
+	report.ImportReport = *imported
 	return report, nil
-}
-
-// restoreRoutes puts the routes back as detection left them, so the next detection keeps their names.
-func restoreRoutes(ctx context.Context, q db.Querier, d *backup.Data, userID int32, ref func(*string) *int32) error {
-	routeIDs := map[string]int32{}
-	for _, r := range d.Routes {
-		row, err := q.CreateRoute(ctx, &db.CreateRouteParams{UserID: userID, RepresentativeWorkoutID: ref(r.Representative)})
-		if err != nil {
-			return fmt.Errorf("route %s: %w", r.Key, err)
-		}
-		routeIDs[r.Key] = row.ID
-		if r.Name != nil {
-			if _, err := q.RenameRoute(ctx, &db.RenameRouteParams{ID: row.ID, UserID: userID, Name: r.Name}); err != nil {
-				return err
-			}
-		}
-		for _, hash := range r.Workouts {
-			if id := ref(&hash); id != nil {
-				if err := q.AddWorkoutRoute(ctx, &db.AddWorkoutRouteParams{WorkoutID: *id, RouteID: row.ID, UserID: userID}); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	for _, o := range d.RouteOverrides {
-		id := ref(&o.File)
-		if id == nil {
-			continue
-		}
-		var route *int32
-		if o.Route != nil {
-			rid, ok := routeIDs[*o.Route]
-			if !ok {
-				continue
-			}
-			route = &rid
-		}
-		if err := q.UpsertRouteOverride(ctx, &db.UpsertRouteOverrideParams{WorkoutID: *id, UserID: userID, RouteID: route, WithGroup: o.WithGroup}); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func restoreSources(ctx context.Context, q db.Querier, d *backup.Data, userID int32, fileIDs, workoutIDs map[string]int32) error {

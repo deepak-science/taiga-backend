@@ -1,0 +1,91 @@
+package routes
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"sync"
+	"time"
+
+	"gitea.deepak.science/deepak/taiga/internal/backup"
+	"gitea.deepak.science/deepak/taiga/internal/filerepo"
+	"gitea.deepak.science/deepak/taiga/internal/models"
+	"gitea.deepak.science/deepak/taiga/internal/tokens"
+)
+
+// maxImportBytes bounds an import's body, which is streamed and never held whole.
+const maxImportBytes = 2 << 30
+
+// importWindow is how long importing may take once the archive is read: every workout new to the account is made from its file before the answer.
+const importWindow = 30 * time.Minute
+
+// postImport reads a user's export (docs/backup.md), sent as the request body, into the signed-in account, and answers with what it did.
+// One import runs at a time: two at once would each add a hand-entered workout the other hadn't yet.
+func postImport(m models.Model, fileRepo filerepo.FileRepo) http.HandlerFunc {
+	var running sync.Mutex
+	return func(w http.ResponseWriter, r *http.Request) {
+		userToken, err := tokens.UserTokenFromContext(r.Context())
+		if err != nil {
+			unauthorizedHandler(w, r)
+			return
+		}
+		if !running.TryLock() {
+			conflictError(w, errors.New("an import is already running; try again once it's done"))
+			return
+		}
+		defer running.Unlock()
+
+		ctx := r.Context()
+		rc := http.NewResponseController(w)
+		body := &deadlineReader{r: http.MaxBytesReader(w, r.Body, maxImportBytes), rc: rc}
+		// The files go into the repo as they're read; they're content-addressed, so an archive turned away later leaves nothing wrong behind there.
+		a, err := backup.Read(body, func(hash string, content io.Reader) error {
+			stored, err := fileRepo.Store(ctx, content)
+			if err != nil {
+				return fmt.Errorf("storing file %s: %w", hash, err)
+			}
+			if stored != hash {
+				return fmt.Errorf("file %s was stored as %s", hash, stored)
+			}
+			return nil
+		})
+		var tooLarge *http.MaxBytesError
+		switch {
+		case errors.As(err, &tooLarge):
+			http.Error(w, fmt.Sprintf("an import is at most %d bytes", maxImportBytes), http.StatusRequestEntityTooLarge)
+			return
+		case errors.Is(err, backup.ErrInvalid):
+			unprocessableError(w, err)
+			return
+		case err != nil:
+			serverError(w, err)
+			return
+		}
+		if a.Manifest.Kind != backup.KindUser {
+			unprocessableError(w, errors.New("that's a deployment's backup, not one user's export; restore it into an empty deployment instead"))
+			return
+		}
+
+		// The server's write timeout runs from the request's start, so it would cut the answer off.
+		_ = rc.SetWriteDeadline(time.Now().Add(importWindow))
+		report, err := m.ImportAccount(ctx, &a.Data, fileRepo, time.Now(), userToken)
+		if err != nil {
+			serverError(w, err)
+			return
+		}
+		writeJSON(w, report)
+	}
+}
+
+// deadlineReader gives each read its own deadline, so a stalled client is cut off but a long upload isn't.
+type deadlineReader struct {
+	r  io.Reader
+	rc *http.ResponseController
+}
+
+func (d *deadlineReader) Read(p []byte) (int, error) {
+	// Not every ResponseWriter can set one (a test's recorder can't); it then reads without.
+	_ = d.rc.SetReadDeadline(time.Now().Add(exportWriteWindow))
+	return d.r.Read(p)
+}

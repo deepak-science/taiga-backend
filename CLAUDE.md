@@ -89,6 +89,7 @@ This is the taiga API: upload FIT files (or Endomondo export JSON, or TCX such a
 - **internal/backup**: The archive a user's export (`kind: user`) or the deployment's backup (`kind: deployment`) is written to (`docs/backup.md`)
   - A tar of `manifest.json`, one JSON document per kind of state nothing can rebuild from the files, then `files/<sha256>`; workouts referred to by file hash, never by id; a deployment's has `accounts.json` and each account's documents under `accounts/<key>/`, its files shared
   - `Write` and `Read` both check each file against its hash; `Read` turns away a newer version, unknown entries or fields, and an archive cut short
+  - `models.ImportAccount` reads a user's into an existing account, matching by file hash; `RestoreAccount` is the same into a new one
 
 - **internal/migration**: golang-migrate wrapper used on startup and by `cmd/migrate`
 
@@ -396,8 +397,9 @@ sources:
 - `PUT /workouts/{id}/route/override` - Move the workout onto a route with `{"route_id": N}`, or off every route with `{"route_id": null}`; `422` for an unknown route, one of another sport, or a workout with no GPS track
 - `DELETE /workouts/{id}/route/override` - Hand the workout back to detection; `204`
 
-### Export (requires JWT token; `docs/backup.md`)
+### Export and import (requires JWT token; `docs/backup.md`)
 - `GET /export` - The user's backup as a tar (`taiga-YYYY-MM-DD.tar`): their files and what nothing can rebuild from them (hand-entered workouts, corrections, stretches, route names and placements, what sources dealt with, and weather and COROS's figures unless `?fetched=false`). Exempt from the 30-second request timeout; a failure partway cuts the connection
+- `POST /import` - Read a user's export, the raw tar as the body, into the signed-in account: `{files, files_added, files_retimed, workouts, corrections, stretches, routes, unreadable}`. Idempotent, matched by file hash (hand-entered workouts by start time, sport, distance and duration); the archive wins over what the user set, and nothing only the account has is removed. `422` for an archive that won't read or a deployment's backup, `413` past 2GB, `409` while another import runs. Exempt from the 30-second request timeout
 
 ### Jobs API (requires JWT token)
 - `GET /jobs?state=queued|running|done|dead` - The user's 100 newest jobs, optionally in one state; done jobs are pruned after a week
