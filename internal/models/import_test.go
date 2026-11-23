@@ -364,3 +364,29 @@ func TestImportSkipsARouteNoneOfWhoseRunsMadeIt(t *testing.T) {
 	}
 	assert.Equal(t, len(archive.Routes)-1, first.Routes)
 }
+
+func TestImportSkipsALoneUnnamedRoute(t *testing.T) {
+	src := newImportSide(t, "alice@example.com")
+	richAccount(t, src)
+	archive := src.export(t)
+	// The run kept off every route, as a route of its own that nothing names or places onto: detection would delete it.
+	require.Len(t, archive.RouteOverrides, 1)
+	archive.Routes = append(archive.Routes, backup.Route{Key: "lone", Workouts: []string{archive.RouteOverrides[0].File}})
+
+	dst := newImportSide(t, "bob@example.com")
+	first := dst.importFrom(t, src, archive)
+	assert.Equal(t, len(archive.Routes)-1, first.Routes)
+	assert.Equal(t, 0, dst.importFrom(t, src, archive).Routes, "not made again on every import")
+}
+
+func TestImportRefusesAStretchWithoutGround(t *testing.T) {
+	src := newImportSide(t, "alice@example.com")
+	richAccount(t, src)
+	archive := src.export(t)
+	for _, points := range []string{"null", "[]", "[[43.07,-89.4]]"} {
+		archive.Stretches[0].Points = json.RawMessage(points)
+		dst := newImportSide(t, "bob@example.com")
+		_, err := dst.m.ImportAccount(t.Context(), &archive.Data, dst.repo, day1, dst.user)
+		assert.ErrorIs(t, err, backup.ErrInvalid, points)
+	}
+}

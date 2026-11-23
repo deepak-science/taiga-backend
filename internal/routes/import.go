@@ -30,24 +30,34 @@ var errImportFileTooLarge = fmt.Errorf("an imported file is at most %d bytes", m
 const importWindow = 30 * time.Minute
 
 // postImport reads a user's export (docs/backup.md), sent as the request body, into the signed-in account, and answers with what it did.
-// One import runs at a time: two at once would each add a hand-entered workout the other hadn't yet.
+// One import per account runs at a time: two at once would each add a hand-entered workout the other hadn't yet. Other accounts' imports go on, so a slow upload holds up only its own.
 func postImport(m models.Model, fileRepo filerepo.FileRepo) http.HandlerFunc {
-	var running sync.Mutex
+	var mu sync.Mutex
+	running := map[int32]bool{}
 	return func(w http.ResponseWriter, r *http.Request) {
 		userToken, err := tokens.UserTokenFromContext(r.Context())
 		if err != nil {
 			unauthorizedHandler(w, r)
 			return
 		}
-		if !running.TryLock() {
-			conflictError(w, errors.New("an import is already running; try again once it's done"))
+		mu.Lock()
+		busy := running[userToken.ID]
+		running[userToken.ID] = true
+		mu.Unlock()
+		if busy {
+			conflictError(w, errors.New("an import is already running for this account; try again once it's done"))
 			return
 		}
-		defer running.Unlock()
+		defer func() {
+			mu.Lock()
+			delete(running, userToken.ID)
+			mu.Unlock()
+		}()
 
 		ctx := r.Context()
 		rc := http.NewResponseController(w)
-		body := &deadlineReader{r: http.MaxBytesReader(w, r.Body, maxImportBytes), rc: rc}
+		// Each read gets its own deadline, but never past the upload's, so a trickle can't hold the slot for good.
+		body := &deadlineReader{r: http.MaxBytesReader(w, r.Body, maxImportBytes), rc: rc, until: time.Now().Add(importWindow)}
 		// The files go into the repo as they're read; they're content-addressed, so an archive turned away later leaves nothing wrong behind there.
 		a, err := backup.ReadWithin(body, func(hash string, content io.Reader) error {
 			// The repo holds a file in memory to store it, so one is capped well under the body's limit.
@@ -104,14 +114,19 @@ func postImport(m models.Model, fileRepo filerepo.FileRepo) http.HandlerFunc {
 	}
 }
 
-// deadlineReader gives each read its own deadline, so a stalled client is cut off but a long upload isn't.
+// deadlineReader gives each read its own deadline, so a stalled client is cut off but a long upload isn't, up to until.
 type deadlineReader struct {
-	r  io.Reader
-	rc *http.ResponseController
+	r     io.Reader
+	rc    *http.ResponseController
+	until time.Time
 }
 
 func (d *deadlineReader) Read(p []byte) (int, error) {
+	deadline := time.Now().Add(exportWriteWindow)
+	if !d.until.IsZero() && deadline.After(d.until) {
+		deadline = d.until
+	}
 	// Not every ResponseWriter can set one (a test's recorder can't); it then reads without.
-	_ = d.rc.SetReadDeadline(time.Now().Add(exportWriteWindow))
+	_ = d.rc.SetReadDeadline(deadline)
 	return d.r.Read(p)
 }

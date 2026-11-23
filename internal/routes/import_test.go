@@ -118,3 +118,40 @@ func TestImportTurnsAwayAFileThatDoesntMatchItsHash(t *testing.T) {
 	assert.Equal(t, http.StatusUnprocessableEntity, status)
 	assert.Contains(t, string(body), "doesn't match its hash")
 }
+
+func TestAnImportHoldsUpOnlyItsOwnAccount(t *testing.T) {
+	srv, m, toker := newAPI(t)
+	alice := newUserClient(t, srv, m, toker, "alice@example.com")
+	bob := newUserClient(t, srv, m, toker, "bob@example.com")
+
+	// Bob's first import is still uploading.
+	pr, pw := io.Pipe()
+	done := make(chan int)
+	go func() {
+		req, err := http.NewRequest(http.MethodPost, srv.URL+"/import", pr)
+		if err != nil {
+			done <- 0
+			return
+		}
+		req.Header.Set("Authorization", "Bearer "+bob.token)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			done <- 0
+			return
+		}
+		_ = resp.Body.Close()
+		done <- resp.StatusCode
+	}()
+	_, err := pw.Write([]byte("a"))
+	require.NoError(t, err, "the server is reading it")
+
+	status, _ := bob.importArchive([]byte("not a tar"))
+	assert.Equal(t, http.StatusConflict, status, "bob's second waits for his first")
+	status, _ = alice.importArchive([]byte("not a tar"))
+	assert.Equal(t, http.StatusUnprocessableEntity, status, "alice's goes ahead")
+
+	require.NoError(t, pw.Close())
+	assert.Equal(t, http.StatusUnprocessableEntity, <-done)
+	status, _ = bob.importArchive([]byte("not a tar"))
+	assert.Equal(t, http.StatusUnprocessableEntity, status, "and once it's done, bob can again")
+}

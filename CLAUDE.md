@@ -399,7 +399,7 @@ sources:
 
 ### Export and import (requires JWT token; `docs/backup.md`)
 - `GET /export` - The user's backup as a tar (`taiga-YYYY-MM-DD.tar`): their files and what nothing can rebuild from them (hand-entered workouts, corrections, stretches, route names and placements, what sources dealt with, and weather and COROS's figures unless `?fetched=false`). Exempt from the 30-second request timeout; a failure partway cuts the connection
-- `POST /import` - Read a user's export, the raw tar as the body, into the signed-in account: `{files, files_added, files_retimed, workouts, corrections, stretches, routes, unreadable}`. Idempotent, matched by file hash (hand-entered workouts by start time, sport, distance and duration); the archive wins over what the user set, and nothing only the account has is removed. `422` for an archive that won't read or a deployment's backup, `413` past 2GB or for a file over 64MB, `409` while another import runs. Exempt from the 30-second request timeout
+- `POST /import` - Read a user's export, the raw tar as the body, into the signed-in account: `{files, files_added, files_retimed, workouts, corrections, stretches, routes, unreadable}`. Idempotent, matched by file hash (hand-entered workouts by start time, sport, distance and duration); the archive wins over what the user set, and nothing only the account has is removed. `422` for an archive that won't read or a deployment's backup, `413` past 2GB or for a file over 64MB, `409` while another import into the same account runs. Exempt from the 30-second request timeout
 
 ### Jobs API (requires JWT token)
 - `GET /jobs?state=queued|running|done|dead` - The user's 100 newest jobs, optionally in one state; done jobs are pruned after a week

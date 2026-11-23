@@ -88,6 +88,9 @@ func (m *storeModel) importData(ctx context.Context, d *backup.Data, fileRepo fi
 				af, err = q.GetActivityFileByHash(ctx, &db.GetActivityFileByHashParams{UserID: &userID, FileRepoHash: &hash})
 				if err == nil && !sameInstant(af.Timestamp.Time, f.Timestamp) {
 					af, err = q.UpdateActivityFile(ctx, &db.UpdateActivityFileParams{ID: af.ID, UserID: &userID, Timestamp: timestamptz(f.Timestamp), FileRepoHash: &hash})
+					if err == nil {
+						report.FilesRetimed++
+					}
 				}
 			} else if err == nil {
 				report.FilesAdded++
@@ -271,6 +274,10 @@ func (m *storeModel) importStretches(ctx context.Context, q db.Querier, d *backu
 		if err := json.Unmarshal(s.Points, &shape.Points); err != nil {
 			return nil, fmt.Errorf("%w: stretch %q's points: %w", backup.ErrInvalid, s.Name, err)
 		}
+		// Fewer than two points is no ground at all; reshaping a stretch to it would leave it matching nothing.
+		if len(shape.Points) < 2 {
+			return nil, fmt.Errorf("%w: stretch %q has %d points", backup.ErrInvalid, s.Name, len(shape.Points))
+		}
 		decode := func(st *db.Stretch) (workouts.Stretch, error) {
 			current := workouts.Stretch{Meters: st.Meters}
 			if err := json.Unmarshal(st.Points, &current.Points); err != nil {
@@ -353,14 +360,27 @@ func importRoutes(ctx context.Context, q db.Querier, d *backup.Data, userID int3
 	}
 	// A merged route's runs that the user put there carry a placement; the rest are its base, which detection groups it by.
 	placedByUser := map[string]bool{}
+	placedOnto := map[string]bool{}
 	for _, o := range d.RouteOverrides {
 		placedByUser[o.File] = true
+		if o.Route != nil {
+			placedOnto[*o.Route] = true
+		}
+	}
+	// Detection groups only the runs with a track (what it reads, less duplicates), so those are the runs a route can keep.
+	tracks, err := q.ListWorkoutTracksByUser(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	tracked := map[int32]bool{}
+	for _, t := range tracks {
+		tracked[t.WorkoutID] = true
 	}
 	placed := make([]placement, len(d.Routes))
 	for i, r := range d.Routes {
 		overlap, base := map[int32]int{}, map[int32]int{}
 		for _, hash := range r.Workouts {
-			if id := ref(&hash); id != nil {
+			if id := ref(&hash); id != nil && tracked[*id] {
 				placed[i].runs = append(placed[i].runs, *id)
 				if rid, ok := on[*id]; ok {
 					overlap[rid]++
@@ -394,8 +414,8 @@ func importRoutes(ctx context.Context, q db.Querier, d *backup.Data, userID int3
 	changed := 0
 	routeIDs := map[string]int32{}
 	for i, r := range d.Routes {
-		// None of its runs made it (their files are unreadable here): a route made for it would hold nothing, and another would be made on every import.
-		if len(placed[i].runs) == 0 {
+		// Detection would delete a route with none of its runs tracked here (their files unreadable, or the workouts not counting), or one unnamed run nothing is placed onto, and another would be made on every import.
+		if n := len(placed[i].runs); n == 0 || (n == 1 && r.Name == nil && !placedOnto[r.Key]) {
 			continue
 		}
 		target := placed[i].target
