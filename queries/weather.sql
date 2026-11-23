@@ -129,3 +129,14 @@ ORDER BY
 LIMIT
   sqlc.arg(at_most)
 ON CONFLICT DO NOTHING;
+
+-- name: ListWorkoutWeatherByUser :many
+SELECT
+  *
+FROM
+  workout_weather
+WHERE
+  user_id = $1
+ORDER BY
+  workout_id,
+  source;

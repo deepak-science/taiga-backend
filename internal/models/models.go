@@ -9,6 +9,7 @@ import (
 	"log"
 	"time"
 
+	"gitea.deepak.science/deepak/taiga/internal/backup"
 	"gitea.deepak.science/deepak/taiga/internal/config"
 	"gitea.deepak.science/deepak/taiga/internal/filerepo"
 	"gitea.deepak.science/deepak/taiga/internal/metrics"
@@ -157,6 +158,8 @@ type Model interface {
 	EnqueueFetchWeather(ctx context.Context, workoutID int32, now time.Time, userToken *tokens.UserToken) error
 	FetchWeather(ctx context.Context, workoutID int32, provider weather.Provider, now time.Time, userToken *tokens.UserToken) error
 	WorkoutWeather(ctx context.Context, workoutID int32, userToken *tokens.UserToken) (*WorkoutWeather, error)
+	// Export is the user's backup (internal/backup) but the files' bytes; fetched false leaves out weather and COROS's figures.
+	Export(ctx context.Context, fetched bool, now time.Time, userToken *tokens.UserToken) (*backup.Archive, error)
 }
 
 type storeModel struct {

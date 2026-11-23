@@ -578,6 +578,104 @@ func (q *Queries) GetSourceConnectionByKind(ctx context.Context, arg *GetSourceC
 	return &i, err
 }
 
+const listCOROSMetadataByUser = `-- name: ListCOROSMetadataByUser :many
+SELECT
+  workout_id, user_id, external_id, fetched_at, reply, workout_seconds, total_seconds, distance_meters, avg_pace_s_per_km, moving_avg_pace_s_per_km, adjusted_pace_s_per_km, best_km_seconds, avg_heart_rate, avg_cadence, avg_stride_length_m, avg_power_watts, elevation_gain_m, elevation_loss_m, calories, training_load, aerobic_te, anaerobic_te, training_focus, performance
+FROM
+  coros_metadata
+WHERE
+  user_id = $1
+ORDER BY
+  workout_id
+`
+
+func (q *Queries) ListCOROSMetadataByUser(ctx context.Context, userID int32) ([]*CorosMetadatum, error) {
+	rows, err := q.db.Query(ctx, listCOROSMetadataByUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*CorosMetadatum{}
+	for rows.Next() {
+		var i CorosMetadatum
+		if err := rows.Scan(
+			&i.WorkoutID,
+			&i.UserID,
+			&i.ExternalID,
+			&i.FetchedAt,
+			&i.Reply,
+			&i.WorkoutSeconds,
+			&i.TotalSeconds,
+			&i.DistanceMeters,
+			&i.AvgPaceSPerKm,
+			&i.MovingAvgPaceSPerKm,
+			&i.AdjustedPaceSPerKm,
+			&i.BestKmSeconds,
+			&i.AvgHeartRate,
+			&i.AvgCadence,
+			&i.AvgStrideLengthM,
+			&i.AvgPowerWatts,
+			&i.ElevationGainM,
+			&i.ElevationLossM,
+			&i.Calories,
+			&i.TrainingLoad,
+			&i.AerobicTe,
+			&i.AnaerobicTe,
+			&i.TrainingFocus,
+			&i.Performance,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSourceActivitiesByUser = `-- name: ListSourceActivitiesByUser :many
+SELECT
+  user_id, kind, external_id, activity_file_id, start_time, files, fetched_at, sport_type, detail_tried_at
+FROM
+  source_activities
+WHERE
+  user_id = $1
+ORDER BY
+  kind,
+  external_id
+`
+
+func (q *Queries) ListSourceActivitiesByUser(ctx context.Context, userID int32) ([]*SourceActivity, error) {
+	rows, err := q.db.Query(ctx, listSourceActivitiesByUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*SourceActivity{}
+	for rows.Next() {
+		var i SourceActivity
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Kind,
+			&i.ExternalID,
+			&i.ActivityFileID,
+			&i.StartTime,
+			&i.Files,
+			&i.FetchedAt,
+			&i.SportType,
+			&i.DetailTriedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSourceActivitiesWithoutMetadata = `-- name: ListSourceActivitiesWithoutMetadata :many
 SELECT
   source_activities.external_id,
@@ -673,6 +771,43 @@ func (q *Queries) ListSourceConnections(ctx context.Context, userID int32) ([]*S
 			&i.LastError,
 			&i.NeedsReconnect,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSourceMatchAttemptsByUser = `-- name: ListSourceMatchAttemptsByUser :many
+SELECT
+  workout_id, kind, user_id, tried_at
+FROM
+  source_match_attempts
+WHERE
+  user_id = $1
+ORDER BY
+  workout_id,
+  kind
+`
+
+func (q *Queries) ListSourceMatchAttemptsByUser(ctx context.Context, userID int32) ([]*SourceMatchAttempt, error) {
+	rows, err := q.db.Query(ctx, listSourceMatchAttemptsByUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*SourceMatchAttempt{}
+	for rows.Next() {
+		var i SourceMatchAttempt
+		if err := rows.Scan(
+			&i.WorkoutID,
+			&i.Kind,
+			&i.UserID,
+			&i.TriedAt,
 		); err != nil {
 			return nil, err
 		}

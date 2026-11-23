@@ -113,7 +113,8 @@ func New(cfg *config.Config) (*Server, error) {
 	r.Use(metrics.Middleware)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
-	r.Use(middleware.Timeout(30 * time.Second))
+	// An export streams for as long as the files take, so it keeps its own write deadlines instead.
+	r.Use(middleware.Maybe(middleware.Timeout(30*time.Second), func(r *http.Request) bool { return r.URL.Path != "/export" }))
 
 	// CORS for development
 	if cfg.App.IsDevelopment() {

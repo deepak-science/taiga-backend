@@ -451,3 +451,35 @@ FROM
     GROUP BY
       user_id
   ) AS per_user;
+
+-- name: ListSourceActivitiesByUser :many
+SELECT
+  *
+FROM
+  source_activities
+WHERE
+  user_id = $1
+ORDER BY
+  kind,
+  external_id;
+
+-- name: ListSourceMatchAttemptsByUser :many
+SELECT
+  *
+FROM
+  source_match_attempts
+WHERE
+  user_id = $1
+ORDER BY
+  workout_id,
+  kind;
+
+-- name: ListCOROSMetadataByUser :many
+SELECT
+  *
+FROM
+  coros_metadata
+WHERE
+  user_id = $1
+ORDER BY
+  workout_id;

@@ -608,13 +608,14 @@ The files are the source of truth, and the rest of a workout (summary, segments,
 
 ### Format
 
-- [ ] **One archive** (tar or zip, streamed both ways, never held in memory) holding a `manifest.json` with a format version, the processor version and when it was made, one JSON document per kind above, and `files/<sha256>`.
-- [ ] Refer to things by content (file hashes), never database ids, so an archive goes into any deployment, SQLite or Postgres.
-- [ ] Import checks every file against its hash, refuses a newer format version, and reads older ones.
+- [x] **One archive** (tar or zip, streamed both ways, never held in memory) holding a `manifest.json` with a format version, the processor version and when it was made, one JSON document per kind above, and `files/<sha256>`.
+- [x] Refer to things by content (file hashes), never database ids, so an archive goes into any deployment, SQLite or Postgres.
+- [x] Import checks every file against its hash, refuses a newer format version, and reads older ones.
 
 ### Per user
 
-- [ ] **Export:** `GET /export` streams the signed-in user's archive. `taco export > taiga.tar`.
+- [x] **Export:** `GET /export` streams the signed-in user's archive (`docs/backup.md`), `?fetched=false` without weather and COROS's figures.
+  - [ ] `taco export > taiga.tar`.
 - [ ] **Import:** into the signed-in account, and idempotent. Files dedupe by hash as uploads do, and state is matched by file hash, so importing the same archive twice, or into an account that already has some of it, changes nothing the second time. Then queue reprocessing and route detection, and the derived data rebuilds through the queue. Too large for the 32MB upload limit, so either a streamed endpoint with a limit of its own, or only through the CLI below to start with.
 - [ ] Conflicts: where the account and the archive disagree (a correction, a route name), the archive wins, or there's an option to say so. Decide when building it.
 
