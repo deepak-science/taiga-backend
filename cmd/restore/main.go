@@ -4,7 +4,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -37,6 +36,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("loading configuration: %v", err)
 	}
+	// Opening the database must never empty it: a restore checks first that there's nothing to lose, and empties nothing itself.
+	cfg.Db.DropOnStart = false
 	m, err := models.New(cfg)
 	if err != nil {
 		log.Fatalf("opening database: %v", err)
@@ -56,8 +57,8 @@ func run(ctx context.Context, m models.Model, repo filerepo.FileRepo, in io.Read
 		return err
 	}
 	// The files go into the repo as they're read; they're content-addressed, so a restore that fails later leaves nothing wrong behind there.
-	a, err := backup.Read(in, func(hash string, content []byte) error {
-		stored, err := repo.Store(ctx, bytes.NewReader(content))
+	a, err := backup.Read(in, func(hash string, content io.Reader) error {
+		stored, err := repo.Store(ctx, content)
 		if err != nil {
 			return fmt.Errorf("storing file %s: %w", hash, err)
 		}

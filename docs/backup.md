@@ -47,7 +47,7 @@ It refuses a deployment that already has an account, and a user's export. Into a
 3. puts back hand-entered workouts, corrections (each reprocesses its workout), stretches' source workouts, routes with their names and runs, the user's placements, what sources dealt with, and COROS's figures; weather only where the rebuilt workout has the span it was asked for, so the sweep asks again for the rest;
 4. queues route detection, which marks duplicates and regroups the routes, keeping the restored names. The server's worker runs it.
 
-A file this taiga can no longer read is kept as a file without a workout, and listed. A restore that fails partway leaves a part-restored deployment: empty it (`db.drop_on_start`, or a fresh database) before trying again. The file repo needs no emptying, since it's content-addressed.
+A file this taiga can no longer read is kept as a file without a workout, and listed. A restore that fails partway leaves a part-restored deployment: empty it (a fresh database) before trying again. `restore` itself never drops anything, whatever `db.drop_on_start` says. The file repo needs no emptying, since it's content-addressed.
 
 Not kept: when rows were made (`created_at` on accounts, files, stretches and routes is the restore's time). A restore connects no COROS account: each user connects again, and what sources dealt with keeps that from fetching anything twice.
 
@@ -89,7 +89,7 @@ Never in it: COROS tokens and the client registration (sealed under the signing 
 
 `backup.Write` also checks each file against its hash as it reads it from the repo, so a damaged repo fails the backup instead of producing one that won't restore.
 
-One file is held in memory at a time while its hash is checked (at most 64MB; uploads stop at 32MB).
+Files are streamed both ways, never held whole, so there's no size limit. Writing reads each file twice, once to measure and check it for the tar header and once to copy it, so a file that changed between the two fails the backup. Reading hands each file to the store as it streams and checks its hash at the end, which is safe for a content-addressed repo: wrong bytes land under their own hash, and the restore fails.
 
 ## Proving it
 

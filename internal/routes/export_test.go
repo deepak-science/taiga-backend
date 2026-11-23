@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"testing"
 	"time"
@@ -25,7 +26,11 @@ func (c *apiClient) export(query string) (*backup.Archive, map[string][]byte) {
 	status, body := c.get("/export" + query)
 	require.Equal(c.t, http.StatusOK, status, string(body))
 	files := map[string][]byte{}
-	a, err := backup.Read(bytes.NewReader(body), func(hash string, b []byte) error {
+	a, err := backup.Read(bytes.NewReader(body), func(hash string, r io.Reader) error {
+		b, err := io.ReadAll(r)
+		if err != nil {
+			return err
+		}
 		files[hash] = b
 		return nil
 	})

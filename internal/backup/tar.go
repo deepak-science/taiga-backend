@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"strings"
 	"time"
@@ -21,9 +22,6 @@ const (
 	accountsName = "accounts.json"
 	filesDir     = "files/"
 )
-
-// MaxFileSize bounds one file's bytes, which are held in memory while their hash is checked; uploads stop at 32MB.
-const MaxFileSize = 64 << 20
 
 // maxDocumentSize bounds a JSON entry, which is decoded whole.
 const maxDocumentSize = 512 << 20
@@ -63,35 +61,62 @@ func Write(ctx context.Context, w io.Writer, a *Archive, open Opener) error {
 		}
 	}
 	for _, f := range a.AllFiles() {
-		b, err := readFile(ctx, open, f.SHA256)
-		if err != nil {
-			return err
-		}
-		if err := writeEntry(tw, filesDir+f.SHA256, b, modTime); err != nil {
+		if err := writeFile(ctx, tw, open, f.SHA256, modTime); err != nil {
 			return err
 		}
 	}
 	return tw.Close()
 }
 
-// readFile is the file's bytes, whole, since a tar header states its size before them.
-func readFile(ctx context.Context, open Opener, hash string) ([]byte, error) {
+// writeFile streams one file into the tar: a tar header states the size first, so it's read once to measure and check it, then again to copy, checked again.
+func writeFile(ctx context.Context, tw *tar.Writer, open Opener, hash string, modTime time.Time) error {
+	size, err := measure(ctx, open, hash, io.Discard)
+	if err != nil {
+		return err
+	}
+	name := filesDir + hash
+	if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o644, Size: size, ModTime: modTime, Format: tar.FormatPAX}); err != nil {
+		return fmt.Errorf("writing %s: %w", name, err)
+	}
+	// A size or hash that changed between the two reads fails here (tar refuses a short or long entry), never as a quietly wrong archive.
+	if _, err := measure(ctx, open, hash, tw); err != nil {
+		return err
+	}
+	return nil
+}
+
+// measure copies the file to w, and is its size once its bytes are known to match its hash.
+func measure(ctx context.Context, open Opener, hash string, w io.Writer) (int64, error) {
 	rc, err := open(ctx, hash)
 	if err != nil {
-		return nil, fmt.Errorf("opening file %s: %w", hash, err)
+		return 0, fmt.Errorf("opening file %s: %w", hash, err)
 	}
 	defer func() { _ = rc.Close() }()
-	b, err := io.ReadAll(io.LimitReader(rc, MaxFileSize+1))
+	h := sha256.New()
+	n, err := io.Copy(io.MultiWriter(w, h), rc)
 	if err != nil {
-		return nil, fmt.Errorf("reading file %s: %w", hash, err)
+		return 0, fmt.Errorf("reading file %s: %w", hash, err)
 	}
-	if len(b) > MaxFileSize {
-		return nil, fmt.Errorf("file %s is over %d bytes", hash, MaxFileSize)
+	if hex.EncodeToString(h.Sum(nil)) != hash {
+		return 0, fmt.Errorf("file %s doesn't match its hash", hash)
 	}
-	if sum := sha256.Sum256(b); hex.EncodeToString(sum[:]) != hash {
-		return nil, fmt.Errorf("file %s doesn't match its hash", hash)
+	return n, nil
+}
+
+// hashingReader hashes what's read through it, and keeps the first read error, so one in the archive isn't mistaken for the store's.
+type hashingReader struct {
+	r   io.Reader
+	h   hash.Hash
+	err error
+}
+
+func (hr *hashingReader) Read(p []byte) (int, error) {
+	n, err := hr.r.Read(p)
+	hr.h.Write(p[:n])
+	if err != nil && !errors.Is(err, io.EOF) && hr.err == nil {
+		hr.err = err
 	}
-	return b, nil
+	return n, err
 }
 
 func writeEntry(tw *tar.Writer, name string, b []byte, modTime time.Time) error {
@@ -106,9 +131,10 @@ func writeEntry(tw *tar.Writer, name string, b []byte, modTime time.Time) error 
 }
 
 // Read reads an archive Write made, of this version or an older one.
-// Each file is checked against its hash, then handed to store; the documents all come first, so a.Files is complete by the first call.
+// Each file is streamed to store, and checked against its hash once read: store sees the bytes before the check, so it must be content-addressed (as a file repo is) or wait for Read to return.
+// The documents all come first, so a.Files is complete by the first call.
 // An archive cut short is an error, as is any entry that isn't one of the above.
-func Read(r io.Reader, store func(hash string, content []byte) error) (*Archive, error) {
+func Read(r io.Reader, store func(hash string, content io.Reader) error) (*Archive, error) {
 	tr := tar.NewReader(r)
 	next := func() (*tar.Header, error) {
 		hdr, err := tr.Next()
@@ -193,20 +219,22 @@ func Read(r io.Reader, store func(hash string, content []byte) error) (*Archive,
 		if filerepo.CheckHash(hash) != nil || !listed[hash] || got[hash] {
 			return nil, fmt.Errorf("%w: unexpected file %q", ErrInvalid, hdr.Name)
 		}
-		if hdr.Size > MaxFileSize {
-			return nil, fmt.Errorf("%w: file %s is over %d bytes", ErrInvalid, hash, MaxFileSize)
+		hr := &hashingReader{r: tr, h: sha256.New()}
+		storeErr := store(hash, hr)
+		if hr.err != nil {
+			return nil, fmt.Errorf("%w: reading file %s: %w", ErrInvalid, hash, hr.err)
 		}
-		b, err := io.ReadAll(tr)
-		if err != nil {
+		if storeErr != nil {
+			return nil, storeErr
+		}
+		// Whatever store left unread still counts toward the hash.
+		if _, err := io.Copy(io.Discard, hr); err != nil {
 			return nil, fmt.Errorf("%w: reading file %s: %w", ErrInvalid, hash, err)
 		}
-		if sum := sha256.Sum256(b); hex.EncodeToString(sum[:]) != hash {
+		if hex.EncodeToString(hr.h.Sum(nil)) != hash {
 			return nil, fmt.Errorf("%w: file %s doesn't match its hash", ErrInvalid, hash)
 		}
 		got[hash] = true
-		if err := store(hash, b); err != nil {
-			return nil, err
-		}
 	}
 	if len(docs) > 0 {
 		return nil, fmt.Errorf("%w: it has no %s", ErrInvalid, missing(a, docs))

@@ -63,7 +63,9 @@ func write(t *testing.T, a *backup.Archive, f files) []byte {
 func TestWriteThenRead(t *testing.T) {
 	a, f := sample(t)
 	stored := files{}
-	got, err := backup.Read(bytes.NewReader(write(t, a, f)), func(hash string, b []byte) error {
+	got, err := backup.Read(bytes.NewReader(write(t, a, f)), func(hash string, r io.Reader) error {
+		b, err := io.ReadAll(r)
+		require.NoError(t, err)
 		stored[hash] = b
 		return nil
 	})
@@ -85,7 +87,7 @@ func TestWriteRefusesAFileThatDoesntMatchItsHash(t *testing.T) {
 	assert.ErrorContains(t, err, "doesn't match its hash")
 }
 
-func noStore(string, []byte) error { return nil }
+func noStore(string, io.Reader) error { return nil }
 
 func TestReadRefusesANewerVersion(t *testing.T) {
 	a, f := sample(t)
@@ -196,7 +198,7 @@ func TestADeploymentsAccountsShareTheirFiles(t *testing.T) {
 	}
 	stored := map[string]int{}
 	archive := write(t, a, f)
-	got, err := backup.Read(bytes.NewReader(archive), func(hash string, b []byte) error {
+	got, err := backup.Read(bytes.NewReader(archive), func(hash string, _ io.Reader) error {
 		stored[hash]++
 		return nil
 	})
@@ -224,4 +226,61 @@ func TestADeploymentsAccountsShareTheirFiles(t *testing.T) {
 		a.Accounts[1].Key = "../etc"
 		assert.Error(t, backup.Write(context.Background(), io.Discard, a, f.open))
 	})
+}
+
+// pattern is size bytes, made as they're read, so a test can stream a file bigger than it should hold.
+type pattern struct{ left int64 }
+
+func (p *pattern) Read(b []byte) (int, error) {
+	if p.left == 0 {
+		return 0, io.EOF
+	}
+	n := int64(len(b))
+	if n > p.left {
+		n = p.left
+	}
+	for i := range b[:n] {
+		b[i] = byte(i % 251)
+	}
+	p.left -= n
+	return int(n), nil
+}
+
+func TestAFileBiggerThanAnUploadStreamsThrough(t *testing.T) {
+	const size = 70 << 20
+	h := sha256.New()
+	_, err := io.Copy(h, &pattern{left: size})
+	require.NoError(t, err)
+	big := hex.EncodeToString(h.Sum(nil))
+	open := func(context.Context, string) (io.ReadCloser, error) {
+		return io.NopCloser(&pattern{left: size}), nil
+	}
+	a := &backup.Archive{
+		Manifest: backup.Manifest{Format: backup.Format, Kind: backup.KindUser, Version: backup.Version},
+		Data:     backup.Data{Files: []backup.File{{SHA256: big, Workout: true}}},
+	}
+
+	pr, pw := io.Pipe()
+	go func() { _ = pw.CloseWithError(backup.Write(context.Background(), pw, a, open)) }()
+	var got int64
+	_, err = backup.Read(pr, func(hash string, r io.Reader) error {
+		n, err := io.Copy(io.Discard, r)
+		got = n
+		return err
+	})
+	require.NoError(t, err)
+	assert.Equal(t, int64(size), got)
+}
+
+func TestWriteRefusesAFileThatChangesWhileItsRead(t *testing.T) {
+	a, f := sample(t)
+	reads := 0
+	open := func(ctx context.Context, hash string) (io.ReadCloser, error) {
+		reads++
+		if reads == 2 {
+			return io.NopCloser(bytes.NewReader([]byte("first fit filX"))), nil
+		}
+		return f.open(ctx, hash)
+	}
+	assert.Error(t, backup.Write(context.Background(), io.Discard, a, open))
 }
