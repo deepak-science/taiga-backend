@@ -85,3 +85,30 @@ func TestMedals(t *testing.T) {
 		assert.Len(t, medals, 1)
 	})
 }
+
+// The segments route reads medals and segments apart, so a reprocess can land between them.
+func TestMedalsMatchSegmentsAcrossReprocess(t *testing.T) {
+	ctx := context.Background()
+	m, repo := testsupport.NewModel(t), testsupport.NewFileRepo(t)
+	alice := createUser(t, m, "alice@example.com")
+	w := uploadWorkout(t, m, repo, alice, time.Date(2026, 3, 1, 13, 0, 0, 0, time.UTC), []testsupport.Split{{Meters: 2000, Seconds: 600}})
+
+	before, err := m.WorkoutSegments(ctx, w.ID, alice)
+	require.NoError(t, err)
+	medals, err := m.Medals(ctx, time.UTC, alice)
+	require.NoError(t, err)
+	_, err = m.ReprocessWorkout(ctx, w.ID, alice, repo)
+	require.NoError(t, err)
+	after, err := m.WorkoutSegments(ctx, w.ID, alice)
+	require.NoError(t, err)
+
+	require.Len(t, after, len(before))
+	require.NotEqual(t, before[0].ID, after[0].ID, "reprocessing replaces the rows, so ids can't join them")
+	byName := map[string]string{}
+	for _, medal := range medals[w.ID] {
+		byName[medal.Segment] = medal.Medal
+	}
+	for _, s := range after {
+		assert.Equal(t, models.MedalGold, byName[s.Name], s.Name)
+	}
+}

@@ -18,9 +18,8 @@ const (
 
 // SegmentMedal is a medal one of a workout's segments holds now.
 type SegmentMedal struct {
-	SegmentID int32  `json:"-"`
-	Segment   string `json:"segment"`
-	Medal     string `json:"medal"`
+	Segment string `json:"segment"`
+	Medal   string `json:"medal"`
 }
 
 // Medals is the medals each of the user's workouts holds now, keyed by workout id, in its segments' order; a workout with none is absent.
@@ -68,7 +67,7 @@ func awardMedals(rows []*db.ListSegmentEffortsForMedalsRow, loc *time.Location) 
 		for i, p := range periods(r) {
 			if best[p] == r {
 				medal := []string{MedalGold, MedalSilver, MedalBronze}[i]
-				medals[r.WorkoutID] = append(medals[r.WorkoutID], &SegmentMedal{SegmentID: r.ID, Segment: r.Name, Medal: medal})
+				medals[r.WorkoutID] = append(medals[r.WorkoutID], &SegmentMedal{Segment: r.Name, Medal: medal})
 				break
 			}
 		}

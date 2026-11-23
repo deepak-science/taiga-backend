@@ -158,13 +158,14 @@ func getWorkoutSegmentsFunc(m models.Model) http.HandlerFunc {
 			serverError(w, err)
 			return
 		}
-		bySegment := map[int32]string{}
+		// By name, not id: a reprocess between the two reads replaces the rows but keeps one segment per name.
+		bySegment := map[string]string{}
 		for _, medal := range medals[int32(workoutID64)] {
-			bySegment[medal.SegmentID] = medal.Medal
+			bySegment[medal.Segment] = medal.Medal
 		}
 		out := make([]medalledSegment, 0, len(segments))
 		for _, s := range segments {
-			out = append(out, medalledSegment{WorkoutSegment: s, Medal: bySegment[s.ID]})
+			out = append(out, medalledSegment{WorkoutSegment: s, Medal: bySegment[s.Name]})
 		}
 		writeJSON(w, out)
 	}
