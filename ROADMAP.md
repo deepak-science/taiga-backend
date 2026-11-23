@@ -622,8 +622,8 @@ The files are the source of truth, and the rest of a workout (summary, segments,
 ### The whole deployment
 
 - [x] **`cmd/backup`** (in the image beside `useradd`): every user's archive in one go. This one includes accounts, password hashes and linked OIDC identities so a restore can sign in. `cmd/restore` reads it into an empty deployment. Restoring makes every workout again from its file and puts the rest back over it (`docs/backup.md`).
-- [ ] **In the homelab** (proxmox-homelab#33, not yet deployed): a CronJob running `cmd/backup` nightly to somewhere off the cluster (the NAS, or S3), keeping a few weeks. This adds to CNPG's and the PVC's own backups, it doesn't replace them: it's the copy that survives a schema mistake and that a fresh deployment can read.
-- [ ] **A dev stack from it:** restore last night's backup into a throwaway deployment (local SQLite, or a second namespace) to try a migration or a processor change on real data before it reaches the real one. That's the dev/prod split there isn't one of yet.
+- [x] **In the homelab** (proxmox-homelab#33): the `taiga-backup` CronJob runs `cmd/backup` nightly at 09:47 UTC to NAS2, off the cluster, keeping the newest 28, with an alert when no run has succeeded for 36 hours. This adds to CNPG's and the PVC's own backups, it doesn't replace them: it's the copy that survives a schema mistake and that a fresh deployment can read.
+- [x] **A dev stack from it** (proxmox-homelab#33): `taiga-dev.i.hruday.me`, a second namespace whose backend pod restores the newest nightly backup each time it starts, into Postgres in a sidecar with everything in emptyDirs. `cmd/restore` runs on the deployed image, and the server on the image on trial, which migrates the restored database and reprocesses on start. It has its own signing key and nothing that reaches outside (no OIDC, COROS or weather). That's the dev/prod split there wasn't one of before.
 
 ### Before an upgrade
 
@@ -636,7 +636,7 @@ A dependency bump can break things nothing tests for (sql-formatter changing mig
 ### Proving it
 
 - [x] **A round trip in the tests** (`cmd/restore`): a deployment with every kind of state above, backed up, restored into a fresh one, detected, backed up again, and compared. A new table that holds user state shows up as a difference once the test makes some.
-- [ ] **A restore drill** in the runbook, run once for real against a nightly backup.
+- [x] **A restore drill,** run for real on 2026-11-23: taiga-dev restored that day's backup (2 accounts, 821 files) in 72s, and once route detection had run, its row counts matched taiga's in every table checked. Each taiga-dev pod start repeats it (proxmox-homelab `docs/taiga.md`).
 
 ## Later
 
