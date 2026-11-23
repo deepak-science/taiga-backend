@@ -11,26 +11,26 @@ allowed='^(Revert "|fixup! |squash! |amend! )'
 
 bad=0
 check() {
-  local sha=$1 subject=$2
-  if [[ ! $subject =~ $pattern && ! $subject =~ $allowed ]]; then
-    echo "not a conventional commit: ${sha:+$sha }$subject" >&2
-    bad=1
-  fi
+	local sha=$1 subject=$2
+	if [[ ! $subject =~ $pattern && ! $subject =~ $allowed ]]; then
+		echo "not a conventional commit: ${sha:+$sha }$subject" >&2
+		bad=1
+	fi
 }
 
 if [[ ${1:-} == --file ]]; then
-  # MERGE_HEAD is there exactly while a merge is being committed, whatever its message says.
-  if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
-    exit 0
-  fi
-  check "" "$(grep -v '^#' "$2" | grep -m1 -v '^[[:space:]]*$' || true)"
+	# MERGE_HEAD is there exactly while a merge is being committed, whatever its message says.
+	if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
+		exit 0
+	fi
+	check "" "$(grep -v '^#' "$2" | grep -m1 -v '^[[:space:]]*$' || true)"
 else
-  while IFS=$'\t' read -r sha subject; do
-    check "$sha" "$subject"
-  done < <(git log --no-merges --format='%h%x09%s' "${1:?usage: check-commits.sh <rev-range> | --file <path>}")
+	while IFS=$'\t' read -r sha subject; do
+		check "$sha" "$subject"
+	done < <(git log --no-merges --format='%h%x09%s' "${1:?usage: check-commits.sh <rev-range> | --file <path>}")
 fi
 
 if ((bad)); then
-  echo "want <type>[(scope)][!]: <description>, with type one of ${types//|/, }" >&2
-  exit 1
+	echo "want <type>[(scope)][!]: <description>, with type one of ${types//|/, }" >&2
+	exit 1
 fi

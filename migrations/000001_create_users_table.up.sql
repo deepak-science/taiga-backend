@@ -66,14 +66,14 @@ BEGIN
 END;
 $set_updated$ LANGUAGE plpgsql;
 
-CREATE TRIGGER set_updated BEFORE
-UPDATE ON users FOR EACH ROW
+CREATE TRIGGER set_updated
+BEFORE UPDATE ON users FOR EACH ROW
 EXECUTE PROCEDURE trigger_set_timestamp ();
 
-CREATE TRIGGER set_updated BEFORE
-UPDATE ON hats FOR EACH ROW
+CREATE TRIGGER set_updated
+BEFORE UPDATE ON hats FOR EACH ROW
 EXECUTE PROCEDURE trigger_set_timestamp ();
 
-CREATE TRIGGER set_updated BEFORE
-UPDATE ON workouts FOR EACH ROW
+CREATE TRIGGER set_updated
+BEFORE UPDATE ON workouts FOR EACH ROW
 EXECUTE PROCEDURE trigger_set_timestamp ();
