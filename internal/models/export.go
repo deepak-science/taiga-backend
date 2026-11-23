@@ -1,9 +1,11 @@
 package models
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -99,7 +101,8 @@ func exportInto(ctx context.Context, q db.Querier, d *backup.Data, fetched bool,
 	}
 	// What a workout is called in the archive: its file's hash. A hand-entered one is never referred to.
 	workoutFile := map[int32]string{}
-	hasWorkout := map[int32]bool{}
+	// The file's workout's id, for the order below.
+	hasWorkout := map[int32]int32{}
 	d.Workouts = []backup.Workout{}
 	d.Corrections = []backup.Correction{}
 	for _, w := range ws {
@@ -122,21 +125,38 @@ func exportInto(ctx context.Context, q db.Querier, d *backup.Data, fetched bool,
 			continue
 		}
 		workoutFile[w.ID] = hash
-		hasWorkout[*w.ActivityFileID] = true
+		hasWorkout[*w.ActivityFileID] = w.ID
 		if w.SportOverride != "" || w.UserExcludedReason != "" {
 			d.Corrections = append(d.Corrections, backup.Correction{File: hash, Sport: w.SportOverride, ExcludedReason: w.UserExcludedReason})
 		}
 	}
+	// In the order their workouts were made, which a restore makes them in again: duplicate detection keeps the lower id between equal sources.
+	// Files without a workout follow, in upload order.
+	slices.SortStableFunc(files, func(a, b *db.ActivityFile) int {
+		wa, oka := hasWorkout[a.ID]
+		wb, okb := hasWorkout[b.ID]
+		switch {
+		case oka && okb:
+			return cmp.Compare(wa, wb)
+		case oka != okb:
+			if oka {
+				return -1
+			}
+			return 1
+		}
+		return cmp.Compare(a.ID, b.ID)
+	})
 	d.Files = []backup.File{}
 	for _, f := range files {
 		if f.FileRepoHash == nil {
 			continue
 		}
+		_, made := hasWorkout[f.ID]
 		d.Files = append(d.Files, backup.File{
 			SHA256:    *f.FileRepoHash,
 			Timestamp: f.Timestamp.Time.UTC(),
 			CreatedAt: f.CreatedAt.Time.UTC(),
-			Workout:   hasWorkout[f.ID],
+			Workout:   made,
 		})
 	}
 	ref := func(id *int32) *string {

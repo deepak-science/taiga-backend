@@ -213,6 +213,14 @@ func restoreFetched(ctx context.Context, q db.Querier, d *backup.Data, userID in
 		if !ok {
 			continue
 		}
+		// A processor change can rebuild the workout over another span; a reading for the old one is the wrong hours, and leaving it out has the sweep ask again.
+		w, err := q.GetWorkout(ctx, &db.GetWorkoutParams{ID: id, UserID: userID})
+		if err != nil {
+			return err
+		}
+		if !sameSecond(w.StartTime, timestamptz(r.AskedStart)) || !sameSecond(w.EndTime, timestamptz(r.AskedEnd)) {
+			continue
+		}
 		if err := q.UpsertWorkoutWeather(ctx, &db.UpsertWorkoutWeatherParams{
 			WorkoutID: id, Source: r.Source, UserID: userID, FetchedAt: timestamptz(r.FetchedAt),
 			Latitude: r.Latitude, Longitude: r.Longitude, AskedStart: timestamptz(r.AskedStart), AskedEnd: timestamptz(r.AskedEnd),

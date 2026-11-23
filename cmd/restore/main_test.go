@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"gitea.deepak.science/deepak/taiga/internal/testsupport"
 	"gitea.deepak.science/deepak/taiga/internal/tokens"
 	"gitea.deepak.science/deepak/taiga/internal/weather"
+	"github.com/muktihari/fit/profile/typedef"
 )
 
 var day = time.Date(2026, 11, 1, 7, 0, 0, 0, time.UTC)
@@ -178,4 +180,63 @@ func TestBackupThenRestoreGivesTheSameBackup(t *testing.T) {
 		err = run(ctx, newDeployment(t).m, dst.repo, &buf, &out)
 		assert.ErrorContains(t, err, "one user's export")
 	})
+}
+
+func TestARestoreKeepsTheSameRecordingOfADuplicate(t *testing.T) {
+	ctx := context.Background()
+	src := newDeployment(t)
+	alice := src.user(t, "alice@example.com")
+	splits := []testsupport.Split{{Meters: 2000, Seconds: 600}}
+	start := day.AddDate(0, 0, 5)
+	// Uploaded first but dated earlier, so a restore going by the files newest first would make the second watch's workout first.
+	for i, name := range []string{"Watch A", "Watch B"} {
+		fit := testsupport.EncodeFITDevice(t, start, splits, typedef.ManufacturerCoros, 0, name)
+		af, _, err := src.m.AddActivityFile(ctx, bytes.NewReader(fit), day.AddDate(0, 0, 9+i), alice, src.repo)
+		require.NoError(t, err)
+		_, _, err = src.m.CreateWorkoutFromActivityFile(ctx, af.ID, alice, src.repo)
+		require.NoError(t, err)
+	}
+	copyOf := func(d *deployment) string {
+		d.detect(t)
+		ws, err := d.m.Workouts(ctx, models.WorkoutQuery{}, alice)
+		require.NoError(t, err)
+		copies := []string{}
+		for _, w := range ws {
+			if w.DuplicateOf != nil {
+				copies = append(copies, w.Source)
+			}
+		}
+		require.Len(t, copies, 1)
+		return copies[0]
+	}
+	require.Equal(t, "Watch B", copyOf(src), "between equal sources the first uploaded is kept")
+
+	_, archive := src.backup(t)
+	dst := newDeployment(t)
+	require.NoError(t, run(ctx, dst.m, dst.repo, bytes.NewReader(archive), io.Discard))
+	assert.Equal(t, "Watch B", copyOf(dst))
+}
+
+func TestARestoreLeavesOutWeatherForAnotherSpan(t *testing.T) {
+	ctx := context.Background()
+	src := newDeployment(t)
+	alice := src.user(t, "alice@example.com")
+	w := src.upload(t, alice, testsupport.EncodeFIT(t, day, []testsupport.Split{{Meters: 2000, Seconds: 600}}))
+	fake := testsupport.NewFakeWeather(t)
+	require.NoError(t, src.m.FetchWeather(ctx, w.ID, weather.NewOpenMeteo(fake.URL()), day.AddDate(0, 1, 0), alice))
+
+	a, err := src.m.ExportDeployment(ctx, true, day)
+	require.NoError(t, err)
+	readings := a.Accounts[0].Weather
+	require.GreaterOrEqual(t, len(readings), 2)
+	// As if this taiga's processor now ends the workout a minute later than the one that asked.
+	readings[0].AskedEnd = readings[0].AskedEnd.Add(-time.Minute)
+	var buf bytes.Buffer
+	require.NoError(t, backup.Write(ctx, &buf, a, src.repo.Fetch))
+
+	dst := newDeployment(t)
+	require.NoError(t, run(ctx, dst.m, dst.repo, &buf, io.Discard))
+	after, err := dst.m.ExportDeployment(ctx, true, day)
+	require.NoError(t, err)
+	assert.Len(t, after.Accounts[0].Weather, len(readings)-1, "the reading for the old span is left for the sweep to ask again")
 }

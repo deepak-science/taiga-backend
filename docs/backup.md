@@ -44,7 +44,7 @@ It refuses a deployment that already has an account, and a user's export. Into a
 
 1. stores every file in the file repo, checked against its hash;
 2. per account: makes the account and its linked identities, then its stretches, then a workout from every file that had one, as an upload makes them (so the derived data is this taiga's, and each workout is timed over the stretches);
-3. puts back hand-entered workouts, corrections (each reprocesses its workout), stretches' source workouts, routes with their names and runs, the user's placements, what sources dealt with, weather and COROS's figures;
+3. puts back hand-entered workouts, corrections (each reprocesses its workout), stretches' source workouts, routes with their names and runs, the user's placements, what sources dealt with, and COROS's figures; weather only where the rebuilt workout has the span it was asked for, so the sweep asks again for the rest;
 4. queues route detection, which marks duplicates and regroups the routes, keeping the restored names. The server's worker runs it.
 
 A file this taiga can no longer read is kept as a file without a workout, and listed. A restore that fails partway leaves a part-restored deployment: empty it (`db.drop_on_start`, or a fresh database) before trying again. The file repo needs no emptying, since it's content-addressed.
@@ -58,7 +58,7 @@ A user's export, in this order:
 | Entry | Holds |
 | --- | --- |
 | `manifest.json` | `format` (`taiga-backup`), `kind`, `version`, `processor_version`, `created_at`, `fetched`, and `owner` (`email`, `display_name`), which is for whoever reads the archive and is never used to sign in |
-| `files.json` | Every uploaded file: `sha256`, `timestamp`, `created_at`, and `workout`, which says whether a workout was made from it (false for a file that failed to parse, or whose workout the user deleted) |
+| `files.json` | Every uploaded file: `sha256`, `timestamp`, `created_at`, and `workout`, which says whether a workout was made from it (false for a file that failed to parse, or whose workout the user deleted). In the order their workouts were made, then the rest in upload order: a restore makes them in that order, so duplicate detection keeps the same recording between equal sources |
 | `workouts.json` | Hand-entered workouts in full, since they have no file |
 | `corrections.json` | The user's `sport` and `excluded_reason` per file-backed workout |
 | `stretches.json` | Name, sport, length, points, and `source_file`, the workout it was cut from |
