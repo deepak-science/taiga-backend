@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -336,4 +337,22 @@ func TestMetricsCountAPIRequestsByRoute(t *testing.T) {
 	api := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(api, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	assert.NotContains(t, api.Body.String(), "taiga_http_request_duration_seconds")
+}
+
+func TestDevelopmentLetsAnImportsTarThrough(t *testing.T) {
+	cfg := createTestConfig(t)
+	cfg.App.Environment = "development"
+	srv, err := server.New(cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = srv.Shutdown(context.Background()) })
+
+	post := func(contentType string) int {
+		req := httptest.NewRequest(http.MethodPost, "/import", strings.NewReader("tar"))
+		req.Header.Set("Content-Type", contentType)
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+		return rec.Code
+	}
+	assert.Equal(t, http.StatusUnauthorized, post("application/x-tar"), "past the content-type check, to the sign-in one")
+	assert.Equal(t, http.StatusUnsupportedMediaType, post("text/plain"))
 }

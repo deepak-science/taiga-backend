@@ -294,32 +294,48 @@ func (m *storeModel) CreateStretch(ctx context.Context, req NewStretch, userToke
 		if !slices.ContainsFunc(tracks, func(t *db.ListWorkoutTracksByUserAndSportRow) bool { return t.WorkoutID == req.WorkoutID }) {
 			return fmt.Errorf("%w: workout %d has too little GPS to match against, or is a copy of another", ErrStretchSource, req.WorkoutID)
 		}
-		for _, t := range tracks {
-			var track workouts.Track
-			if err := json.Unmarshal(t.Track, &track); err != nil {
-				return fmt.Errorf("decoding track of workout %d: %w", t.WorkoutID, err)
-			}
-			if !stretch.MightPass(&track) {
-				continue
-			}
-			candidate := series
-			if t.WorkoutID != req.WorkoutID {
-				candidate, err = storedSeries(ctx, q, t.WorkoutID, userToken)
-				if IsNotFound(err) {
-					continue
-				}
-				if err != nil {
-					return err
-				}
-			}
-			if err := addStretchEfforts(ctx, q, row.ID, t.WorkoutID, stretch.Passes(candidate), userToken); err != nil {
-				return err
-			}
+		if err := timeTracks(ctx, q, row.ID, stretch, tracks, func(int32) bool { return true }, userToken); err != nil {
+			return err
 		}
 		detail, err = stretchDetail(ctx, q, row.ID, Window{}, userToken)
 		return err
 	})
 	return detail, err
+}
+
+// timeStretch gives the stretch an effort for each pass by a workout `only` allows, among those a new stretch is matched against.
+func timeStretch(ctx context.Context, q db.Querier, s importedStretch, only func(workoutID int32) bool, userToken *tokens.UserToken) error {
+	tracks, err := q.ListWorkoutTracksByUserAndSport(ctx, &db.ListWorkoutTracksByUserAndSportParams{UserID: userToken.ID, Sport: s.sport})
+	if err != nil {
+		return err
+	}
+	return timeTracks(ctx, q, s.id, &s.shape, tracks, only, userToken)
+}
+
+func timeTracks(ctx context.Context, q db.Querier, stretchID int32, stretch *workouts.Stretch, tracks []*db.ListWorkoutTracksByUserAndSportRow, only func(int32) bool, userToken *tokens.UserToken) error {
+	for _, t := range tracks {
+		if !only(t.WorkoutID) {
+			continue
+		}
+		var track workouts.Track
+		if err := json.Unmarshal(t.Track, &track); err != nil {
+			return fmt.Errorf("decoding track of workout %d: %w", t.WorkoutID, err)
+		}
+		if !stretch.MightPass(&track) {
+			continue
+		}
+		series, err := storedSeries(ctx, q, t.WorkoutID, userToken)
+		if IsNotFound(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if err := addStretchEfforts(ctx, q, stretchID, t.WorkoutID, stretch.Passes(series), userToken); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func storedSeries(ctx context.Context, q db.Querier, workoutID int32, userToken *tokens.UserToken) (*workouts.Series, error) {

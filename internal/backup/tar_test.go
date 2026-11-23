@@ -284,3 +284,19 @@ func TestWriteRefusesAFileThatChangesWhileItsRead(t *testing.T) {
 	}
 	assert.Error(t, backup.Write(context.Background(), io.Discard, a, open))
 }
+
+func TestReadWithinHoldsTheDocumentsToALimit(t *testing.T) {
+	a, f := sample(t)
+	b := write(t, a, f)
+	_, err := backup.ReadWithin(bytes.NewReader(b), discard, 100)
+	assert.ErrorIs(t, err, backup.ErrInvalid)
+	assert.ErrorContains(t, err, "together")
+
+	_, err = backup.ReadWithin(bytes.NewReader(b), discard, 1<<20)
+	assert.NoError(t, err, "within it, it reads as Read does")
+}
+
+func discard(_ string, r io.Reader) error {
+	_, err := io.Copy(io.Discard, r)
+	return err
+}

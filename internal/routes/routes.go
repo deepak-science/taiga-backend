@@ -79,6 +79,7 @@ func New(m models.Model, tok tokens.Toker, fileRepo filerepo.FileRepo, opts ...O
 		r.Delete("/sources/{source}", disconnectSource(m, o.sources))
 		r.Post("/sources/{source}/sync", syncSource(m, o.sources))
 		r.Get("/export", getExport(m, fileRepo))
+		r.Post("/import", postImport(m, fileRepo))
 	})
 
 	return r

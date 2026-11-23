@@ -739,6 +739,34 @@ func (q *Queries) RenameStretch(ctx context.Context, arg *RenameStretchParams) (
 	return &i, err
 }
 
+const setStretchShape = `-- name: SetStretchShape :exec
+UPDATE stretches
+SET
+  meters = $3,
+  points = $4
+WHERE
+  id = $1
+  AND user_id = $2
+`
+
+type SetStretchShapeParams struct {
+	ID     int32   `json:"id"`
+	UserID int32   `json:"user_id"`
+	Meters float64 `json:"meters"`
+	Points []byte  `json:"points"`
+}
+
+// An import's stretch that differs from the account's of the same name and source; its efforts are deleted first and timed again.
+func (q *Queries) SetStretchShape(ctx context.Context, arg *SetStretchShapeParams) error {
+	_, err := q.db.Exec(ctx, setStretchShape,
+		arg.ID,
+		arg.UserID,
+		arg.Meters,
+		arg.Points,
+	)
+	return err
+}
+
 const setStretchSourceWorkout = `-- name: SetStretchSourceWorkout :exec
 UPDATE stretches
 SET

@@ -226,6 +226,8 @@ type Querier interface {
 	// For an activity dealt with before the sport code was kept.
 	SetSourceActivitySportType(ctx context.Context, arg *SetSourceActivitySportTypeParams) error
 	SetSourceCredentials(ctx context.Context, arg *SetSourceCredentialsParams) error
+	// An import's stretch that differs from the account's of the same name and source; its efforts are deleted first and timed again.
+	SetStretchShape(ctx context.Context, arg *SetStretchShapeParams) error
 	SetStretchSourceWorkout(ctx context.Context, arg *SetStretchSourceWorkoutParams) error
 	SetWorkoutDuplicateOf(ctx context.Context, arg *SetWorkoutDuplicateOfParams) error
 	// What the file states for the whole workout; part of what reprocessing rebuilds.

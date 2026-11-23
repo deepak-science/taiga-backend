@@ -4,7 +4,7 @@ A taiga backup is a tar that taiga writes and reads itself (`internal/backup`). 
 
 There are two kinds, told apart by the manifest's `kind`:
 
-- `user`: one user's export, from `GET /export` or `taco export`;
+- `user`: one user's export, from `GET /export` or `taco export`. `POST /import` reads it into the signed-in account;
 - `deployment`: every account, with what it takes to sign in to each again, from `cmd/backup`. `cmd/restore` reads it into an empty deployment.
 
 ## Exporting one user
@@ -19,6 +19,29 @@ curl -H "Authorization: Bearer $TOKEN" https://taiga.example.com/api/export -o t
 `?fetched=false` (`taco export --without-fetched`) leaves out weather and COROS's figures. Both can be fetched again, but that's slow, and each lookup tells the provider again where and when the user ran.
 
 The documents are read in one snapshot (REPEATABLE READ on PostgreSQL), so they are one moment's state; the file bytes are streamed after it. The router's 30-second timeout doesn't apply to it, and each write to the client gets its own two minutes. If the export fails after it has started, the connection is cut rather than ended cleanly, so a partial download never reads as a whole archive.
+
+## Importing into an account
+
+`POST /import` (signed in) reads a user's export, sent as the raw request body, into the signed-in account:
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/x-tar" --data-binary @taiga.tar https://taiga.example.com/api/import
+```
+
+It's idempotent: everything is matched by file hash, so importing the same archive twice, or into an account that already has some of it, changes nothing the second time. It never removes anything the account has and the archive doesn't. Where the two disagree over something the user set, the archive wins:
+
+- **Files** dedupe by hash, as uploads do. One the account has takes the archive's `timestamp`. A workout is made from every file the archive says had one, as an upload makes it, so a workout the account deleted comes back.
+- **Hand-entered workouts** have no file, so they're matched by start time (to the second), sport, distance and duration, and one is added only when none matches. Two the same in the archive become one.
+- **Corrections**: the archive's replace the account's for that workout, which is reprocessed. A workout the archive has no correction for keeps the account's.
+- **Stretches** are matched by name, sport and the file of the workout they were cut from. One that matches with other points takes the archive's, and its efforts are timed again.
+- **Routes**: each of the archive's goes to the account's route most of its runs are on, or a new one, and takes the archive's name. An unnamed one leaves the account's name, and when several go to one route (the account merged them) the one with most runs there names it, the first on a tie. A route the archive merged goes by its base, the runs the user didn't put there, so the archive's placements bring the merged ones to it. One detection would only delete is left out, so it isn't made again on every import: none of its runs has a track here (their files unreadable, or the workouts not counting), or it's one unnamed run that nothing is placed onto. Its runs that are on no route join it. The archive's placements replace the account's for the same runs. Detection, queued at the end, regroups them all and keeps the names.
+- **What sources dealt with**, **weather** and **COROS's figures** are added to what the account has. A reading for a source the account already has is replaced by the archive's, and weather is kept only where the workout's span matches, as on a restore.
+
+It answers with what it did: `{files, files_added, files_retimed, workouts, corrections, stretches, routes, unreadable}`. `workouts` counts those made, from files or by hand; `stretches` and `routes` count those added or changed; `unreadable` is files whose workout this taiga couldn't make, with why. Importing the same archive again answers with zeros, apart from `files`, and `unreadable`, since a file this taiga can't read is tried again each time.
+
+It's `422` for an archive `backup.Read` turns away (with why) or a deployment's backup, `413` past 2GB or for a file over 64MB (the file repo holds one in memory to store it; uploads are 32MB). Its documents are held to 32MB together (`backup.ReadWithin`), since they're decoded whole and kept, and an export of five years' runs has 1.4MB;, and `409` while another import into the same account is running: one runs per account at a time, so two can't each add a hand-entered workout the other hadn't yet. Other accounts' imports go on meanwhile. A stretch with fewer than two points is `422`.
+
+The body is streamed, never held whole, and the files go into the repo as they're read; an archive turned away partway leaves its files there, unreferenced, which is harmless in a content-addressed repo. Like `/export` it skips the router's 30-second timeout: each read gets its own two minutes, the upload 30 minutes in all, and once the archive is read the work has 30 minutes before the answer, and stops there. What it did by then stays, and importing again finishes it. An 819-file export (290MB) took 89 seconds into an empty account and 21 seconds the second time. A proxy in front of the API needs its own body limit and read timeout for it.
 
 ## Backing up the deployment
 
@@ -43,7 +66,7 @@ restore -i taiga.tar
 It refuses a deployment that already has an account, and a user's export. Into an empty one it:
 
 1. stores every file in the file repo, checked against its hash;
-2. per account: makes the account and its linked identities, then its stretches, then a workout from every file that had one, as an upload makes them (so the derived data is this taiga's, and each workout is timed over the stretches);
+2. per account: makes the account and its linked identities, then imports into it as `POST /import` does, which into an empty account is: its stretches, then a workout from every file that had one, as an upload makes them (so the derived data is this taiga's, and each workout is timed over the stretches);
 3. puts back hand-entered workouts, corrections (each reprocesses its workout), stretches' source workouts, routes with their names and runs, the user's placements, what sources dealt with, and COROS's figures; weather only where the rebuilt workout has the span it was asked for, so the sweep asks again for the rest;
 4. queues route detection, which marks duplicates and regroups the routes, keeping the restored names. The server's worker runs it.
 
@@ -94,6 +117,8 @@ Files are streamed both ways, never held whole, so there's no size limit. Writin
 ## Proving it
 
 `cmd/restore`'s test builds a deployment with every kind of state above, backs it up, restores it into a fresh one, runs detection, backs that up, and compares the two (less when rows were made). A new kind of user state that the backup doesn't carry shows up there as a difference, once the test makes some.
+
+`internal/models`' import tests do the same for one account: an export imported into a fresh account gives the same export, and into an account that already has some of it, with its own route name, correction and stretch, the archive's win and what only the account had stays. Importing either again changes nothing.
 
 ## Changing the format
 

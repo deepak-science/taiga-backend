@@ -212,3 +212,13 @@ SET
 WHERE
   id = $1
   AND user_id = $2;
+
+-- name: SetStretchShape :exec
+-- An import's stretch that differs from the account's of the same name and source; its efforts are deleted first and timed again.
+UPDATE stretches
+SET
+  meters = $3,
+  points = $4
+WHERE
+  id = $1
+  AND user_id = $2;

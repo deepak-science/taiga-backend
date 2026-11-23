@@ -166,6 +166,8 @@ type Model interface {
 	CheckEmpty(ctx context.Context) error
 	// RestoreAccount makes one of a backup's accounts again; its files' bytes must already be in fileRepo.
 	RestoreAccount(ctx context.Context, acct *backup.Account, fileRepo filerepo.FileRepo, now time.Time) (*RestoreReport, error)
+	// ImportAccount brings a user's export into the signed-in account, matched by file hash, so importing it again changes nothing; its files' bytes must already be in fileRepo.
+	ImportAccount(ctx context.Context, d *backup.Data, fileRepo filerepo.FileRepo, now time.Time, userToken *tokens.UserToken) (*ImportReport, error)
 }
 
 type storeModel struct {
