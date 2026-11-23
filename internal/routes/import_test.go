@@ -8,14 +8,19 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"gitea.deepak.science/deepak/taiga/internal/backup"
+	"gitea.deepak.science/deepak/taiga/internal/filerepo"
 	"gitea.deepak.science/deepak/taiga/internal/models"
+	"gitea.deepak.science/deepak/taiga/internal/routes"
 	"gitea.deepak.science/deepak/taiga/internal/testsupport"
+	"gitea.deepak.science/deepak/taiga/internal/tokens"
 )
 
 func (c *apiClient) importArchive(archive []byte) (int, []byte) {
@@ -119,39 +124,57 @@ func TestImportTurnsAwayAFileThatDoesntMatchItsHash(t *testing.T) {
 	assert.Contains(t, string(body), "doesn't match its hash")
 }
 
+// gatedRepo holds every Store until released, saying when one has begun: an import only stores once it holds its account's slot.
+type gatedRepo struct {
+	filerepo.FileRepo
+	storing chan struct{}
+	release chan struct{}
+}
+
+func (g *gatedRepo) Store(ctx context.Context, r io.Reader) (string, error) {
+	select {
+	case g.storing <- struct{}{}:
+	default:
+	}
+	<-g.release
+	return g.FileRepo.Store(ctx, r)
+}
+
 func TestAnImportHoldsUpOnlyItsOwnAccount(t *testing.T) {
-	srv, m, toker := newAPI(t)
+	m, toker := testsupport.NewModel(t), testsupport.NewToker(t)
+	repo := &gatedRepo{FileRepo: testsupport.NewFileRepo(t), storing: make(chan struct{}), release: make(chan struct{})}
+	srv := httptest.NewServer(routes.New(m, toker, repo))
+	t.Cleanup(srv.Close)
 	alice := newUserClient(t, srv, m, toker, "alice@example.com")
 	bob := newUserClient(t, srv, m, toker, "bob@example.com")
+	export, err := m.Export(t.Context(), true, routeDay, &tokens.UserToken{ID: 1})
+	require.NoError(t, err)
+	export.Files = []backup.File{{SHA256: hashOf([]byte("a file")), Timestamp: routeDay}}
+	var archive bytes.Buffer
+	require.NoError(t, backup.Write(t.Context(), &archive, export, func(context.Context, string) (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader("a file")), nil
+	}))
 
-	// Bob's first import is still uploading.
-	pr, pw := io.Pipe()
+	// Bob's first import has reached its file, so it holds his slot.
 	done := make(chan int)
 	go func() {
-		req, err := http.NewRequest(http.MethodPost, srv.URL+"/import", pr)
-		if err != nil {
-			done <- 0
-			return
-		}
-		req.Header.Set("Authorization", "Bearer "+bob.token)
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			done <- 0
-			return
-		}
-		_ = resp.Body.Close()
-		done <- resp.StatusCode
+		status, _ := bob.importArchive(archive.Bytes())
+		done <- status
 	}()
-	_, err := pw.Write([]byte("a"))
-	require.NoError(t, err, "the server is reading it")
+	<-repo.storing
 
 	status, _ := bob.importArchive([]byte("not a tar"))
 	assert.Equal(t, http.StatusConflict, status, "bob's second waits for his first")
 	status, _ = alice.importArchive([]byte("not a tar"))
 	assert.Equal(t, http.StatusUnprocessableEntity, status, "alice's goes ahead")
 
-	require.NoError(t, pw.Close())
-	assert.Equal(t, http.StatusUnprocessableEntity, <-done)
+	close(repo.release)
+	assert.Equal(t, http.StatusOK, <-done)
 	status, _ = bob.importArchive([]byte("not a tar"))
 	assert.Equal(t, http.StatusUnprocessableEntity, status, "and once it's done, bob can again")
+}
+
+func hashOf(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
 }
