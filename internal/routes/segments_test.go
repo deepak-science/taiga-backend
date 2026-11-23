@@ -125,6 +125,38 @@ func TestSegmentRoutes(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, status)
 	})
 
+	t.Run("medals", func(t *testing.T) {
+		var segments []struct {
+			Name  string `json:"name"`
+			Medal string `json:"medal"`
+		}
+		status, body := alice.get(fmt.Sprintf("/workouts/%d/segments?tz=America/Chicago", long))
+		require.Equal(t, http.StatusOK, status)
+		require.NoError(t, json.Unmarshal(body, &segments))
+		for _, s := range segments {
+			assert.Equal(t, models.MedalGold, s.Medal, s.Name)
+		}
+
+		var listed []struct {
+			ID     int32                  `json:"id"`
+			Name   string                 `json:"name"`
+			Medals []*models.SegmentMedal `json:"medals"`
+		}
+		status, body = alice.get("/workouts")
+		require.Equal(t, http.StatusOK, status)
+		require.NoError(t, json.Unmarshal(body, &listed))
+		require.Len(t, listed, 2)
+		assert.Equal(t, short, listed[0].ID)
+		assert.NotEmpty(t, listed[0].Name, "the workout's own fields are still there")
+		assert.NotNil(t, listed[0].Medals)
+		assert.Empty(t, listed[0].Medals, "beaten in its month by the long run")
+		assert.Len(t, listed[1].Medals, 4)
+		assert.Contains(t, string(body), `"medals":[]`)
+
+		status, _ = alice.get("/workouts?tz=Nowhere/Special")
+		assert.Equal(t, http.StatusBadRequest, status)
+	})
+
 	t.Run("best efforts", func(t *testing.T) {
 		status, body := alice.get("/segments/1k/best")
 		require.Equal(t, http.StatusOK, status)

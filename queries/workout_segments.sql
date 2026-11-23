@@ -75,3 +75,23 @@ WHERE
 ORDER BY
   workouts.start_time,
   workout_segments.id;
+
+-- name: ListSegmentEffortsForMedals :many
+-- Every segment of the user's workouts, oldest first so the earlier effort keeps a medal on a tie.
+SELECT
+  workout_segments.id,
+  workout_segments.workout_id,
+  workout_segments.name,
+  workout_segments.kind,
+  workout_segments.distance_meters,
+  workout_segments.duration_seconds,
+  workouts.sport,
+  workouts.start_time AS workout_start_time
+FROM
+  workout_segments
+  JOIN workouts ON workouts.id = workout_segments.workout_id
+WHERE
+  workout_segments.user_id = $1
+ORDER BY
+  workouts.start_time,
+  workout_segments.id;

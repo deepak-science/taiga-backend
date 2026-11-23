@@ -157,6 +157,8 @@ type Querier interface {
 	ListRoutesByUser(ctx context.Context, userID int32) ([]*Route, error)
 	// Every segment of the user's workouts of one sport, for picking each year's best at each segment in Go.
 	ListSegmentEffortsBySport(ctx context.Context, arg *ListSegmentEffortsBySportParams) ([]*ListSegmentEffortsBySportRow, error)
+	// Every segment of the user's workouts, oldest first so the earlier effort keeps a medal on a tie.
+	ListSegmentEffortsForMedals(ctx context.Context, userID int32) ([]*ListSegmentEffortsForMedalsRow, error)
 	// Distance segments shortest first, then duration segments shortest first.
 	ListSegmentsByWorkout(ctx context.Context, arg *ListSegmentsByWorkoutParams) ([]*WorkoutSegment, error)
 	// The source's activities whose workout has none of the source's own figures yet: those never tried first, newest first, then the ones whose reply couldn't be read, longest since first, so a run of unreadable ones can't keep the rest from being asked for.

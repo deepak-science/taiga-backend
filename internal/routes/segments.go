@@ -121,6 +121,12 @@ func getBestSegmentsFunc(m models.Model) http.HandlerFunc {
 	}
 }
 
+// medalledSegment is a segment with the medal it holds now, left out when it holds none.
+type medalledSegment struct {
+	*models.WorkoutSegment
+	Medal string `json:"medal,omitempty"`
+}
+
 func getWorkoutSegmentsFunc(m models.Model) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -137,12 +143,31 @@ func getWorkoutSegmentsFunc(m models.Model) http.HandlerFunc {
 			return
 		}
 
+		loc, err := parseLocation(r.URL.Query())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		segments, err := m.WorkoutSegments(ctx, int32(workoutID64), userToken)
 		if err != nil {
 			notFoundHandler(w, r)
 			return
 		}
-		writeJSON(w, segments)
+		medals, err := m.Medals(ctx, loc, userToken)
+		if err != nil {
+			serverError(w, err)
+			return
+		}
+		// By name, not id: a reprocess between the two reads replaces the rows but keeps one segment per name.
+		bySegment := map[string]string{}
+		for _, medal := range medals[int32(workoutID64)] {
+			bySegment[medal.Segment] = medal.Medal
+		}
+		out := make([]medalledSegment, 0, len(segments))
+		for _, s := range segments {
+			out = append(out, medalledSegment{WorkoutSegment: s, Medal: bySegment[s.Name]})
+		}
+		writeJSON(w, out)
 	}
 }
 
