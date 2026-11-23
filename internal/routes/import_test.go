@@ -125,6 +125,7 @@ func TestImportTurnsAwayAFileThatDoesntMatchItsHash(t *testing.T) {
 }
 
 // gatedRepo holds every Store until released, saying when one has begun: an import only stores once it holds its account's slot.
+// storing has room for one, so the first Store's word waits for the test even if it gets there first.
 type gatedRepo struct {
 	filerepo.FileRepo
 	storing chan struct{}
@@ -142,7 +143,7 @@ func (g *gatedRepo) Store(ctx context.Context, r io.Reader) (string, error) {
 
 func TestAnImportHoldsUpOnlyItsOwnAccount(t *testing.T) {
 	m, toker := testsupport.NewModel(t), testsupport.NewToker(t)
-	repo := &gatedRepo{FileRepo: testsupport.NewFileRepo(t), storing: make(chan struct{}), release: make(chan struct{})}
+	repo := &gatedRepo{FileRepo: testsupport.NewFileRepo(t), storing: make(chan struct{}, 1), release: make(chan struct{})}
 	srv := httptest.NewServer(routes.New(m, toker, repo))
 	t.Cleanup(srv.Close)
 	alice := newUserClient(t, srv, m, toker, "alice@example.com")
