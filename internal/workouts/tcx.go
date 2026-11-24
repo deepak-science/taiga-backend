@@ -30,9 +30,14 @@ var tcxSports = map[string][2]string{
 }
 
 const (
-	ExcludedMixedSports = "mixed sports"
-	ExcludedSparseGPS   = "too few GPS points"
+	ExcludedMixedSports  = "mixed sports"
+	ExcludedSparseGPS    = "too few GPS points"
+	ExcludedJitteryTrack = "jittery GPS track"
 )
+
+// tcxJitterOverTrack is how far over its own track a stated total may run before the track is taken for a jittery one.
+// Google Fit inflates its total along with the track when the phone drifts: across 109 Google Fit runs, the four jittery ones were 3.3–8.8% over their tracks and no other was over 1.6%.
+const tcxJitterOverTrack = 0.025
 
 // tcxMinPointsPerMile separates a tracked run from an auto-detected one: on a Google Fit export tracked runs had 200+ fixes a mile, auto-detected ones under 20.
 const tcxMinPointsPerMile = 50
@@ -68,9 +73,11 @@ type tcxTrackpoint struct {
 // ReadTCXFile reads one session from a TCX file, as Google Fit's Takeout writes them: one file per session, its activities the stretches Google Fit detected.
 // Each activity and lap restarts its distance from zero, so the laps are laid end to end.
 // Google Fit's per-point distances can't be trusted (they update every half minute or so, or sit at the total throughout), and it pads a session with points out to the hour.
-// So a session with enough GPS keeps only its fixes, each measured along the track, and its time is the fixes' span; the stated distance stays the total.
+// So a session with enough GPS keeps only its fixes, each measured along the track, and its time is the fixes' span.
+// Its distance is the shorter of the stated total and the track, since dense fixes can only cut corners.
 // A scored session that mixes sports, has time running backwards, or has too few GPS points for its distance was auto-detected rather than tracked, and one whose track strays over 10% from the stated distance has a bad track or a bad total.
 // Either keeps its stated totals but no points, and an ExcludedReason.
+// One whose total is over 2.5% above its track has a jittery track, which inflates both: it keeps its points, but doesn't count either.
 func ReadTCXFile(r io.Reader) (*Run, error) {
 	var f tcxFile
 	if err := xml.NewDecoder(r).Decode(&f); err != nil {
@@ -129,12 +136,15 @@ func ReadTCXFile(r io.Reader) (*Run, error) {
 	}
 	distance := &Distance{Meters: offset}
 	sparse := float64(gps) < tcxMinPointsPerMile*distance.AsMiles()
-	trackAgrees := true
+	measured, track := false, 0.0
 	if !sparse && !backwards && gps >= 2 {
 		records = alongFixes(records)
 		start, end = records[0].Timestamp, records[len(records)-1].Timestamp
-		trackAgrees = math.Abs(records[len(records)-1].Distance.Meters-distance.Meters) <= pointsAgreeWithin*distance.Meters
+		measured, track = true, records[len(records)-1].Distance.Meters
 	}
+	// A measured track that came out NaN (a fix with no longitude) fails this, as it should.
+	trackAgrees := !measured || math.Abs(track-distance.Meters) <= pointsAgreeWithin*distance.Meters
+	jittery := measured && distance.Meters > (1+tcxJitterOverTrack)*track
 	for _, rec := range records {
 		rec.DurationFromStart = rec.Timestamp.Sub(start)
 	}
@@ -142,6 +152,30 @@ func ReadTCXFile(r io.Reader) (*Run, error) {
 	sport := tcxSports[f.Activities[0].Sport]
 	if sport[0] == "" {
 		sport[0] = typedef.SportGeneric.String()
+	}
+	var reason string
+	if Scored(sport[0]) && !indoorSubSports[sport[1]] {
+		switch {
+		case len(sports) > 1:
+			reason = ExcludedMixedSports
+		case distance.Meters == 0:
+			reason = ExcludedNoDistance
+		case backwards:
+			reason = ExcludedTimeBackwards
+		case sparse:
+			reason = ExcludedSparseGPS
+		case !trackAgrees:
+			reason = ExcludedPointsDisagree
+		case jittery:
+			reason = ExcludedJitteryTrack
+		}
+	}
+	// A jittery track is still the run, only longer than it was, so it keeps its points to be drawn.
+	keepsPoints := reason == "" || reason == ExcludedJitteryTrack
+	// Dense fixes can only cut corners, so where the points stay, a total longer than their track was inflated.
+	// Every sub-sport tcxSports maps is indoors or on a machine (treadmill, trainer, elliptical, ...), where the distance is the equipment's and any fixes are drift.
+	if keepsPoints && measured && trackAgrees && sport[1] == "" && track < distance.Meters {
+		distance = &Distance{Meters: track}
 	}
 	duration := end.Sub(start)
 	hours := duration.Hours()
@@ -156,26 +190,13 @@ func ReadTCXFile(r io.Reader) (*Run, error) {
 			Sport:          sport[0],
 			SubSport:       sport[1],
 			Source:         source,
+			ExcludedReason: reason,
 		},
 		Records: records,
 	}
-	if Scored(run.Summary.Sport) && !indoorSubSports[run.Summary.SubSport] {
-		switch {
-		case len(sports) > 1:
-			run.Summary.ExcludedReason = ExcludedMixedSports
-		case distance.Meters == 0:
-			run.Summary.ExcludedReason = ExcludedNoDistance
-		case backwards:
-			run.Summary.ExcludedReason = ExcludedTimeBackwards
-		case sparse:
-			run.Summary.ExcludedReason = ExcludedSparseGPS
-		case !trackAgrees:
-			run.Summary.ExcludedReason = ExcludedPointsDisagree
-		}
-	}
 	// Before the points go: ones too poor to measure with still say where it was.
 	run.locate()
-	if run.Summary.ExcludedReason != "" {
+	if !keepsPoints {
 		run.Records = nil
 	}
 	return run, nil
