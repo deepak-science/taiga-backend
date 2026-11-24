@@ -92,7 +92,7 @@ func retryJobFunc(m models.Model) http.HandlerFunc {
 
 		job, err := m.RetryDeadJob(ctx, int32(jobID), time.Now(), userToken)
 		switch {
-		case errors.Is(err, models.ErrJobNotDead):
+		case errors.Is(err, models.ErrJobNotDead), errors.Is(err, models.ErrJobPending):
 			conflictError(w, err)
 		case models.IsNotFound(err):
 			notFoundHandler(w, r)
