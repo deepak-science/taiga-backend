@@ -489,12 +489,13 @@ func placeJittery(ctx context.Context, q db.Querier, userID int32, routes []jitt
 	}
 	placed := make(map[int32]bool, len(jittery))
 	for _, row := range jittery {
-		placed[row.WorkoutID] = true
 		var t workouts.Track
 		if err := json.Unmarshal(row.Track, &t); err != nil {
+			// Left out of placed, so the cleanup below clears whatever mark it had.
 			log.Printf("Skipping undecodable track of workout %d: %v", row.WorkoutID, err)
 			continue
 		}
+		placed[row.WorkoutID] = true
 		var best *jitterCandidate
 		bestD := math.Inf(1)
 		for k := range routes {

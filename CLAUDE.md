@@ -398,7 +398,7 @@ sources:
 - `DELETE /routes/{id}/merges` - Undo every merge into the route; `204`
 - `GET /workouts/{id}/route` - The route a workout is on; `404` when it has none (no GPS, nothing else matches it yet, or the user took it off)
 - `GET /workouts/{id}/route/override` - The user's placement of the workout, `{workout_id, route_id}` (a null `route_id` keeps it off every route); `404` when detection placed it
-- `PUT /workouts/{id}/route/override` - Move the workout onto a route with `{"route_id": N}`, or off every route with `{"route_id": null}`; `422` for an unknown route, one of another sport, or a workout with no GPS track
+- `PUT /workouts/{id}/route/override` - Move the workout onto a route with `{"route_id": N}`, or off every route with `{"route_id": null}`; `422` for an unknown route, one of another sport, or a workout that doesn't count or has no GPS track
 - `DELETE /workouts/{id}/route/override` - Hand the workout back to detection; `204`
 
 ### Export and import (requires JWT token; `docs/backup.md`)

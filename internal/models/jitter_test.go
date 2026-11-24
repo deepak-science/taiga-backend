@@ -71,6 +71,11 @@ func TestJitteryRunCountsAtItsRouteLength(t *testing.T) {
 		}
 	})
 
+	t.Run("it can't be moved onto a route", func(t *testing.T) {
+		_, err := m.SetRouteOverride(ctx, jittery.ID, &routes[0].ID, alice)
+		assert.ErrorIs(t, err, models.ErrNoTrack)
+	})
+
 	t.Run("the user's exclusion still keeps it out", func(t *testing.T) {
 		_, err := m.CorrectWorkout(ctx, jittery.ID, models.Corrections{ExcludedReason: "bad trace"}, alice, repo)
 		require.NoError(t, err)

@@ -11,7 +11,7 @@ import (
 )
 
 // ErrNoTrack means the workout can't be placed on a route, since routes are made of GPS tracks.
-var ErrNoTrack = errors.New("workout has no GPS track to place on a route: only outdoor runs and walks that count have one")
+var ErrNoTrack = errors.New("workout can't be placed on a route: only outdoor runs and walks that count, with a GPS track, can")
 
 // ErrUnknownRoute means a request named a route that isn't the user's.
 var ErrUnknownRoute = errors.New("no such route")
@@ -84,6 +84,10 @@ func (m *storeModel) SetRouteOverride(ctx context.Context, workoutID int32, rout
 		workout, err := q.GetWorkout(ctx, &db.GetWorkoutParams{ID: workoutID, UserID: userToken.ID})
 		if err != nil {
 			return err
+		}
+		// A jittery run keeps a track, but regrouping takes counted runs only, so a move would be ignored.
+		if workout.ExcludedReason != "" {
+			return ErrNoTrack
 		}
 		if _, err := q.GetWorkoutTrack(ctx, &db.GetWorkoutTrackParams{WorkoutID: workoutID, UserID: userToken.ID}); err != nil {
 			if IsNotFound(err) {
