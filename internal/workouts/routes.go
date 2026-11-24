@@ -258,3 +258,56 @@ func resample(points [][2]float64, n int) [][2]float64 {
 	}
 	return out
 }
+
+// Placing a jittery run on a route: its drift lengthens it and pushes it tens of metres off, so the checks are looser than SameRoute's, and only ever applied to runs already known to be jittery.
+const (
+	// JitterRouteShapeMeters bounds the Fréchet distance between a jittery run and the route's representative.
+	JitterRouteShapeMeters = 150
+	// JitterRouteShortest and JitterRouteLongest bound the route's length as a fraction of the jittery track's, since drift only ever adds length.
+	JitterRouteShortest = 0.70
+	JitterRouteLongest  = 0.95
+)
+
+// JitterOnRoute reports whether a jittery track follows the route a representative track stands for, with the Fréchet distance between them when it does.
+func JitterOnRoute(jittery, representative *Track) (float64, bool) {
+	if jittery == nil || representative == nil || len(jittery.Points) < 2 || len(representative.Points) < 2 {
+		return 0, false
+	}
+	if ratio := representative.Meters / jittery.Meters; ratio < JitterRouteShortest || ratio > JitterRouteLongest {
+		return 0, false
+	}
+	proj := newProjection(representative.Points[0][0])
+	pj, pr := proj.apply(jittery.Points), proj.apply(representative.Points)
+	if dist(pj[0], pr[0]) > RouteEndpointMeters || dist(pj[len(pj)-1], pr[len(pr)-1]) > RouteEndpointMeters {
+		return 0, false
+	}
+	d := frechet(pj, pr, endpointWindow(jittery), endpointWindow(representative), JitterRouteShapeMeters)
+	return d, d <= JitterRouteShapeMeters
+}
+
+// JitterRoute is a route a jittery run may be placed on, with its representative's track.
+type JitterRoute struct {
+	ID    int32
+	Sport string
+	Runs  int
+	Track *Track
+}
+
+// PlaceJittery picks the route of the run's sport that a jittery track follows (JitterOnRoute), as an index into routes, or -1 for none.
+// Closest by Fréchet wins, then the route with more runs, then the lower id, so the choice doesn't depend on the order routes come in.
+func PlaceJittery(track *Track, sport string, routes []JitterRoute) int {
+	best, bestD := -1, math.Inf(1)
+	for k, r := range routes {
+		if r.Sport != sport {
+			continue
+		}
+		d, ok := JitterOnRoute(track, r.Track)
+		if !ok {
+			continue
+		}
+		if best < 0 || d < bestD || (d == bestD && (r.Runs > routes[best].Runs || (r.Runs == routes[best].Runs && r.ID < routes[best].ID))) {
+			best, bestD = k, d
+		}
+	}
+	return best
+}

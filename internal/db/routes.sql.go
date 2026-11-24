@@ -311,6 +311,94 @@ func (q *Queries) GetWorkoutTrack(ctx context.Context, arg *GetWorkoutTrackParam
 	return track, err
 }
 
+const listJitterMarkedWorkouts = `-- name: ListJitterMarkedWorkouts :many
+SELECT
+  id
+FROM
+  workouts
+WHERE
+  user_id = $1
+  AND jitter_route_id IS NOT NULL
+`
+
+func (q *Queries) ListJitterMarkedWorkouts(ctx context.Context, userID int32) ([]int32, error) {
+	rows, err := q.db.Query(ctx, listJitterMarkedWorkouts, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int32{}
+	for rows.Next() {
+		var id int32
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listJitteryTracksByUser = `-- name: ListJitteryTracksByUser :many
+SELECT
+  workout_tracks.workout_id,
+  workout_tracks.track,
+  workouts.sport,
+  workouts.jitter_route_id,
+  workouts.jitter_route_miles
+FROM
+  workout_tracks
+  JOIN workouts ON workouts.id = workout_tracks.workout_id
+WHERE
+  workout_tracks.user_id = $1
+  AND workouts.duplicate_of IS NULL
+  AND workouts.excluded_reason = $2
+ORDER BY
+  workouts.id
+`
+
+type ListJitteryTracksByUserParams struct {
+	UserID        int32  `json:"user_id"`
+	JitteryReason string `json:"jittery_reason"`
+}
+
+type ListJitteryTracksByUserRow struct {
+	WorkoutID        int32    `json:"workout_id"`
+	Track            []byte   `json:"track"`
+	Sport            string   `json:"sport"`
+	JitterRouteID    *int32   `json:"jitter_route_id"`
+	JitterRouteMiles *float64 `json:"jitter_route_miles"`
+}
+
+// The jittery runs route detection places on routes, with the mark each has now.
+func (q *Queries) ListJitteryTracksByUser(ctx context.Context, arg *ListJitteryTracksByUserParams) ([]*ListJitteryTracksByUserRow, error) {
+	rows, err := q.db.Query(ctx, listJitteryTracksByUser, arg.UserID, arg.JitteryReason)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*ListJitteryTracksByUserRow{}
+	for rows.Next() {
+		var i ListJitteryTracksByUserRow
+		if err := rows.Scan(
+			&i.WorkoutID,
+			&i.Track,
+			&i.Sport,
+			&i.JitterRouteID,
+			&i.JitterRouteMiles,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRouteNamesByUser = `-- name: ListRouteNamesByUser :many
 SELECT
   routes.id,
@@ -464,6 +552,7 @@ FROM
 WHERE
   workout_tracks.user_id = $1
   AND workouts.duplicate_of IS NULL
+  AND workouts.excluded_reason = ''
 ORDER BY
   workouts.start_time,
   workouts.id
@@ -477,6 +566,7 @@ type ListWorkoutTracksByUserRow struct {
 
 // Oldest first, the order route detection assigns runs in; routes only group runs of one sport.
 // A duplicate is left out even before reprocessing drops its track, since the same job marks it.
+// A jittery run keeps its track but isn't one of a route's runs.
 func (q *Queries) ListWorkoutTracksByUser(ctx context.Context, userID int32) ([]*ListWorkoutTracksByUserRow, error) {
 	rows, err := q.db.Query(ctx, listWorkoutTracksByUser, userID)
 	if err != nil {
@@ -584,6 +674,34 @@ type SetRouteRepresentativeParams struct {
 
 func (q *Queries) SetRouteRepresentative(ctx context.Context, arg *SetRouteRepresentativeParams) error {
 	_, err := q.db.Exec(ctx, setRouteRepresentative, arg.ID, arg.UserID, arg.RepresentativeWorkoutID)
+	return err
+}
+
+const setWorkoutJitterRoute = `-- name: SetWorkoutJitterRoute :exec
+UPDATE workouts
+SET
+  jitter_route_id = $1,
+  jitter_route_miles = $2,
+  updated_at = CURRENT_TIMESTAMP
+WHERE
+  id = $3
+  AND user_id = $4
+`
+
+type SetWorkoutJitterRouteParams struct {
+	JitterRouteID    *int32   `json:"jitter_route_id"`
+	JitterRouteMiles *float64 `json:"jitter_route_miles"`
+	ID               int32    `json:"id"`
+	UserID           int32    `json:"user_id"`
+}
+
+func (q *Queries) SetWorkoutJitterRoute(ctx context.Context, arg *SetWorkoutJitterRouteParams) error {
+	_, err := q.db.Exec(ctx, setWorkoutJitterRoute,
+		arg.JitterRouteID,
+		arg.JitterRouteMiles,
+		arg.ID,
+		arg.UserID,
+	)
 	return err
 }
 

@@ -160,6 +160,7 @@ LIMIT
 
 -- name: ListCountedWorkoutsInWindow :many
 -- What a total needs of each counted workout starting in [window_from, window_to), oldest first; an excluded workout stays out of stats.
+-- A jittery run that route detection placed counts too, at its route's length, unless the user excluded it as well.
 -- Bucketing by local week, month or year happens in Go, since the two databases share no date functions.
 SELECT
   id,
@@ -167,12 +168,21 @@ SELECT
   sport,
   start_time,
   distance_miles,
-  time_seconds
+  time_seconds,
+  excluded_reason,
+  jitter_route_miles
 FROM
   workouts
 WHERE
   user_id = sqlc.arg(user_id)
-  AND excluded_reason = ''
+  AND (
+    excluded_reason = ''
+    OR (
+      excluded_reason = sqlc.arg(jittery_reason)
+      AND jitter_route_miles IS NOT NULL
+      AND user_excluded_reason = ''
+    )
+  )
   AND start_time >= sqlc.arg(window_from)
   AND start_time < sqlc.arg(window_to)
 ORDER BY
