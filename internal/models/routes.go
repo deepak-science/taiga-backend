@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"slices"
 	"time"
 
@@ -440,12 +441,14 @@ func detectRoutes(ctx context.Context, q db.Querier, userID int32, unmerge int32
 	if err := q.DeleteWorkoutRoutesByUser(ctx, userID); err != nil {
 		return err
 	}
+	var placeable []jitterCandidate
 	for _, routeID := range order {
 		b := built[routeID]
 		rep := b.members[0]
 		if len(b.core) > 0 {
 			rep = workouts.Medoid(tracks, b.core)
 		}
+		placeable = append(placeable, jitterCandidate{routeID: routeID, sport: rows[rep].Sport, runs: len(b.members), track: tracks[rep]})
 		if err := q.SetRouteRepresentative(ctx, &db.SetRouteRepresentativeParams{ID: routeID, UserID: userID, RepresentativeWorkoutID: &rows[rep].WorkoutID}); err != nil {
 			return err
 		}
@@ -466,13 +469,89 @@ func detectRoutes(ctx context.Context, q db.Querier, userID int32, unmerge int32
 			return err
 		}
 	}
+	return placeJittery(ctx, q, userID, placeable)
+}
+
+// jitterCandidate is a route a jittery run can be placed on, with its representative's track.
+type jitterCandidate struct {
+	routeID int32
+	sport   string
+	runs    int
+	track   *workouts.Track
+}
+
+// placeJittery marks each of the user's jittery runs with the route it follows (workouts.JitterOnRoute) and the length of that route's representative, which totals count it at, and clears the mark of any other workout.
+// Closest by Fréchet wins, then the route with more runs, then the older route, so the mark depends only on the routes as just rebuilt.
+func placeJittery(ctx context.Context, q db.Querier, userID int32, routes []jitterCandidate) error {
+	jittery, err := q.ListJitteryTracksByUser(ctx, &db.ListJitteryTracksByUserParams{UserID: userID, JitteryReason: workouts.ExcludedJitteryTrack})
+	if err != nil {
+		return err
+	}
+	placed := make(map[int32]bool, len(jittery))
+	for _, row := range jittery {
+		placed[row.WorkoutID] = true
+		var t workouts.Track
+		if err := json.Unmarshal(row.Track, &t); err != nil {
+			log.Printf("Skipping undecodable track of workout %d: %v", row.WorkoutID, err)
+			continue
+		}
+		var best *jitterCandidate
+		bestD := math.Inf(1)
+		for k := range routes {
+			c := &routes[k]
+			if c.sport != row.Sport {
+				continue
+			}
+			d, ok := workouts.JitterOnRoute(&t, c.track)
+			if !ok {
+				continue
+			}
+			if best == nil || d < bestD || (d == bestD && (c.runs > best.runs || (c.runs == best.runs && c.routeID < best.routeID))) {
+				best, bestD = c, d
+			}
+		}
+		var routeID *int32
+		var miles *float64
+		if best != nil {
+			m := (&workouts.Distance{Meters: best.track.Meters}).AsMiles()
+			routeID, miles = &best.routeID, &m
+		}
+		if equalID(routeID, row.JitterRouteID) && equalMiles(miles, row.JitterRouteMiles) {
+			continue
+		}
+		if err := q.SetWorkoutJitterRoute(ctx, &db.SetWorkoutJitterRouteParams{ID: row.WorkoutID, UserID: userID, JitterRouteID: routeID, JitterRouteMiles: miles}); err != nil {
+			return err
+		}
+	}
+	// A run that's no longer jittery (reprocessed, or now a duplicate) loses its mark.
+	marked, err := q.ListJitterMarkedWorkouts(ctx, userID)
+	if err != nil {
+		return err
+	}
+	for _, id := range marked {
+		if placed[id] {
+			continue
+		}
+		if err := q.SetWorkoutJitterRoute(ctx, &db.SetWorkoutJitterRouteParams{ID: id, UserID: userID}); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// equalMiles compares stored distances, which SQLite's REAL and PostgreSQL's DOUBLE PRECISION both give back exactly as written.
+func equalMiles(a, b *float64) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 // storeTrack replaces the workout's track, removing it for a run without GPS or a sport that doesn't get routes.
 func storeTrack(ctx context.Context, q db.Querier, workoutID int32, run *workouts.Run, userToken *tokens.UserToken) error {
 	var track *workouts.Track
-	if run.Summary.Scored() {
+	// A jittery run keeps one too, so route detection can place it, though it's no route's run.
+	if run.Summary.Scored() || run.Summary.ExcludedReason == workouts.ExcludedJitteryTrack {
 		track = workouts.BuildTrack(run)
 	}
 	if track == nil {

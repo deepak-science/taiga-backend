@@ -670,6 +670,7 @@ WHERE
   workout_tracks.user_id = $1
   AND workouts.sport = $2
   AND workouts.duplicate_of IS NULL
+  AND workouts.excluded_reason = ''
 ORDER BY
   workouts.start_time,
   workouts.id
@@ -685,7 +686,7 @@ type ListWorkoutTracksByUserAndSportRow struct {
 	Track     []byte `json:"track"`
 }
 
-// The workouts a new stretch is matched against: tracked (so scored, with GPS) and not a copy of another.
+// The workouts a new stretch is matched against: tracked with GPS, counted (a jittery run has a track but no efforts), and not a copy of another.
 func (q *Queries) ListWorkoutTracksByUserAndSport(ctx context.Context, arg *ListWorkoutTracksByUserAndSportParams) ([]*ListWorkoutTracksByUserAndSportRow, error) {
 	rows, err := q.db.Query(ctx, listWorkoutTracksByUserAndSport, arg.UserID, arg.Sport)
 	if err != nil {

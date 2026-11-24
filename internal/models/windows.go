@@ -10,6 +10,7 @@ import (
 
 	"gitea.deepak.science/deepak/taiga/internal/db"
 	"gitea.deepak.science/deepak/taiga/internal/tokens"
+	"gitea.deepak.science/deepak/taiga/internal/workouts"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -93,10 +94,11 @@ type SportTotals struct {
 // add counts one workout; a tie for longest stays with whichever add saw first.
 func (s *SportTotals) add(r *db.ListCountedWorkoutsInWindowRow) {
 	s.Workouts++
+	distance := countedDistance(r)
 	longest := func() *LongestWorkout {
-		return &LongestWorkout{WorkoutID: r.ID, WorkoutName: r.Name, StartTime: r.StartTime.Time, DistanceMiles: r.DistanceMiles, TimeSeconds: r.TimeSeconds}
+		return &LongestWorkout{WorkoutID: r.ID, WorkoutName: r.Name, StartTime: r.StartTime.Time, DistanceMiles: distance, TimeSeconds: r.TimeSeconds}
 	}
-	if d := r.DistanceMiles; d != nil {
+	if d := distance; d != nil {
 		s.DistanceMiles += *d
 		if *d > 0 && (s.LongestByDistance == nil || *d > *s.LongestByDistance.DistanceMiles) {
 			s.LongestByDistance = longest()
@@ -108,6 +110,20 @@ func (s *SportTotals) add(r *db.ListCountedWorkoutsInWindowRow) {
 			s.LongestByTime = longest()
 		}
 	}
+}
+
+// countedDistance is what a total counts a workout as: its own distance, or for an excluded one the query let in (a jittery run on a route), its route's length.
+func countedDistance(r *db.ListCountedWorkoutsInWindowRow) *float64 {
+	if r.ExcludedReason != "" {
+		return r.JitterRouteMiles
+	}
+	return r.DistanceMiles
+}
+
+// listCounted is every workout a total counts that starts in the window.
+func listCounted(ctx context.Context, q db.Querier, window Window, userToken *tokens.UserToken) ([]*db.ListCountedWorkoutsInWindowRow, error) {
+	from, to := window.bounds()
+	return q.ListCountedWorkoutsInWindow(ctx, &db.ListCountedWorkoutsInWindowParams{UserID: userToken.ID, JitteryReason: workouts.ExcludedJitteryTrack, WindowFrom: from, WindowTo: to})
 }
 
 // sumBySport totals rows per sport, most workouts first.
@@ -140,7 +156,7 @@ func (m *storeModel) WorkoutTotals(ctx context.Context, window Window, userToken
 		return nil, err
 	}
 	from, to := window.bounds()
-	rows, err := querier.ListCountedWorkoutsInWindow(ctx, &db.ListCountedWorkoutsInWindowParams{UserID: userToken.ID, WindowFrom: from, WindowTo: to})
+	rows, err := listCounted(ctx, querier, window, userToken)
 	if err != nil {
 		log.Printf("Could not total workouts: %v", err)
 		return nil, err

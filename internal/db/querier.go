@@ -164,9 +164,13 @@ type Querier interface {
 	ListCOROSMetadataByUser(ctx context.Context, userID int32) ([]*CorosMetadatum, error)
 	ListCliSessionsByUser(ctx context.Context, userID int32) ([]*CliSession, error)
 	// What a total needs of each counted workout starting in [window_from, window_to), oldest first; an excluded workout stays out of stats.
+	// A jittery run that route detection placed counts too, at its route's length, unless the user excluded it as well.
 	// Bucketing by local week, month or year happens in Go, since the two databases share no date functions.
 	ListCountedWorkoutsInWindow(ctx context.Context, arg *ListCountedWorkoutsInWindowParams) ([]*ListCountedWorkoutsInWindowRow, error)
 	ListIdentitiesByUser(ctx context.Context, userID int32) ([]*UserIdentity, error)
+	ListJitterMarkedWorkouts(ctx context.Context, userID int32) ([]int32, error)
+	// The jittery runs route detection places on routes, with the mark each has now.
+	ListJitteryTracksByUser(ctx context.Context, arg *ListJitteryTracksByUserParams) ([]*ListJitteryTracksByUserRow, error)
 	ListJobsByUser(ctx context.Context, arg *ListJobsByUserParams) ([]*Job, error)
 	ListJobsByUserAndState(ctx context.Context, arg *ListJobsByUserAndStateParams) ([]*Job, error)
 	// Every user's newest jobs; an empty state, kind or a user_id of 0 doesn't filter.
@@ -207,8 +211,9 @@ type Querier interface {
 	ListWorkoutRoutesByUser(ctx context.Context, userID int32) ([]*WorkoutRoute, error)
 	// Oldest first, the order route detection assigns runs in; routes only group runs of one sport.
 	// A duplicate is left out even before reprocessing drops its track, since the same job marks it.
+	// A jittery run keeps its track but isn't one of a route's runs.
 	ListWorkoutTracksByUser(ctx context.Context, userID int32) ([]*ListWorkoutTracksByUserRow, error)
-	// The workouts a new stretch is matched against: tracked (so scored, with GPS) and not a copy of another.
+	// The workouts a new stretch is matched against: tracked with GPS, counted (a jittery run has a track but no efforts), and not a copy of another.
 	ListWorkoutTracksByUserAndSport(ctx context.Context, arg *ListWorkoutTracksByUserAndSportParams) ([]*ListWorkoutTracksByUserAndSportRow, error)
 	ListWorkoutWeather(ctx context.Context, arg *ListWorkoutWeatherParams) ([]*WorkoutWeather, error)
 	ListWorkoutWeatherByUser(ctx context.Context, userID int32) ([]*WorkoutWeather, error)
@@ -252,6 +257,7 @@ type Querier interface {
 	SetWorkoutDuplicateOf(ctx context.Context, arg *SetWorkoutDuplicateOfParams) error
 	// What the file states for the whole workout; part of what reprocessing rebuilds.
 	SetWorkoutFigures(ctx context.Context, arg *SetWorkoutFiguresParams) (*Workout, error)
+	SetWorkoutJitterRoute(ctx context.Context, arg *SetWorkoutJitterRouteParams) error
 	TouchCliSession(ctx context.Context, arg *TouchCliSessionParams) error
 	TouchDeviceAuthorization(ctx context.Context, arg *TouchDeviceAuthorizationParams) error
 	TouchUserSeen(ctx context.Context, arg *TouchUserSeenParams) error

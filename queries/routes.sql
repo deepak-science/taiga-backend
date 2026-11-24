@@ -16,6 +16,7 @@ WHERE
 -- name: ListWorkoutTracksByUser :many
 -- Oldest first, the order route detection assigns runs in; routes only group runs of one sport.
 -- A duplicate is left out even before reprocessing drops its track, since the same job marks it.
+-- A jittery run keeps its track but isn't one of a route's runs.
 SELECT
   workout_tracks.workout_id,
   workout_tracks.track,
@@ -26,9 +27,47 @@ FROM
 WHERE
   workout_tracks.user_id = $1
   AND workouts.duplicate_of IS NULL
+  AND workouts.excluded_reason = ''
 ORDER BY
   workouts.start_time,
   workouts.id;
+
+-- name: ListJitteryTracksByUser :many
+-- The jittery runs route detection places on routes, with the mark each has now.
+SELECT
+  workout_tracks.workout_id,
+  workout_tracks.track,
+  workouts.sport,
+  workouts.jitter_route_id,
+  workouts.jitter_route_miles
+FROM
+  workout_tracks
+  JOIN workouts ON workouts.id = workout_tracks.workout_id
+WHERE
+  workout_tracks.user_id = sqlc.arg(user_id)
+  AND workouts.duplicate_of IS NULL
+  AND workouts.excluded_reason = sqlc.arg(jittery_reason)
+ORDER BY
+  workouts.id;
+
+-- name: ListJitterMarkedWorkouts :many
+SELECT
+  id
+FROM
+  workouts
+WHERE
+  user_id = $1
+  AND jitter_route_id IS NOT NULL;
+
+-- name: SetWorkoutJitterRoute :exec
+UPDATE workouts
+SET
+  jitter_route_id = sqlc.narg(jitter_route_id),
+  jitter_route_miles = sqlc.narg(jitter_route_miles),
+  updated_at = CURRENT_TIMESTAMP
+WHERE
+  id = sqlc.arg(id)
+  AND user_id = sqlc.arg(user_id);
 
 -- name: GetWorkoutTrack :one
 SELECT

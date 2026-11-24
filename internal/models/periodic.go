@@ -65,8 +65,7 @@ func (m *storeModel) PeriodicTotals(ctx context.Context, every string, window Wi
 		log.Printf("could not get a querier: %v", err)
 		return nil, err
 	}
-	from, to := window.bounds()
-	rows, err := querier.ListCountedWorkoutsInWindow(ctx, &db.ListCountedWorkoutsInWindowParams{UserID: userToken.ID, WindowFrom: from, WindowTo: to})
+	rows, err := listCounted(ctx, querier, window, userToken)
 	if err != nil {
 		log.Printf("Could not list counted workouts: %v", err)
 		return nil, err

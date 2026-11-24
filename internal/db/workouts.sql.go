@@ -53,7 +53,7 @@ VALUES
     $17
   )
 RETURNING
-  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds, timer_seconds, avg_heart_rate, max_heart_rate, min_heart_rate, ascent_meters, descent_meters, calories, total_steps, avg_cadence, avg_power_watts, avg_effort_pace_mps, avg_step_length_m, avg_vertical_oscillation_mm, avg_ground_contact_ms, avg_vertical_ratio_pct
+  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds, timer_seconds, avg_heart_rate, max_heart_rate, min_heart_rate, ascent_meters, descent_meters, calories, total_steps, avg_cadence, avg_power_watts, avg_effort_pace_mps, avg_step_length_m, avg_vertical_oscillation_mm, avg_ground_contact_ms, avg_vertical_ratio_pct, jitter_route_id, jitter_route_miles
 `
 
 type CreateWorkoutParams struct {
@@ -136,6 +136,8 @@ func (q *Queries) CreateWorkout(ctx context.Context, arg *CreateWorkoutParams) (
 		&i.AvgVerticalOscillationMm,
 		&i.AvgGroundContactMs,
 		&i.AvgVerticalRatioPct,
+		&i.JitterRouteID,
+		&i.JitterRouteMiles,
 	)
 	return &i, err
 }
@@ -188,7 +190,7 @@ func (q *Queries) FirstWorkoutStartInWindow(ctx context.Context, arg *FirstWorko
 
 const getWorkout = `-- name: GetWorkout :one
 SELECT
-  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds, timer_seconds, avg_heart_rate, max_heart_rate, min_heart_rate, ascent_meters, descent_meters, calories, total_steps, avg_cadence, avg_power_watts, avg_effort_pace_mps, avg_step_length_m, avg_vertical_oscillation_mm, avg_ground_contact_ms, avg_vertical_ratio_pct
+  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds, timer_seconds, avg_heart_rate, max_heart_rate, min_heart_rate, ascent_meters, descent_meters, calories, total_steps, avg_cadence, avg_power_watts, avg_effort_pace_mps, avg_step_length_m, avg_vertical_oscillation_mm, avg_ground_contact_ms, avg_vertical_ratio_pct, jitter_route_id, jitter_route_miles
 FROM
   workouts
 WHERE
@@ -245,13 +247,15 @@ func (q *Queries) GetWorkout(ctx context.Context, arg *GetWorkoutParams) (*Worko
 		&i.AvgVerticalOscillationMm,
 		&i.AvgGroundContactMs,
 		&i.AvgVerticalRatioPct,
+		&i.JitterRouteID,
+		&i.JitterRouteMiles,
 	)
 	return &i, err
 }
 
 const getWorkoutsByActivityFile = `-- name: GetWorkoutsByActivityFile :many
 SELECT
-  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds, timer_seconds, avg_heart_rate, max_heart_rate, min_heart_rate, ascent_meters, descent_meters, calories, total_steps, avg_cadence, avg_power_watts, avg_effort_pace_mps, avg_step_length_m, avg_vertical_oscillation_mm, avg_ground_contact_ms, avg_vertical_ratio_pct
+  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds, timer_seconds, avg_heart_rate, max_heart_rate, min_heart_rate, ascent_meters, descent_meters, calories, total_steps, avg_cadence, avg_power_watts, avg_effort_pace_mps, avg_step_length_m, avg_vertical_oscillation_mm, avg_ground_contact_ms, avg_vertical_ratio_pct, jitter_route_id, jitter_route_miles
 FROM
   workouts
 WHERE
@@ -314,6 +318,8 @@ func (q *Queries) GetWorkoutsByActivityFile(ctx context.Context, arg *GetWorkout
 			&i.AvgVerticalOscillationMm,
 			&i.AvgGroundContactMs,
 			&i.AvgVerticalRatioPct,
+			&i.JitterRouteID,
+			&i.JitterRouteMiles,
 		); err != nil {
 			return nil, err
 		}
@@ -332,38 +338,56 @@ SELECT
   sport,
   start_time,
   distance_miles,
-  time_seconds
+  time_seconds,
+  excluded_reason,
+  jitter_route_miles
 FROM
   workouts
 WHERE
   user_id = $1
-  AND excluded_reason = ''
-  AND start_time >= $2
-  AND start_time < $3
+  AND (
+    excluded_reason = ''
+    OR (
+      excluded_reason = $2
+      AND jitter_route_miles IS NOT NULL
+      AND user_excluded_reason = ''
+    )
+  )
+  AND start_time >= $3
+  AND start_time < $4
 ORDER BY
   start_time,
   id
 `
 
 type ListCountedWorkoutsInWindowParams struct {
-	UserID     int32              `json:"user_id"`
-	WindowFrom pgtype.Timestamptz `json:"window_from"`
-	WindowTo   pgtype.Timestamptz `json:"window_to"`
+	UserID        int32              `json:"user_id"`
+	JitteryReason string             `json:"jittery_reason"`
+	WindowFrom    pgtype.Timestamptz `json:"window_from"`
+	WindowTo      pgtype.Timestamptz `json:"window_to"`
 }
 
 type ListCountedWorkoutsInWindowRow struct {
-	ID            int32              `json:"id"`
-	Name          string             `json:"name"`
-	Sport         string             `json:"sport"`
-	StartTime     pgtype.Timestamptz `json:"start_time"`
-	DistanceMiles *float64           `json:"distance_miles"`
-	TimeSeconds   *float64           `json:"time_seconds"`
+	ID               int32              `json:"id"`
+	Name             string             `json:"name"`
+	Sport            string             `json:"sport"`
+	StartTime        pgtype.Timestamptz `json:"start_time"`
+	DistanceMiles    *float64           `json:"distance_miles"`
+	TimeSeconds      *float64           `json:"time_seconds"`
+	ExcludedReason   string             `json:"excluded_reason"`
+	JitterRouteMiles *float64           `json:"jitter_route_miles"`
 }
 
 // What a total needs of each counted workout starting in [window_from, window_to), oldest first; an excluded workout stays out of stats.
+// A jittery run that route detection placed counts too, at its route's length, unless the user excluded it as well.
 // Bucketing by local week, month or year happens in Go, since the two databases share no date functions.
 func (q *Queries) ListCountedWorkoutsInWindow(ctx context.Context, arg *ListCountedWorkoutsInWindowParams) ([]*ListCountedWorkoutsInWindowRow, error) {
-	rows, err := q.db.Query(ctx, listCountedWorkoutsInWindow, arg.UserID, arg.WindowFrom, arg.WindowTo)
+	rows, err := q.db.Query(ctx, listCountedWorkoutsInWindow,
+		arg.UserID,
+		arg.JitteryReason,
+		arg.WindowFrom,
+		arg.WindowTo,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -378,6 +402,8 @@ func (q *Queries) ListCountedWorkoutsInWindow(ctx context.Context, arg *ListCoun
 			&i.StartTime,
 			&i.DistanceMiles,
 			&i.TimeSeconds,
+			&i.ExcludedReason,
+			&i.JitterRouteMiles,
 		); err != nil {
 			return nil, err
 		}
@@ -391,7 +417,7 @@ func (q *Queries) ListCountedWorkoutsInWindow(ctx context.Context, arg *ListCoun
 
 const listWorkoutsByUser = `-- name: ListWorkoutsByUser :many
 SELECT
-  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds, timer_seconds, avg_heart_rate, max_heart_rate, min_heart_rate, ascent_meters, descent_meters, calories, total_steps, avg_cadence, avg_power_watts, avg_effort_pace_mps, avg_step_length_m, avg_vertical_oscillation_mm, avg_ground_contact_ms, avg_vertical_ratio_pct
+  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds, timer_seconds, avg_heart_rate, max_heart_rate, min_heart_rate, ascent_meters, descent_meters, calories, total_steps, avg_cadence, avg_power_watts, avg_effort_pace_mps, avg_step_length_m, avg_vertical_oscillation_mm, avg_ground_contact_ms, avg_vertical_ratio_pct, jitter_route_id, jitter_route_miles
 FROM
   workouts
 WHERE
@@ -448,6 +474,8 @@ func (q *Queries) ListWorkoutsByUser(ctx context.Context, userID int32) ([]*Work
 			&i.AvgVerticalOscillationMm,
 			&i.AvgGroundContactMs,
 			&i.AvgVerticalRatioPct,
+			&i.JitterRouteID,
+			&i.JitterRouteMiles,
 		); err != nil {
 			return nil, err
 		}
@@ -461,7 +489,7 @@ func (q *Queries) ListWorkoutsByUser(ctx context.Context, userID int32) ([]*Work
 
 const listWorkoutsByUserInWindow = `-- name: ListWorkoutsByUserInWindow :many
 SELECT
-  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds, timer_seconds, avg_heart_rate, max_heart_rate, min_heart_rate, ascent_meters, descent_meters, calories, total_steps, avg_cadence, avg_power_watts, avg_effort_pace_mps, avg_step_length_m, avg_vertical_oscillation_mm, avg_ground_contact_ms, avg_vertical_ratio_pct
+  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds, timer_seconds, avg_heart_rate, max_heart_rate, min_heart_rate, ascent_meters, descent_meters, calories, total_steps, avg_cadence, avg_power_watts, avg_effort_pace_mps, avg_step_length_m, avg_vertical_oscillation_mm, avg_ground_contact_ms, avg_vertical_ratio_pct, jitter_route_id, jitter_route_miles
 FROM
   workouts
 WHERE
@@ -540,6 +568,8 @@ func (q *Queries) ListWorkoutsByUserInWindow(ctx context.Context, arg *ListWorko
 			&i.AvgVerticalOscillationMm,
 			&i.AvgGroundContactMs,
 			&i.AvgVerticalRatioPct,
+			&i.JitterRouteID,
+			&i.JitterRouteMiles,
 		); err != nil {
 			return nil, err
 		}
@@ -594,7 +624,7 @@ WHERE
   id = $1
   AND user_id = $2
 RETURNING
-  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds, timer_seconds, avg_heart_rate, max_heart_rate, min_heart_rate, ascent_meters, descent_meters, calories, total_steps, avg_cadence, avg_power_watts, avg_effort_pace_mps, avg_step_length_m, avg_vertical_oscillation_mm, avg_ground_contact_ms, avg_vertical_ratio_pct
+  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds, timer_seconds, avg_heart_rate, max_heart_rate, min_heart_rate, ascent_meters, descent_meters, calories, total_steps, avg_cadence, avg_power_watts, avg_effort_pace_mps, avg_step_length_m, avg_vertical_oscillation_mm, avg_ground_contact_ms, avg_vertical_ratio_pct, jitter_route_id, jitter_route_miles
 `
 
 type SetWorkoutFiguresParams struct {
@@ -678,6 +708,8 @@ func (q *Queries) SetWorkoutFigures(ctx context.Context, arg *SetWorkoutFiguresP
 		&i.AvgVerticalOscillationMm,
 		&i.AvgGroundContactMs,
 		&i.AvgVerticalRatioPct,
+		&i.JitterRouteID,
+		&i.JitterRouteMiles,
 	)
 	return &i, err
 }
@@ -697,7 +729,7 @@ WHERE
   id = $1
   AND user_id = $2
 RETURNING
-  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds, timer_seconds, avg_heart_rate, max_heart_rate, min_heart_rate, ascent_meters, descent_meters, calories, total_steps, avg_cadence, avg_power_watts, avg_effort_pace_mps, avg_step_length_m, avg_vertical_oscillation_mm, avg_ground_contact_ms, avg_vertical_ratio_pct
+  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds, timer_seconds, avg_heart_rate, max_heart_rate, min_heart_rate, ascent_meters, descent_meters, calories, total_steps, avg_cadence, avg_power_watts, avg_effort_pace_mps, avg_step_length_m, avg_vertical_oscillation_mm, avg_ground_contact_ms, avg_vertical_ratio_pct, jitter_route_id, jitter_route_miles
 `
 
 type UpdateWorkoutParams struct {
@@ -764,6 +796,8 @@ func (q *Queries) UpdateWorkout(ctx context.Context, arg *UpdateWorkoutParams) (
 		&i.AvgVerticalOscillationMm,
 		&i.AvgGroundContactMs,
 		&i.AvgVerticalRatioPct,
+		&i.JitterRouteID,
+		&i.JitterRouteMiles,
 	)
 	return &i, err
 }
@@ -793,7 +827,7 @@ WHERE
   id = $1
   AND user_id = $2
 RETURNING
-  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds, timer_seconds, avg_heart_rate, max_heart_rate, min_heart_rate, ascent_meters, descent_meters, calories, total_steps, avg_cadence, avg_power_watts, avg_effort_pace_mps, avg_step_length_m, avg_vertical_oscillation_mm, avg_ground_contact_ms, avg_vertical_ratio_pct
+  id, distance_miles, time_seconds, speed_mph, pace_min_per_mile, start_time, end_time, activity_file_id, created_at, updated_at, user_id, processor_version, sport, sub_sport, excluded_reason, source, sport_override, user_excluded_reason, duplicate_of, name, place, timezone, utc_offset_seconds, timer_seconds, avg_heart_rate, max_heart_rate, min_heart_rate, ascent_meters, descent_meters, calories, total_steps, avg_cadence, avg_power_watts, avg_effort_pace_mps, avg_step_length_m, avg_vertical_oscillation_mm, avg_ground_contact_ms, avg_vertical_ratio_pct, jitter_route_id, jitter_route_miles
 `
 
 type UpdateWorkoutDerivedParams struct {
@@ -881,6 +915,8 @@ func (q *Queries) UpdateWorkoutDerived(ctx context.Context, arg *UpdateWorkoutDe
 		&i.AvgVerticalOscillationMm,
 		&i.AvgGroundContactMs,
 		&i.AvgVerticalRatioPct,
+		&i.JitterRouteID,
+		&i.JitterRouteMiles,
 	)
 	return &i, err
 }

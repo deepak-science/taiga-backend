@@ -230,6 +230,8 @@ type Workout struct {
 	AvgVerticalOscillationMm *float64           `json:"avg_vertical_oscillation_mm"`
 	AvgGroundContactMs       *float64           `json:"avg_ground_contact_ms"`
 	AvgVerticalRatioPct      *float64           `json:"avg_vertical_ratio_pct"`
+	JitterRouteID            *int32             `json:"jitter_route_id"`
+	JitterRouteMiles         *float64           `json:"jitter_route_miles"`
 }
 
 type WorkoutLap struct {
