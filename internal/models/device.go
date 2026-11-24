@@ -16,7 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// Signing in from a CLI: taiga's own device flow, in the shape of RFC 8628 (ROADMAP M14).
+// Signing in from a CLI: taiga's own device flow, in the shape of RFC 8628 (docs/roadmap-archive.md, M14).
 const (
 	// DeviceCodeTTL is how long the user has to approve a sign-in.
 	DeviceCodeTTL = 10 * time.Minute
