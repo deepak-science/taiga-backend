@@ -30,9 +30,14 @@ var tcxSports = map[string][2]string{
 }
 
 const (
-	ExcludedMixedSports = "mixed sports"
-	ExcludedSparseGPS   = "too few GPS points"
+	ExcludedMixedSports  = "mixed sports"
+	ExcludedSparseGPS    = "too few GPS points"
+	ExcludedJitteryTrack = "jittery GPS track"
 )
+
+// tcxJitterOverTrack is how far over its own track a stated total may run before the track is taken for a jittery one.
+// Google Fit inflates its total along with the track when the phone drifts: across 109 Google Fit runs, the four jittery ones were 3.3–8.8% over their tracks and no other was over 1.6%.
+const tcxJitterOverTrack = 0.025
 
 // tcxMinPointsPerMile separates a tracked run from an auto-detected one: on a Google Fit export tracked runs had 200+ fixes a mile, auto-detected ones under 20.
 const tcxMinPointsPerMile = 50
@@ -71,6 +76,7 @@ type tcxTrackpoint struct {
 // So a session with enough GPS keeps only its fixes, each measured along the track, and its time is the fixes' span; the stated distance stays the total.
 // A scored session that mixes sports, has time running backwards, or has too few GPS points for its distance was auto-detected rather than tracked, and one whose track strays over 10% from the stated distance has a bad track or a bad total.
 // Either keeps its stated totals but no points, and an ExcludedReason.
+// One whose total is over 2.5% above its track has a jittery track, which inflates both: it keeps its points, but doesn't count either.
 func ReadTCXFile(r io.Reader) (*Run, error) {
 	var f tcxFile
 	if err := xml.NewDecoder(r).Decode(&f); err != nil {
@@ -129,11 +135,13 @@ func ReadTCXFile(r io.Reader) (*Run, error) {
 	}
 	distance := &Distance{Meters: offset}
 	sparse := float64(gps) < tcxMinPointsPerMile*distance.AsMiles()
-	trackAgrees := true
+	trackAgrees, jittery := true, false
 	if !sparse && !backwards && gps >= 2 {
 		records = alongFixes(records)
 		start, end = records[0].Timestamp, records[len(records)-1].Timestamp
-		trackAgrees = math.Abs(records[len(records)-1].Distance.Meters-distance.Meters) <= pointsAgreeWithin*distance.Meters
+		track := records[len(records)-1].Distance.Meters
+		trackAgrees = math.Abs(track-distance.Meters) <= pointsAgreeWithin*distance.Meters
+		jittery = distance.Meters > (1+tcxJitterOverTrack)*track
 	}
 	for _, rec := range records {
 		rec.DurationFromStart = rec.Timestamp.Sub(start)
@@ -171,11 +179,14 @@ func ReadTCXFile(r io.Reader) (*Run, error) {
 			run.Summary.ExcludedReason = ExcludedSparseGPS
 		case !trackAgrees:
 			run.Summary.ExcludedReason = ExcludedPointsDisagree
+		case jittery:
+			run.Summary.ExcludedReason = ExcludedJitteryTrack
 		}
 	}
 	// Before the points go: ones too poor to measure with still say where it was.
 	run.locate()
-	if run.Summary.ExcludedReason != "" {
+	// A jittery track is still the run, only longer than it was, so it keeps its points to be drawn.
+	if run.Summary.ExcludedReason != "" && run.Summary.ExcludedReason != ExcludedJitteryTrack {
 		run.Records = nil
 	}
 	return run, nil

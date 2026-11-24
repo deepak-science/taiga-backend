@@ -138,6 +138,30 @@ func TestReadTCXExcludesAutoDetectedSessions(t *testing.T) {
 	}
 }
 
+// A phone's drifting fixes lengthen the track, and Google Fit's total with it, so a total well over the track gives the jitter away.
+func TestReadTCXFlagsJitteryTracks(t *testing.T) {
+	splits := []testsupport.Split{{Meters: 3000, Seconds: 900}}
+	for name, tc := range map[string]struct {
+		over   float64
+		reason string
+	}{
+		"4% over the track":   {1.04, workouts.ExcludedJitteryTrack},
+		"1.5% over the track": {1.015, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			x := testsupport.NewTCX(tcxStart, splits, "Running")
+			for i := range x.Points {
+				x.Points[i].Meters *= tc.over
+			}
+			run := readTCX(t, x)
+			assert.Equal(t, tc.reason, run.Summary.ExcludedReason)
+			assert.Equal(t, tc.reason == "", run.Summary.Scored())
+			assert.Len(t, run.Records, 301, "the track is still drawn")
+			assert.InEpsilon(t, 3000*tc.over/1609.344, run.Summary.DistanceMiles, 0.005, "the stated total stays")
+		})
+	}
+}
+
 func TestReadTCXTreadmillIsNotFlaggedForGPS(t *testing.T) {
 	x := testsupport.NewTCX(tcxStart, []testsupport.Split{{Meters: 3000, Seconds: 900}}, "Running.treadmill")
 	for i := range x.Points {
