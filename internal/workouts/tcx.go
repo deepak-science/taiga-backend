@@ -173,8 +173,8 @@ func ReadTCXFile(r io.Reader) (*Run, error) {
 	// A jittery track is still the run, only longer than it was, so it keeps its points to be drawn.
 	keepsPoints := reason == "" || reason == ExcludedJitteryTrack
 	// Dense fixes can only cut corners, so where the points stay, a total longer than their track was inflated.
-	// Not indoors, where the distance is the belt's or the foot pod's and any fixes are drift.
-	if keepsPoints && measured && trackAgrees && !indoorSubSports[sport[1]] && track < distance.Meters {
+	// Every sub-sport tcxSports maps is indoors or on a machine (treadmill, trainer, elliptical, ...), where the distance is the equipment's and any fixes are drift.
+	if keepsPoints && measured && trackAgrees && sport[1] == "" && track < distance.Meters {
 		distance = &Distance{Meters: track}
 	}
 	duration := end.Sub(start)

@@ -183,14 +183,16 @@ func TestReadTCXDistanceIsTheShorterOfTotalAndTrack(t *testing.T) {
 	}
 }
 
-// Indoors the distance is the belt's or the foot pod's, so drifting fixes never shorten it.
-func TestReadTCXTreadmillKeepsItsDistance(t *testing.T) {
-	x := testsupport.NewTCX(tcxStart, []testsupport.Split{{Meters: 3000, Seconds: 900}}, "Running.treadmill")
-	for i := range x.Points {
-		x.Points[i].Meters *= 1.03
+// Indoors the distance is the equipment's, so drifting fixes never shorten it.
+func TestReadTCXIndoorKeepsItsDistance(t *testing.T) {
+	for _, sport := range []string{"Running.treadmill", "Biking.stationary", "Biking.spinning", "Elliptical"} {
+		x := testsupport.NewTCX(tcxStart, []testsupport.Split{{Meters: 3000, Seconds: 900}}, sport)
+		for i := range x.Points {
+			x.Points[i].Meters *= 1.03
+		}
+		s := readTCX(t, x).Summary
+		assert.InEpsilon(t, 3090/1609.344, s.DistanceMiles, 0.001, sport)
 	}
-	s := readTCX(t, x).Summary
-	assert.InEpsilon(t, 3090/1609.344, s.DistanceMiles, 0.001)
 }
 
 // A fix with no longitude makes the measured track NaN, which disagrees with any total.
