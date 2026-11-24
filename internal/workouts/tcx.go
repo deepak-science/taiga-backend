@@ -136,14 +136,15 @@ func ReadTCXFile(r io.Reader) (*Run, error) {
 	}
 	distance := &Distance{Meters: offset}
 	sparse := float64(gps) < tcxMinPointsPerMile*distance.AsMiles()
-	track := math.NaN()
+	measured, track := false, 0.0
 	if !sparse && !backwards && gps >= 2 {
 		records = alongFixes(records)
 		start, end = records[0].Timestamp, records[len(records)-1].Timestamp
-		track = records[len(records)-1].Distance.Meters
+		measured, track = true, records[len(records)-1].Distance.Meters
 	}
-	trackAgrees := math.IsNaN(track) || math.Abs(track-distance.Meters) <= pointsAgreeWithin*distance.Meters
-	jittery := distance.Meters > (1+tcxJitterOverTrack)*track
+	// A measured track that came out NaN (a fix with no longitude) fails this, as it should.
+	trackAgrees := !measured || math.Abs(track-distance.Meters) <= pointsAgreeWithin*distance.Meters
+	jittery := measured && distance.Meters > (1+tcxJitterOverTrack)*track
 	for _, rec := range records {
 		rec.DurationFromStart = rec.Timestamp.Sub(start)
 	}
@@ -172,7 +173,8 @@ func ReadTCXFile(r io.Reader) (*Run, error) {
 	// A jittery track is still the run, only longer than it was, so it keeps its points to be drawn.
 	keepsPoints := reason == "" || reason == ExcludedJitteryTrack
 	// Dense fixes can only cut corners, so where the points stay, a total longer than their track was inflated.
-	if keepsPoints && trackAgrees && track < distance.Meters {
+	// Not indoors, where the distance is the belt's or the foot pod's and any fixes are drift.
+	if keepsPoints && measured && trackAgrees && !indoorSubSports[sport[1]] && track < distance.Meters {
 		distance = &Distance{Meters: track}
 	}
 	duration := end.Sub(start)
