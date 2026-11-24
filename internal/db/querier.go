@@ -19,6 +19,7 @@ type Querier interface {
 	ClearRouteRepresentative(ctx context.Context, arg *ClearRouteRepresentativeParams) error
 	// A deleted workout leaves the stretches cut from it standing, without the pointer back.
 	ClearStretchSourceWorkout(ctx context.Context, arg *ClearStretchSourceWorkoutParams) error
+	CountDeploymentTotals(ctx context.Context) (*CountDeploymentTotalsRow, error)
 	CountDeviceAuthorizations(ctx context.Context) (int64, error)
 	// For metrics: every user's jobs, never broken down by user.
 	CountJobsByKindAndState(ctx context.Context) ([]*CountJobsByKindAndStateRow, error)
@@ -26,6 +27,7 @@ type Querier interface {
 	// For metrics: every user's connections, by kind and state.
 	CountSourceConnectionsByState(ctx context.Context) ([]*CountSourceConnectionsByStateRow, error)
 	CountSourceFilesSince(ctx context.Context, arg *CountSourceFilesSinceParams) (int32, error)
+	CountStaleWorkouts(ctx context.Context, processorVersion string) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
 	CreateActivityFile(ctx context.Context, arg *CreateActivityFileParams) (*ActivityFile, error)
 	CreateCliSession(ctx context.Context, arg *CreateCliSessionParams) (*CliSession, error)
@@ -57,10 +59,13 @@ type Querier interface {
 	DeleteCOROSMetadata(ctx context.Context, arg *DeleteCOROSMetadataParams) error
 	DeleteCliSession(ctx context.Context, arg *DeleteCliSessionParams) (int64, error)
 	DeleteCliSessionByHash(ctx context.Context, tokenHash string) error
+	DeleteCliSessionsByUser(ctx context.Context, userID int32) (int64, error)
 	DeleteDeviceAuthorization(ctx context.Context, id int32) (int64, error)
 	DeleteDoneJobsBefore(ctx context.Context, updatedAt pgtype.Timestamptz) (int64, error)
 	DeleteExpiredDeviceAuthorizations(ctx context.Context, expiresAt pgtype.Timestamptz) error
 	DeleteIdentity(ctx context.Context, arg *DeleteIdentityParams) (int64, error)
+	// A running job is left to its worker, which would only record a result for a row that's gone.
+	DeleteIdleJob(ctx context.Context, id int32) (int64, error)
 	DeleteJobsByWorkout(ctx context.Context, arg *DeleteJobsByWorkoutParams) error
 	DeleteLapsedCliSessions(ctx context.Context, expiresAt pgtype.Timestamptz) error
 	// Undoing a route's merges also drops the ones held by runs that aren't being grouped just now (excluded, say), or they'd bring the merge back later.
@@ -86,6 +91,8 @@ type Querier interface {
 	DeleteWorkoutTrack(ctx context.Context, arg *DeleteWorkoutTrackParams) error
 	DeleteWorkoutWeather(ctx context.Context, arg *DeleteWorkoutWeatherParams) error
 	DenyDeviceAuthorization(ctx context.Context, arg *DenyDeviceAuthorizationParams) (int64, error)
+	// Every user's file-backed workouts, current or not; one already queued is skipped by idx_jobs_pending.
+	EnqueueAllWorkouts(ctx context.Context, runAt pgtype.Timestamptz) (int64, error)
 	// One pending detection per user (idx_jobs_pending), however many workouts change before it runs.
 	EnqueueDetectRoutes(ctx context.Context, arg *EnqueueDetectRoutesParams) error
 	EnqueueFetchWeather(ctx context.Context, arg *EnqueueFetchWeatherParams) error
@@ -112,6 +119,7 @@ type Querier interface {
 	GetDeviceAuthorizationByHash(ctx context.Context, deviceCodeHash string) (*DeviceAuthorization, error)
 	GetIdentityUser(ctx context.Context, arg *GetIdentityUserParams) (*GetIdentityUserRow, error)
 	GetJob(ctx context.Context, arg *GetJobParams) (*Job, error)
+	GetJobForAdmin(ctx context.Context, id int32) (*Job, error)
 	// What the approval page shows: one nobody has decided yet and that hasn't run out.
 	GetPendingDeviceAuthorization(ctx context.Context, arg *GetPendingDeviceAuthorizationParams) (*DeviceAuthorization, error)
 	GetRoute(ctx context.Context, arg *GetRouteParams) (*Route, error)
@@ -123,6 +131,7 @@ type Querier interface {
 	GetSourceConnectionByKind(ctx context.Context, arg *GetSourceConnectionByKindParams) (*SourceConnection, error)
 	GetStretch(ctx context.Context, arg *GetStretchParams) (*Stretch, error)
 	GetUser(ctx context.Context, id int32) (*GetUserRow, error)
+	GetUserAdmin(ctx context.Context, id int32) (*GetUserAdminRow, error)
 	//
 	// -- name: UpdateUser :exec
 	// UPDATE users
@@ -145,8 +154,11 @@ type Querier interface {
 	GetWorkoutTrack(ctx context.Context, arg *GetWorkoutTrackParams) ([]byte, error)
 	GetWorkoutsByActivityFile(ctx context.Context, arg *GetWorkoutsByActivityFileParams) ([]*Workout, error)
 	KillJob(ctx context.Context, arg *KillJobParams) error
+	// Counts and states only: an admin sees how much each account has, never what.
+	ListAccountsForAdmin(ctx context.Context) ([]*ListAccountsForAdminRow, error)
 	ListActivityFilesByUser(ctx context.Context, userID *int32) ([]*ActivityFile, error)
 	ListActivityFilesWithoutWorkout(ctx context.Context, userID *int32) ([]*ActivityFile, error)
+	ListAllIdentityIssuers(ctx context.Context) ([]*ListAllIdentityIssuersRow, error)
 	// A distance segment ranks by time, a duration segment by distance covered; only workouts of one sport starting in [window_from, window_to) compete.
 	ListBestSegmentsByName(ctx context.Context, arg *ListBestSegmentsByNameParams) ([]*ListBestSegmentsByNameRow, error)
 	ListCOROSMetadataByUser(ctx context.Context, userID int32) ([]*CorosMetadatum, error)
@@ -157,6 +169,8 @@ type Querier interface {
 	ListIdentitiesByUser(ctx context.Context, userID int32) ([]*UserIdentity, error)
 	ListJobsByUser(ctx context.Context, arg *ListJobsByUserParams) ([]*Job, error)
 	ListJobsByUserAndState(ctx context.Context, arg *ListJobsByUserAndStateParams) ([]*Job, error)
+	// Every user's newest jobs; an empty state, kind or a user_id of 0 doesn't filter.
+	ListJobsForAdmin(ctx context.Context, arg *ListJobsForAdminParams) ([]*ListJobsForAdminRow, error)
 	// Each route with what it's called by: its name, and its representative run's distance.
 	ListRouteNamesByUser(ctx context.Context, userID int32) ([]*ListRouteNamesByUserRow, error)
 	ListRouteOverridesByUser(ctx context.Context, userID int32) ([]*RouteOverride, error)
@@ -171,7 +185,11 @@ type Querier interface {
 	// The source's activities whose workout has none of the source's own figures yet: those never tried first, newest first, then the ones whose reply couldn't be read, longest since first, so a run of unreadable ones can't keep the rest from being asked for.
 	// An activity recorded in parts is matched by its first file.
 	ListSourceActivitiesWithoutMetadata(ctx context.Context, arg *ListSourceActivitiesWithoutMetadataParams) ([]*ListSourceActivitiesWithoutMetadataRow, error)
+	// Never the registration column, which holds the client's secret.
+	ListSourceClientsForAdmin(ctx context.Context) ([]*ListSourceClientsForAdminRow, error)
 	ListSourceConnections(ctx context.Context, userID int32) ([]*SourceConnection, error)
+	// Never the credentials column: an admin sees a connection's state, not its tokens.
+	ListSourceConnectionsForAdmin(ctx context.Context, since pgtype.Timestamptz) ([]*ListSourceConnectionsForAdminRow, error)
 	ListSourceMatchAttemptsByUser(ctx context.Context, userID int32) ([]*SourceMatchAttempt, error)
 	// The efforts of a route's runs, newest run first and each run's passes in the order it made them, with what a summary of each stretch needs.
 	ListStretchEffortsByRoute(ctx context.Context, arg *ListStretchEffortsByRouteParams) ([]*ListStretchEffortsByRouteRow, error)
@@ -216,6 +234,7 @@ type Querier interface {
 	// Only in place of the registration that was read: no row means another request replaced it first.
 	ReplaceSourceClient(ctx context.Context, arg *ReplaceSourceClientParams) (*SourceClient, error)
 	RequeueDeadJob(ctx context.Context, arg *RequeueDeadJobParams) (*Job, error)
+	RequeueDeadJobForAdmin(ctx context.Context, arg *RequeueDeadJobForAdminParams) (*Job, error)
 	RetargetRouteOverrides(ctx context.Context, arg *RetargetRouteOverridesParams) error
 	RetryJobLater(ctx context.Context, arg *RetryJobLaterParams) error
 	// --
@@ -229,11 +248,13 @@ type Querier interface {
 	// An import's stretch that differs from the account's of the same name and source; its efforts are deleted first and timed again.
 	SetStretchShape(ctx context.Context, arg *SetStretchShapeParams) error
 	SetStretchSourceWorkout(ctx context.Context, arg *SetStretchSourceWorkoutParams) error
+	SetUserAdmin(ctx context.Context, arg *SetUserAdminParams) (int64, error)
 	SetWorkoutDuplicateOf(ctx context.Context, arg *SetWorkoutDuplicateOfParams) error
 	// What the file states for the whole workout; part of what reprocessing rebuilds.
 	SetWorkoutFigures(ctx context.Context, arg *SetWorkoutFiguresParams) (*Workout, error)
 	TouchCliSession(ctx context.Context, arg *TouchCliSessionParams) error
 	TouchDeviceAuthorization(ctx context.Context, arg *TouchDeviceAuthorizationParams) error
+	TouchUserSeen(ctx context.Context, arg *TouchUserSeenParams) error
 	UpdateActivityFile(ctx context.Context, arg *UpdateActivityFileParams) (*ActivityFile, error)
 	UpdateWorkout(ctx context.Context, arg *UpdateWorkoutParams) (*Workout, error)
 	// Everything reprocessing rebuilds from the activity file, and the corrections it applied over it.

@@ -39,8 +39,24 @@ type Server struct {
 	stopWorker func()
 }
 
+// Option adjusts what New builds.
+type Option func(*serverOptions)
+
+type serverOptions struct {
+	build routes.Build
+}
+
+// WithBuild names what the binary was built from, for the admin's deployment page.
+func WithBuild(b routes.Build) Option {
+	return func(o *serverOptions) { o.build = b }
+}
+
 // New creates a new server instance
-func New(cfg *config.Config) (*Server, error) {
+func New(cfg *config.Config, opts ...Option) (*Server, error) {
+	var so serverOptions
+	for _, opt := range opts {
+		opt(&so)
+	}
 	registrationOpen, err := cfg.RegistrationOpen()
 	if err != nil {
 		return nil, err
@@ -100,6 +116,8 @@ func New(cfg *config.Config) (*Server, error) {
 		routes.WithPasswordLogin(cfg.Auth.PasswordLogin),
 		routes.WithOIDC(providers),
 		routes.WithSources(sourceManager),
+		routes.WithAdmins(models.NewAdmins(cfg.Auth.Admins)),
+		routes.WithDeployment(routes.Deployment{Build: so.build, Weather: cfg.Weather.Provider, Metrics: cfg.App.MetricsPort != ""}),
 	)
 
 	// Create chi router for middleware

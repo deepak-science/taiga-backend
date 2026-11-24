@@ -11,7 +11,8 @@ import (
 const Format = "taiga-backup"
 
 // Version is the format this code writes; Read takes any version up to it.
-const Version = 1
+// 2 added an account's admin.
+const Version = 2
 
 // The two kinds of archive: one user's export, and a whole deployment's backup.
 const (
@@ -84,11 +85,13 @@ type Account struct {
 	Email       string `json:"email"`
 	DisplayName string `json:"display_name"`
 	// Password is the stored bcrypt hash; null for an account that signs in only through a provider.
-	Password      []byte     `json:"password"`
-	EmailVerified bool       `json:"email_verified"`
-	CreatedAt     time.Time  `json:"created_at"`
-	Identities    []Identity `json:"identities"`
-	Data          `json:"-"`
+	Password      []byte `json:"password"`
+	EmailVerified bool   `json:"email_verified"`
+	// Admin is the role granted in the database, not one auth.admins gives.
+	Admin      bool       `json:"admin,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	Identities []Identity `json:"identities"`
+	Data       `json:"-"`
 }
 
 // Identity is a linked sign-in at an OpenID Connect provider.

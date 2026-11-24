@@ -57,6 +57,8 @@ type AuthConfig struct {
 	// Where the browser reaches this API, for the callback URL registered with each provider; defaults to public_base_url + "/api", the frontend's proxy.
 	APIBaseURL string         `mapstructure:"api_base_url"`
 	OIDC       []OIDCProvider `mapstructure:"oidc"`
+	// Emails whose accounts hold the admin role once the email is verified, beside those cmd/admin grants it to; from env, comma-separated.
+	Admins []string `mapstructure:"admins"`
 }
 
 // OIDCProvider is one OpenID Connect provider to offer at sign-in; its endpoints come from the issuer's discovery document.

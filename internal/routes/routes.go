@@ -22,6 +22,8 @@ type options struct {
 	passwordLogin    bool
 	oidc             *oidc.Registry
 	sources          *sources.Manager
+	admins           models.Admins
+	deployment       Deployment
 }
 
 type Option func(*options)
@@ -80,6 +82,7 @@ func New(m models.Model, tok tokens.Toker, fileRepo filerepo.FileRepo, opts ...O
 		r.Post("/sources/{source}/sync", syncSource(m, o.sources))
 		r.Get("/export", getExport(m, fileRepo))
 		r.Post("/import", postImport(m, fileRepo))
+		r.Mount("/admin", newAdminRouter(m, o))
 	})
 
 	return r

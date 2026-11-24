@@ -10,7 +10,8 @@ This is the taiga API: upload FIT files (or Endomondo export JSON, or TCX such a
 
 - **cmd/server**: Application entrypoint with graceful shutdown and automatic migrations
 - **cmd/migrate**: Standalone migration tool with up/down/steps/goto commands
-- **cmd/useradd**: Create an account while registration is closed
+- **cmd/useradd**: Create an account while registration is closed (`-admin` gives it the admin role)
+- **cmd/admin**: Grant, revoke or list the admin role (`docs/admin.md`); the API never grants it
 - **cmd/backup**, **cmd/restore**: The whole deployment's backup, every account with its password hash and linked sign-ins (`docs/backup.md`); restore only into an empty deployment
 - **cmd/fit_view**: Utility for viewing FIT (Garmin) workout files
 
@@ -159,7 +160,8 @@ just exec-docker         # Run interactive shell in Docker container
 ```bash
 go run cmd/fit_view/main.go --filename file.fit  # View FIT workout files
 go run cmd/migrate/main.go [options]    # Manual database migrations
-go run cmd/useradd/main.go -email you@example.com  # Create an account while registration is closed (prompts for the password; in the cluster: kubectl -n taiga exec -it deploy/taiga-backend -- useradd -email ...)
+go run cmd/useradd/main.go -email you@example.com  # Create an account while registration is closed (prompts for the password; -admin for the admin role; in the cluster: kubectl -n taiga exec -it deploy/taiga-backend -- useradd -email ...)
+go run cmd/admin/main.go -grant you@example.com   # Give an existing account the admin role (-revoke, -list)
 go run cmd/backup/main.go -o taiga.tar   # Back up every account (in the cluster: kubectl -n taiga exec deploy/taiga-backend -- backup > taiga.tar); never migrates
 go run cmd/restore/main.go -i taiga.tar  # Restore a backup into an empty deployment
 ```
@@ -273,6 +275,7 @@ auth:
   password_login: true             # false turns off /auth/register and /auth/tokens (SSO only)
   public_base_url: "https://taiga.example.com"  # the frontend's origin; needed for OIDC
   # api_base_url defaults to public_base_url + "/api"; provider callbacks are {api_base_url}/auth/oidc/{name}/callback
+  admins: []                       # emails whose accounts are admins once verified, beside cmd/admin's (docs/admin.md); env TAIGA_AUTH_ADMINS, comma-separated
   oidc:                            # see docs/oidc.md; from env, TAIGA_AUTH_OIDC holds this list as JSON
     - name: authentik
       display_name: "authentik"
@@ -400,6 +403,11 @@ sources:
 ### Export and import (requires JWT token; `docs/backup.md`)
 - `GET /export` - The user's backup as a tar (`taiga-YYYY-MM-DD.tar`): their files and what nothing can rebuild from them (hand-entered workouts, corrections, stretches, route names and placements, what sources dealt with, and weather and COROS's figures unless `?fetched=false`). Exempt from the 30-second request timeout; a failure partway cuts the connection
 - `POST /import` - Read a user's export, the raw tar as the body, into the signed-in account: `{files, files_added, files_retimed, workouts, corrections, stretches, routes, unreadable}`. Idempotent, matched by file hash (hand-entered workouts by start time, sport, distance and duration); the archive wins over what the user set, and nothing only the account has is removed. `422` for an archive that won't read or a deployment's backup, `413` past 2GB or for a file over 64MB, `409` while another import into the same account runs. Exempt from the 30-second request timeout
+
+### Admin API (requires JWT token and the admin role; `docs/admin.md`)
+- `GET /auth/me` (any signed-in user) - `{id, email, display_name, admin}`, so the frontend knows whether to show the admin link
+- Everything under `/admin` answers `404` without the role, which is read from the database on each request (`users.is_admin`, or a verified email `auth.admins` lists), and logs who made it. It shows counts, states and errors, never an account's workouts, files or tokens
+- `GET /admin/deployment` (build, processor and migration versions, workouts behind, totals, features, and the queue from `models.MetricsSnapshot`), `GET /admin/accounts` and `POST /admin/accounts`, `DELETE /admin/accounts/{id}/sessions`, `GET /admin/jobs?state=&kind=&user_id=`, `POST /admin/jobs/{id}/retry`, `DELETE /admin/jobs/{id}`, `POST /admin/reprocess` (`{"user_id": N}`, or null for everyone), `GET /admin/sources`
 
 ### Jobs API (requires JWT token)
 - `GET /jobs?state=queued|running|done|dead` - The user's 100 newest jobs, optionally in one state; done jobs are pruned after a week

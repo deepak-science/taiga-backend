@@ -1,6 +1,6 @@
 // useradd creates an account directly in the database, for deployments with auth.registration closed.
 //
-// In the cluster: kubectl -n taiga exec -it deploy/taiga-backend -- useradd -email you@example.com
+// In the cluster: kubectl -n taiga exec -it deploy/taiga-backend -- useradd -email you@example.com [-admin]
 // The password is prompted for without echo, or read from the first line of stdin when it isn't a terminal.
 package main
 
@@ -26,6 +26,7 @@ const minPasswordLength = 8
 func main() {
 	email := flag.String("email", "", "email address to sign in with (required)")
 	displayName := flag.String("display-name", "", "display name (defaults to the email address)")
+	admin := flag.Bool("admin", false, "give the account the admin role")
 	flag.Parse()
 
 	if *email == "" {
@@ -57,6 +58,13 @@ func main() {
 	user, err := m.CreateUser(context.Background(), &models.CreateUserRequest{Email: *email, DisplayName: *displayName, Password: password, EmailVerified: true})
 	if err != nil {
 		log.Fatalf("creating user: %v", err)
+	}
+	if *admin {
+		if _, err := m.SetAdmin(context.Background(), user.Email, true); err != nil {
+			log.Fatalf("created user %d, but granting admin failed: %v", user.Id, err)
+		}
+		fmt.Printf("created admin %d (%s)\n", user.Id, user.Email)
+		return
 	}
 	fmt.Printf("created user %d (%s)\n", user.Id, user.Email)
 }

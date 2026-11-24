@@ -36,6 +36,11 @@ func (m *storeModel) RestoreAccount(ctx context.Context, acct *backup.Account, f
 	if err != nil {
 		return nil, fmt.Errorf("creating the account: %w", err)
 	}
+	if acct.Admin {
+		if _, err := q.SetUserAdmin(ctx, &db.SetUserAdminParams{ID: user.ID, IsAdmin: true}); err != nil {
+			return nil, fmt.Errorf("granting admin: %w", err)
+		}
+	}
 	token := &tokens.UserToken{ID: user.ID, Email: user.Email}
 	report := &RestoreReport{UserID: user.ID}
 	for _, id := range acct.Identities {

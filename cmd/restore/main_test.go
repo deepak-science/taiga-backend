@@ -135,6 +135,8 @@ func TestBackupThenRestoreGivesTheSameBackup(t *testing.T) {
 	require.NoError(t, src.q.CreateSourceActivity(ctx, &db.CreateSourceActivityParams{UserID: alice.ID, Kind: "coros", ExternalID: "1", ActivityFileID: first.ActivityFileID, StartTime: at(day), Files: 1, FetchedAt: at(day)}))
 	require.NoError(t, src.q.CreateSourceActivity(ctx, &db.CreateSourceActivityParams{UserID: alice.ID, Kind: "coros", ExternalID: "deleted", FetchedAt: at(day)}))
 	require.NoError(t, src.q.MarkSourceMatchTried(ctx, &db.MarkSourceMatchTriedParams{WorkoutID: second.ID, Kind: "coros", UserID: alice.ID, TriedAt: at(day)}))
+	_, err = src.m.SetAdmin(ctx, "alice@example.com", true)
+	require.NoError(t, err)
 
 	// The correction queued detection again, as the worker would run it.
 	src.detect(t)
@@ -145,6 +147,8 @@ func TestBackupThenRestoreGivesTheSameBackup(t *testing.T) {
 	assert.NotEmpty(t, before.Accounts[0].RouteOverrides)
 	assert.NotEmpty(t, before.Accounts[0].Stretches)
 	assert.NotEmpty(t, before.Accounts[0].COROSMetadata)
+	assert.True(t, before.Accounts[0].Admin)
+	assert.False(t, before.Accounts[1].Admin)
 
 	dst := newDeployment(t)
 	var out bytes.Buffer

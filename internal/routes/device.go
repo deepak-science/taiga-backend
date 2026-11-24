@@ -135,6 +135,7 @@ func pollDevice(m models.Model, tok tokens.Toker) http.HandlerFunc {
 			serverError(w, err)
 			return
 		}
+		noteSeen(r.Context(), m, grant.User.ID)
 		log.Printf("Signed a CLI in as user %d", grant.User.ID)
 		writeSecretJSON(w, cliTokens{Token: token, RefreshToken: grant.RefreshToken, ExpiresIn: int(tokens.Lifetime.Seconds())})
 	}
@@ -164,6 +165,7 @@ func refreshToken(m models.Model, tok tokens.Toker) http.HandlerFunc {
 			serverError(w, err)
 			return
 		}
+		noteSeen(r.Context(), m, user.ID)
 		writeSecretJSON(w, cliTokens{Token: token, ExpiresIn: int(tokens.Lifetime.Seconds())})
 	}
 }

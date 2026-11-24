@@ -49,6 +49,7 @@ func (m *storeModel) ExportDeployment(ctx context.Context, fetched bool, now tim
 				DisplayName:   u.DisplayName,
 				Password:      u.Password,
 				EmailVerified: u.EmailVerified,
+				Admin:         u.IsAdmin,
 				CreatedAt:     u.CreatedAt.Time.UTC(),
 				Identities:    []backup.Identity{},
 			}

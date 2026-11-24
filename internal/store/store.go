@@ -25,6 +25,8 @@ type Store interface {
 	InSnapshot(ctx context.Context, fn func(db.Querier) error) error
 	// PoolStats is the connection pool as it stands, for metrics.
 	PoolStats() metrics.PoolStats
+	// SchemaVersion is the migration the database is at, and whether one failed partway.
+	SchemaVersion(ctx context.Context) (version int64, dirty bool, err error)
 }
 
 func GetStore(cfg *config.Config) (Store, error) {
