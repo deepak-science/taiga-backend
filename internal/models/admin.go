@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -187,7 +188,7 @@ func (m *storeModel) AdminJobs(ctx context.Context, f JobFilter, limit int32) ([
 		out = append(out, &AdminJob{
 			Job: &Job{
 				ID: r.ID, UserID: r.UserID, Kind: r.Kind, WorkoutID: r.WorkoutID, State: r.State, Attempts: r.Attempts,
-				RunAt: r.RunAt, LeaseUntil: r.LeaseUntil, LastError: r.LastError, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+				RunAt: r.RunAt, LeaseUntil: r.LeaseUntil, LastError: redactedPtr(r.LastError), CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 			},
 			Email: r.Email,
 		})
@@ -195,7 +196,7 @@ func (m *storeModel) AdminJobs(ctx context.Context, f JobFilter, limit int32) ([
 	return out, nil
 }
 
-// AdminRetryJob requeues any user's dead job: not-found when there's no such job, ErrJobNotDead when it isn't dead.
+// AdminRetryJob requeues any user's dead job: not-found when there's no such job, ErrJobNotDead when it isn't dead, ErrJobPending when a newer one has its work.
 func (m *storeModel) AdminRetryJob(ctx context.Context, id int32, now time.Time) (*Job, error) {
 	q, err := m.store.GetQuerier()
 	if err != nil {
@@ -203,12 +204,17 @@ func (m *storeModel) AdminRetryJob(ctx context.Context, id int32, now time.Time)
 	}
 	job, err := q.RequeueDeadJobForAdmin(ctx, &db.RequeueDeadJobForAdminParams{ID: id, RunAt: timestamptz(now)})
 	if IsNotFound(err) {
-		if _, getErr := q.GetJobForAdmin(ctx, id); getErr != nil {
+		existing, getErr := q.GetJobForAdmin(ctx, id)
+		if getErr != nil {
 			return nil, getErr
 		}
-		return nil, ErrJobNotDead
+		return nil, notRequeued(existing)
 	}
-	return job, err
+	if err != nil {
+		return nil, err
+	}
+	job.LastError = redactedPtr(job.LastError)
+	return job, nil
 }
 
 // AdminDropJob deletes a queued or dead job: not-found when there's no such job, ErrJobRunning while it runs.
@@ -290,7 +296,7 @@ func (m *storeModel) AdminSources(ctx context.Context, now time.Time) (*AdminSou
 			a := &AdminSourceConnection{
 				ID: c.ID, UserID: c.UserID, Email: c.Email, Kind: c.Kind, ClientID: c.ClientID,
 				CreatedAt: c.CreatedAt.Time.UTC(), SyncedThrough: c.SyncedThrough.Time.UTC(),
-				LastError: c.LastError, NeedsReconnect: c.NeedsReconnect,
+				LastError: redacted(c.LastError), NeedsReconnect: c.NeedsReconnect,
 				Activities: c.Activities, FilesToday: int(c.FilesSince), FilesLimit: SourceDailyFiles,
 			}
 			if c.LastSyncedAt.Valid {
@@ -373,4 +379,20 @@ func (m *storeModel) CreateUserUnlessTaken(ctx context.Context, req *CreateUserR
 		return nil, ErrEmailTaken
 	}
 	return m.CreateUser(ctx, req)
+}
+
+// quoted is a Go-quoted span, which is how errors here carry what came from outside: a COROS reply's excerpt, or a request's URL with a workout's rounded location in it.
+var quoted = regexp.MustCompile(`"(?:[^"\\]|\\.)*"`)
+
+// redacted is an error as an admin may see it: what failed and where, without the quoted account data some errors carry.
+func redacted(s string) string {
+	return quoted.ReplaceAllString(s, `"…"`)
+}
+
+func redactedPtr(s *string) *string {
+	if s == nil {
+		return nil
+	}
+	r := redacted(*s)
+	return &r
 }

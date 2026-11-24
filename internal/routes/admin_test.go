@@ -254,19 +254,43 @@ func TestAdminJobs(t *testing.T) {
 		assert.Equal(t, http.StatusConflict, status, "only a dead job is retried")
 
 		now := time.Now()
-		claimed, err := m.ClaimJob(t.Context(), now.Add(time.Hour), now.Add(2*time.Hour))
-		require.NoError(t, err)
-		require.NotNil(t, claimed)
+		// The worker's way in, finishing whatever else is due first, until it holds alice's process_workout job.
+		var claimed *models.Job
+		for claimed == nil || claimed.ID != id {
+			if claimed != nil {
+				require.NoError(t, m.FinishJob(t.Context(), claimed.ID, now))
+			}
+			claimed, err = m.ClaimJob(t.Context(), now.Add(time.Hour), now.Add(2*time.Hour))
+			require.NoError(t, err)
+			require.NotNil(t, claimed, "job %d was never claimed", id)
+		}
 		status, _ = root.delete(fmt.Sprintf("/admin/jobs/%d", claimed.ID))
 		assert.Equal(t, http.StatusConflict, status, "a running job is its worker's")
-		require.NoError(t, m.KillJob(t.Context(), claimed.ID, fmt.Errorf("the file went missing"), now))
+		require.NoError(t, m.KillJob(t.Context(), claimed.ID, fmt.Errorf(`COROS answered in a form taiga doesn't know how to read: an activity without a LabelId and SportType: "Run 5.02 km 2026-11-01 07:00"`), now))
 
 		dead := adminJobs(t, root, "?state=dead")
 		require.Len(t, dead, 1)
 		require.NotNil(t, dead[0].LastError)
-		assert.Equal(t, "the file went missing", *dead[0].LastError)
+		assert.Equal(t, `COROS answered in a form taiga doesn't know how to read: an activity without a LabelId and SportType: "…"`, *dead[0].LastError, "what failed, without the account's data the error quoted")
+		status, body := alice.get(fmt.Sprintf("/jobs/%d", claimed.ID))
+		require.Equal(t, http.StatusOK, status)
+		assert.Contains(t, string(body), "Run 5.02 km", "the account itself still sees all of it")
 
-		status, body := root.post(fmt.Sprintf("/admin/jobs/%d/retry", claimed.ID))
+		t.Run("not while a newer job has its work", func(t *testing.T) {
+			status, body := root.postJSON("/admin/reprocess", fmt.Sprintf(`{"user_id":%d}`, aliceID))
+			require.Equal(t, http.StatusAccepted, status, string(body))
+			assert.JSONEq(t, `{"enqueued":1}`, string(body), "the dead job doesn't hold the workout's place")
+			status, body = root.post(fmt.Sprintf("/admin/jobs/%d/retry", claimed.ID))
+			assert.Equal(t, http.StatusConflict, status, string(body))
+			status, _ = alice.post(fmt.Sprintf("/jobs/%d/retry", claimed.ID))
+			assert.Equal(t, http.StatusConflict, status, "nor through the account's own retry")
+			newer := adminJobs(t, root, fmt.Sprintf("?user_id=%d&kind=process_workout&state=queued", aliceID))
+			require.Len(t, newer, 1)
+			status, _ = root.delete(fmt.Sprintf("/admin/jobs/%d", newer[0].ID))
+			require.Equal(t, http.StatusNoContent, status)
+		})
+
+		status, body = root.post(fmt.Sprintf("/admin/jobs/%d/retry", claimed.ID))
 		require.Equal(t, http.StatusOK, status, string(body))
 		assert.Empty(t, adminJobs(t, root, "?state=dead"))
 

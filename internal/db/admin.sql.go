@@ -541,8 +541,20 @@ SET
   run_at = $2,
   updated_at = $2
 WHERE
-  id = $1
-  AND state = 'dead'
+  jobs.id = $1
+  AND jobs.state = 'dead'
+  -- idx_jobs_pending allows one queued or running job per kind and workout, and a newer one may have been queued since this one died.
+  AND NOT EXISTS (
+    SELECT
+      1
+    FROM
+      jobs AS pending
+    WHERE
+      pending.kind = jobs.kind
+      AND pending.user_id = jobs.user_id
+      AND COALESCE(pending.workout_id, 0) = COALESCE(jobs.workout_id, 0)
+      AND pending.state IN ('queued', 'running')
+  )
 RETURNING
   id, user_id, kind, workout_id, state, attempts, run_at, lease_until, last_error, created_at, updated_at
 `

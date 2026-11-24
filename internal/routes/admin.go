@@ -327,7 +327,7 @@ func retryAdminJob(m models.Model) http.HandlerFunc {
 		}
 		job, err := m.AdminRetryJob(r.Context(), id, time.Now())
 		switch {
-		case errors.Is(err, models.ErrJobNotDead):
+		case errors.Is(err, models.ErrJobNotDead), errors.Is(err, models.ErrJobPending):
 			conflictError(w, err)
 		case models.IsNotFound(err):
 			notFoundHandler(w, r)
