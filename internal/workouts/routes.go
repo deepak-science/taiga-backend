@@ -284,3 +284,30 @@ func JitterOnRoute(jittery, representative *Track) (float64, bool) {
 	d := frechet(pj, pr, endpointWindow(jittery), endpointWindow(representative), JitterRouteShapeMeters)
 	return d, d <= JitterRouteShapeMeters
 }
+
+// JitterRoute is a route a jittery run may be placed on, with its representative's track.
+type JitterRoute struct {
+	ID    int32
+	Sport string
+	Runs  int
+	Track *Track
+}
+
+// PlaceJittery picks the route of the run's sport that a jittery track follows (JitterOnRoute), as an index into routes, or -1 for none.
+// Closest by Fréchet wins, then the route with more runs, then the lower id, so the choice doesn't depend on the order routes come in.
+func PlaceJittery(track *Track, sport string, routes []JitterRoute) int {
+	best, bestD := -1, math.Inf(1)
+	for k, r := range routes {
+		if r.Sport != sport {
+			continue
+		}
+		d, ok := JitterOnRoute(track, r.Track)
+		if !ok {
+			continue
+		}
+		if best < 0 || d < bestD || (d == bestD && (r.Runs > routes[best].Runs || (r.Runs == routes[best].Runs && r.ID < routes[best].ID))) {
+			best, bestD = k, d
+		}
+	}
+	return best
+}

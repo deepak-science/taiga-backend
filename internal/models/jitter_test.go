@@ -71,6 +71,37 @@ func TestJitteryRunCountsAtItsRouteLength(t *testing.T) {
 		}
 	})
 
+	t.Run("longest goes by the route's length", func(t *testing.T) {
+		routeMiles := *marked.JitterRouteMiles
+		require.Greater(t, *marked.DistanceMiles, 3300/1609.344, "its own distance is over the clean run's")
+		only := models.Window{From: start, To: start.Add(24 * time.Hour)}
+		totals, err := m.WorkoutTotals(ctx, only, alice)
+		require.NoError(t, err)
+		require.Len(t, totals.Sports, 1)
+		longest := totals.Sports[0].LongestByDistance
+		require.NotNil(t, longest)
+		assert.Equal(t, jittery.ID, longest.WorkoutID)
+		assert.InDelta(t, routeMiles, *longest.DistanceMiles, 1e-9)
+
+		// A clean run longer than the route but shorter than the jittery run's own distance.
+		day6 := time.Date(2026, 11, 6, 7, 0, 0, 0, time.UTC)
+		af, _, err := m.AddActivityFile(ctx, bytes.NewReader(testsupport.EncodeFITHeading(t, day6, []testsupport.Split{{Meters: 3300, Seconds: 990}}, east)), day6, alice, repo)
+		require.NoError(t, err)
+		clean, _, err := m.CreateWorkoutFromActivityFile(ctx, af.ID, alice, repo)
+		require.NoError(t, err)
+		both := models.Window{From: start, To: day6.Add(24 * time.Hour)}
+		totals, err = m.WorkoutTotals(ctx, both, alice)
+		require.NoError(t, err)
+		assert.Equal(t, clean.ID, totals.Sports[0].LongestByDistance.WorkoutID)
+		assert.InDelta(t, routeMiles+*clean.DistanceMiles, totals.Sports[0].DistanceMiles, 1e-9)
+
+		years, err := m.PeriodicTotals(ctx, "year", both, time.UTC, alice)
+		require.NoError(t, err)
+		require.Len(t, years, 1)
+		assert.Equal(t, clean.ID, years[0].Sports[0].LongestByDistance.WorkoutID)
+		require.NoError(t, m.DeleteWorkout(ctx, clean.ID, alice))
+	})
+
 	t.Run("it can't be moved onto a route", func(t *testing.T) {
 		_, err := m.SetRouteOverride(ctx, jittery.ID, &routes[0].ID, alice)
 		assert.ErrorIs(t, err, models.ErrNoTrack)

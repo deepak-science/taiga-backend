@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"math"
 	"slices"
 	"time"
 
@@ -441,14 +440,14 @@ func detectRoutes(ctx context.Context, q db.Querier, userID int32, unmerge int32
 	if err := q.DeleteWorkoutRoutesByUser(ctx, userID); err != nil {
 		return err
 	}
-	var placeable []jitterCandidate
+	var placeable []workouts.JitterRoute
 	for _, routeID := range order {
 		b := built[routeID]
 		rep := b.members[0]
 		if len(b.core) > 0 {
 			rep = workouts.Medoid(tracks, b.core)
 		}
-		placeable = append(placeable, jitterCandidate{routeID: routeID, sport: rows[rep].Sport, runs: len(b.members), track: tracks[rep]})
+		placeable = append(placeable, workouts.JitterRoute{ID: routeID, Sport: rows[rep].Sport, Runs: len(b.members), Track: tracks[rep]})
 		if err := q.SetRouteRepresentative(ctx, &db.SetRouteRepresentativeParams{ID: routeID, UserID: userID, RepresentativeWorkoutID: &rows[rep].WorkoutID}); err != nil {
 			return err
 		}
@@ -473,16 +472,9 @@ func detectRoutes(ctx context.Context, q db.Querier, userID int32, unmerge int32
 }
 
 // jitterCandidate is a route a jittery run can be placed on, with its representative's track.
-type jitterCandidate struct {
-	routeID int32
-	sport   string
-	runs    int
-	track   *workouts.Track
-}
-
-// placeJittery marks each of the user's jittery runs with the route it follows (workouts.JitterOnRoute) and the length of that route's representative, which totals count it at, and clears the mark of any other workout.
-// Closest by Fréchet wins, then the route with more runs, then the older route, so the mark depends only on the routes as just rebuilt.
-func placeJittery(ctx context.Context, q db.Querier, userID int32, routes []jitterCandidate) error {
+// placeJittery marks each of the user's jittery runs with the route it follows (workouts.PlaceJittery) and the length of that route's representative, which totals count it at, and clears the mark of any other workout.
+// The mark depends only on the routes as just rebuilt.
+func placeJittery(ctx context.Context, q db.Querier, userID int32, routes []workouts.JitterRoute) error {
 	jittery, err := q.ListJitteryTracksByUser(ctx, &db.ListJitteryTracksByUserParams{UserID: userID, JitteryReason: workouts.ExcludedJitteryTrack})
 	if err != nil {
 		return err
@@ -496,26 +488,11 @@ func placeJittery(ctx context.Context, q db.Querier, userID int32, routes []jitt
 			continue
 		}
 		placed[row.WorkoutID] = true
-		var best *jitterCandidate
-		bestD := math.Inf(1)
-		for k := range routes {
-			c := &routes[k]
-			if c.sport != row.Sport {
-				continue
-			}
-			d, ok := workouts.JitterOnRoute(&t, c.track)
-			if !ok {
-				continue
-			}
-			if best == nil || d < bestD || (d == bestD && (c.runs > best.runs || (c.runs == best.runs && c.routeID < best.routeID))) {
-				best, bestD = c, d
-			}
-		}
 		var routeID *int32
 		var miles *float64
-		if best != nil {
-			m := (&workouts.Distance{Meters: best.track.Meters}).AsMiles()
-			routeID, miles = &best.routeID, &m
+		if k := workouts.PlaceJittery(&t, row.Sport, routes); k >= 0 {
+			m := (&workouts.Distance{Meters: routes[k].Track.Meters}).AsMiles()
+			routeID, miles = &routes[k].ID, &m
 		}
 		if equalID(routeID, row.JitterRouteID) && equalMiles(miles, row.JitterRouteMiles) {
 			continue

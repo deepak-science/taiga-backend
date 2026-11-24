@@ -2,6 +2,7 @@ package workouts
 
 import (
 	"math"
+	"slices"
 	"testing"
 	"time"
 )
@@ -224,4 +225,43 @@ func TestJitterOnRoute(t *testing.T) {
 	if _, ok := SameRoute(route, BuildTrack(runAlong(shifted(square, 100, 0), 1.2))); ok {
 		t.Error("the drifting run shouldn't be one of the route's runs")
 	}
+}
+
+func TestPlaceJittery(t *testing.T) {
+	jittery := BuildTrack(runAlong(square, 1.2))
+	on := BuildTrack(runAlong(square, 1))
+	off := BuildTrack(runAlong(shifted(square, 40, 0), 1))
+	route := func(id int32, sport string, runs int, track *Track) JitterRoute {
+		return JitterRoute{ID: id, Sport: sport, Runs: runs, Track: track}
+	}
+	tests := []struct {
+		name   string
+		routes []JitterRoute
+		want   int32 // 0 for none
+	}{
+		{"only its own sport", []JitterRoute{route(1, "walking", 50, on), route(5, "running", 2, on)}, 5},
+		{"none of its sport", []JitterRoute{route(1, "walking", 50, on)}, 0},
+		{"closest first, over more runs", []JitterRoute{route(2, "running", 100, off), route(9, "running", 1, on)}, 9},
+		{"then more runs, over the older route", []JitterRoute{route(4, "running", 3, on), route(7, "running", 5, on)}, 7},
+		{"then the older route", []JitterRoute{route(7, "running", 3, on), route(4, "running", 3, on)}, 4},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, routes := range [][]JitterRoute{tt.routes, reversedRoutes(tt.routes)} {
+				var got int32
+				if k := PlaceJittery(jittery, "running", routes); k >= 0 {
+					got = routes[k].ID
+				}
+				if got != tt.want {
+					t.Errorf("placed on %d, want %d (routes %v)", got, tt.want, routes)
+				}
+			}
+		})
+	}
+}
+
+func reversedRoutes(routes []JitterRoute) []JitterRoute {
+	out := slices.Clone(routes)
+	slices.Reverse(out)
+	return out
 }
