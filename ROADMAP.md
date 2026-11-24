@@ -568,26 +568,28 @@ One COROS PACE 4 run's FIT file, and one call each to COROS's activity detail, f
 
 ### The separation
 
-- [ ] **A role on the account** (`users.is_admin`, false for everyone), checked from the database on each admin request and not carried in the token: tokens last two hours, and taking the role away should work at once.
-- [ ] **Making the first admin** can't go through the API. `useradd -admin`, and a command to grant or revoke the role on an existing account; optionally `auth.admins`, a list of emails given the role at boot, for a deployment configured by env alone.
+- [x] **A role on the account** (`users.is_admin`, false for everyone), checked from the database on each admin request and not carried in the token: tokens last two hours, and taking the role away should work at once.
+- [x] **Making the first admin** can't go through the API. `useradd -admin`, and `admin -grant/-revoke/-list` for an existing account; `auth.admins`, a list of emails holding the role, for a deployment configured by env alone. It's checked on each request rather than granted at boot, and a listed email counts only once verified, or anyone could register an admin's email first.
 - [ ] **Later, from the provider:** an OIDC group or claim (authentik's groups) that grants the role at sign-in, per provider, off by default.
-- [ ] **`/admin/...` routes** behind one middleware that answers `404` to anyone else, so the surface doesn't show. Everything they do is logged with who did it.
-- [ ] **What an admin still can't do:** read another user's workouts, tracks or files through the admin routes, or see anyone's COROS tokens. Running the deployment needs counts, states and errors; it doesn't need the runs.
-- [ ] `GET /auth/providers` or the token's own lookup tells the frontend whether to show the admin link; the `404` is the real control, as with registration.
+- [x] **`/admin/...` routes** behind one middleware that answers `404` to anyone else, so the surface doesn't show. Everything they do is logged with who did it.
+- [x] **What an admin still can't do:** read another user's workouts, tracks or files through the admin routes, or see anyone's COROS tokens. Running the deployment needs counts, states and errors; it doesn't need the runs.
+- [x] `GET /auth/me` tells the frontend whether to show the admin link; the `404` is the real control, as with registration.
 
 ### What it's for
 
 - [ ] **Accounts:** list them (email, created, last seen, ways to sign in, how many workouts), create one in place of `useradd`, close and reopen registration, disable an account, and end its sessions. Deleting an account and everything it owns is its own piece of work: files are shared by hash.
-- [ ] **Jobs across users:** queued, running and dead, with the last error; retry or drop one; queue reprocessing for one user or everyone. Each user's own `/jobs` stays as it is.
-- [ ] **Sources:** connections by state, the last error on each, the day's COROS allowance per user, and the deployment's registration with COROS (when it was made; replace it).
-- [ ] **Files that failed to parse,** by user and reason, as counts.
-- [ ] **The deployment:** version, processor version and how many workouts are behind it, migration version, which optional parts are on (weather, sources, the OIDC providers).
+  - [x] Listing them (last seen is when a token was last issued), creating one, and ending its CLI sessions.
+  - [ ] Disabling an account, and registration at runtime: both need state the token check doesn't read yet.
+- [x] **Jobs across users:** queued, running and dead, with the last error; retry or drop one; queue reprocessing for one user or everyone. Each user's own `/jobs` stays as it is.
+- [ ] **Sources:** connections by state, the last error on each, the day's COROS allowance per user, and the deployment's registration with COROS (when it was made; replace it). All but replacing it is done.
+- [ ] **Files that failed to parse,** by user and reason, as counts. By user is done (files with no workout); the reason isn't stored yet.
+- [x] **The deployment:** version, processor version and how many workouts are behind it, migration version, which optional parts are on (weather, sources, the OIDC providers).
 
 ### The screens
 
 - [ ] **Frontend `#/admin`**, shown only to admins: accounts, jobs, sources and the deployment page above. This is the "Admin panel" that M5's client-side item waits on.
 - [ ] **`taco admin ...`** for the same calls, so the runbook's `kubectl exec` lines go away.
-- [ ] The figures on these pages and the ones M17 exports should come from the same queries, so Grafana and the admin page never disagree.
+- [x] The figures on these pages and the ones M17 exports should come from the same queries, so Grafana and the admin page never disagree.
 
 ## M19 — Export, import and backups
 

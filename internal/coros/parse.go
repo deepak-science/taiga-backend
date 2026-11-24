@@ -46,7 +46,7 @@ func parseActivities(text string) ([]Activity, error) {
 	}
 	count := countPattern.FindStringSubmatch(text)
 	if count == nil {
-		return nil, fmt.Errorf("%w: the list doesn't say how many activities it has: %q", ErrUnexpectedReply, brief(text))
+		return nil, fmt.Errorf("%w: the list doesn't say how many activities it has: %s", ErrUnexpectedReply, brief(text))
 	}
 	want, _ := strconv.Atoi(count[1])
 
@@ -60,7 +60,7 @@ func parseActivities(text string) ([]Activity, error) {
 		entry := text[heading[0]:end]
 		id := idPattern.FindStringSubmatch(entry)
 		if id == nil {
-			return nil, fmt.Errorf("%w: an activity without a LabelId and SportType: %q", ErrUnexpectedReply, brief(entry))
+			return nil, fmt.Errorf("%w: an activity without a LabelId and SportType: %s", ErrUnexpectedReply, brief(entry))
 		}
 		sportType, err := strconv.Atoi(id[2])
 		if err != nil {

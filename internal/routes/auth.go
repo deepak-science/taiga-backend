@@ -37,6 +37,7 @@ func newAuthRouter(m models.Model, tok tokens.Toker, o options) http.Handler {
 	router.Get("/oidc/{provider}/callback", oidcCallback(m, tok, o.oidc))
 	router.Group(func(r chi.Router) {
 		r.Use(tok.Authenticator)
+		r.Get("/me", getMe(m, o.admins))
 		r.Get("/identities", getIdentities(m, o))
 		r.Post("/identities/{provider}", linkIdentity(o.oidc))
 		r.Delete("/identities/{identityid}", unlinkIdentity(m, o))
@@ -145,6 +146,7 @@ func oidcCallback(m models.Model, tok tokens.Toker, reg *oidc.Registry) http.Han
 			back("login/callback", url.Values{"error": {signInMessage(p, err)}})
 			return
 		}
+		noteSeen(r.Context(), m, user.ID)
 		log.Printf("Issued token for user %d through %s", user.ID, p.Name)
 		back("login/callback", url.Values{"token": {token}})
 	}
@@ -334,6 +336,7 @@ func createTokenFunc(m models.Model, tok tokens.Toker) http.HandlerFunc {
 			return
 		}
 
+		noteSeen(ctx, m, user.ID)
 		log.Printf("Issued token for user %d", user.ID)
 
 		response := &createdToken{Token: token}

@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"errors"
 	"log"
 	"time"
 
@@ -127,12 +128,23 @@ func (m *storeModel) RetryDeadJob(ctx context.Context, id int32, now time.Time, 
 	}
 	job, err := querier.RequeueDeadJob(ctx, &db.RequeueDeadJobParams{ID: id, UserID: userToken.ID, RunAt: timestamptz(now)})
 	if IsNotFound(err) {
-		if _, getErr := m.Job(ctx, id, userToken); getErr == nil {
-			return nil, ErrJobNotDead
+		if existing, getErr := m.Job(ctx, id, userToken); getErr == nil {
+			return nil, notRequeued(existing)
 		}
 	}
 	if err != nil {
 		log.Printf("Could not retry job %d: %v", id, err)
 	}
 	return job, err
+}
+
+// ErrJobPending means a newer job for the same work is already queued or running, so the dead one has nothing left to do.
+var ErrJobPending = errors.New("a newer job for the same work is already queued or running; drop this one instead")
+
+// notRequeued says why a job that exists wasn't requeued.
+func notRequeued(j *Job) error {
+	if j.State == JobDead {
+		return ErrJobPending
+	}
+	return ErrJobNotDead
 }

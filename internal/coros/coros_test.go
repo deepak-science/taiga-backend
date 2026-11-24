@@ -185,6 +185,11 @@ func TestFilesThatCannotBeHad(t *testing.T) {
 	_, err = session.Files(ctx, coros.Activity{ID: "nope", SportType: 100})
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, coros.ErrDailyLimit)
+	// What COROS said goes into the error quoted, which is what keeps it out of the admin's views.
+	assert.Contains(t, err.Error(), `"No activity found for labelId nope."`)
+	_, err = session.Detail(ctx, coros.Activity{ID: "nope", SportType: 100})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `"No activity found for labelId nope."`)
 }
 
 func TestRefreshedTokensAreHandedBack(t *testing.T) {

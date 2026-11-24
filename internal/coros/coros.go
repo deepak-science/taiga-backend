@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -472,7 +473,7 @@ func (s *Session) Files(ctx context.Context, a Activity) ([][]byte, error) {
 	}
 	links := fileURLs(text)
 	if len(links) == 0 {
-		return nil, fmt.Errorf("%w: no download link for activity %s in %q", ErrUnexpectedReply, a.ID, brief(text))
+		return nil, fmt.Errorf("%w: no download link for activity %s in %s", ErrUnexpectedReply, a.ID, brief(text))
 	}
 	// Imported all the same: failing would hold every later activity behind one that can never be had whole.
 	if len(links) >= fileLimit {
@@ -521,7 +522,7 @@ func (s *Session) download(ctx context.Context, link string) ([]byte, error) {
 	return content, nil
 }
 
-// brief is a reply cut short enough to put in an error.
+// brief is a reply cut short enough to put in an error, and quoted: the admin's views (models.redacted) drop quoted spans, so whatever COROS said about an account never reaches them.
 func brief(text string) string {
 	text = strings.ToValidUTF8(strings.Join(strings.Fields(linkPattern.ReplaceAllString(text, "[link]")), " "), "?")
 	if len(text) > 200 {
@@ -532,7 +533,7 @@ func brief(text string) string {
 		}
 		text = text[:cut] + "…"
 	}
-	return text
+	return strconv.Quote(text)
 }
 
 // refusals notes when the server answers 401, which the MCP client reports only as text.

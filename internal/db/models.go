@@ -178,6 +178,8 @@ type User struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 	EmailVerified bool               `json:"email_verified"`
+	IsAdmin       bool               `json:"is_admin"`
+	LastSeenAt    pgtype.Timestamptz `json:"last_seen_at"`
 }
 
 type UserIdentity struct {

@@ -9,8 +9,12 @@ import (
 	"time"
 
 	"gitea.deepak.science/deepak/taiga/internal/config"
+	"gitea.deepak.science/deepak/taiga/internal/routes"
 	"gitea.deepak.science/deepak/taiga/internal/server"
 )
+
+// Stamped by the flake's ldflags (hanko's mkGoLdflags); empty in a plain go build.
+var version, commit, date string
 
 func main() {
 	// Load configuration
@@ -20,7 +24,7 @@ func main() {
 	}
 
 	// Create and start server
-	srv, err := server.New(cfg)
+	srv, err := server.New(cfg, server.WithBuild(routes.Build{Version: version, Commit: commit, Date: date}))
 	if err != nil {
 		log.Fatalf("Failed to create server: %v", err)
 	}

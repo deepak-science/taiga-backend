@@ -168,6 +168,21 @@ type Model interface {
 	RestoreAccount(ctx context.Context, acct *backup.Account, fileRepo filerepo.FileRepo, now time.Time) (*RestoreReport, error)
 	// ImportAccount brings a user's export into the signed-in account, matched by file hash, so importing it again changes nothing; its files' bytes must already be in fileRepo.
 	ImportAccount(ctx context.Context, d *backup.Data, fileRepo filerepo.FileRepo, now time.Time, userToken *tokens.UserToken) (*ImportReport, error)
+	// Running the deployment (docs/admin.md): counts, states and errors across accounts, never their workouts, files or tokens.
+	AdminStatus(ctx context.Context, userID int32) (*AdminStatus, error)
+	// SetAdmin grants or revokes the role; only cmd/admin and boot call it, never the API.
+	SetAdmin(ctx context.Context, email string, admin bool) (*UserNoPassword, error)
+	NoteSeen(ctx context.Context, userID int32, now time.Time) error
+	User(ctx context.Context, id int32) (*UserNoPassword, error)
+	CreateUserUnlessTaken(ctx context.Context, req *CreateUserRequest) (*CreateUserResponse, error)
+	AdminAccounts(ctx context.Context, admins Admins) ([]*AdminAccount, error)
+	EndSessions(ctx context.Context, userID int32) (int64, error)
+	AdminJobs(ctx context.Context, f JobFilter, limit int32) ([]*AdminJob, error)
+	AdminRetryJob(ctx context.Context, id int32, now time.Time) (*Job, error)
+	AdminDropJob(ctx context.Context, id int32) error
+	AdminReprocess(ctx context.Context, userID int32, now time.Time) (int64, error)
+	AdminSources(ctx context.Context, now time.Time) (*AdminSources, error)
+	DeploymentState(ctx context.Context) (*DeploymentState, error)
 }
 
 type storeModel struct {

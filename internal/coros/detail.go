@@ -63,7 +63,7 @@ const metersPerMile = 1609.344
 
 func parseDetail(text string) (*Detail, error) {
 	if !strings.Contains(text, "Activity Details") {
-		return nil, fmt.Errorf("%w: not an activity's details: %q", ErrUnexpectedReply, brief(text))
+		return nil, fmt.Errorf("%w: not an activity's details: %s", ErrUnexpectedReply, brief(text))
 	}
 	d := &Detail{Reply: text}
 	read := 0
@@ -118,12 +118,12 @@ func parseDetail(text string) (*Detail, error) {
 			continue
 		}
 		if err != nil {
-			return nil, fmt.Errorf("%w: %s %q: %v", ErrUnexpectedReply, label, brief(value), err)
+			return nil, fmt.Errorf("%w: %s %s: %v", ErrUnexpectedReply, label, brief(value), err)
 		}
 		read++
 	}
 	if read == 0 {
-		return nil, fmt.Errorf("%w: an activity's details with nothing known in them: %q", ErrUnexpectedReply, brief(text))
+		return nil, fmt.Errorf("%w: an activity's details with nothing known in them: %s", ErrUnexpectedReply, brief(text))
 	}
 	return d, nil
 }

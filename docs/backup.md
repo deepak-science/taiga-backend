@@ -93,7 +93,7 @@ A user's export, in this order:
 | `coros_metadata.json` | COROS's own figures, with the reply they were read from (empty when `fetched` is false) |
 | `files/<sha256>` | Each file's stored bytes |
 
-A deployment's backup has `accounts.json` after the manifest (`key`, `email`, `display_name`, `password`, `email_verified`, `created_at`, `identities`), then the same documents for each account under `accounts/<key>/`, then `files/<sha256>` for every account's files together.
+A deployment's backup has `accounts.json` after the manifest (`key`, `email`, `display_name`, `password`, `email_verified`, `admin` (from version 2, left out when false), `created_at`, `identities`), then the same documents for each account under `accounts/<key>/`, then `files/<sha256>` for every account's files together.
 
 A workout is referred to by its file's SHA-256, never by a database id, so an archive goes into any deployment, SQLite or PostgreSQL. A route's and an account's `key` mean something only inside their own archive.
 

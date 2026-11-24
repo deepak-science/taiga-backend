@@ -189,7 +189,7 @@ func (q *Queries) GetUsersByEmail(ctx context.Context, lower string) ([]*GetUser
 
 const listUsers = `-- name: ListUsers :many
 SELECT
-  id, email, display_name, password, created_at, updated_at, email_verified
+  id, email, display_name, password, created_at, updated_at, email_verified, is_admin, last_seen_at
 FROM
   users
 ORDER BY
@@ -213,6 +213,8 @@ func (q *Queries) ListUsers(ctx context.Context) ([]*User, error) {
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.EmailVerified,
+			&i.IsAdmin,
+			&i.LastSeenAt,
 		); err != nil {
 			return nil, err
 		}
