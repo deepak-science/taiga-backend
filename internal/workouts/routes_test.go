@@ -197,3 +197,31 @@ func TestGroupRoutesMergesARouteSplitByAnOffFirstRun(t *testing.T) {
 		t.Fatalf("got %+v, want one route of all six runs", groups)
 	}
 }
+
+// A jittery run is longer than the route and drifts off it, by more than SameRoute allows.
+func TestJitterOnRoute(t *testing.T) {
+	route := BuildTrack(runAlong(square, 1))
+	tests := []struct {
+		name string
+		run  *Run
+		want bool
+	}{
+		{"20% long", runAlong(square, 1.2), true},
+		{"20% long and drifting 100m", runAlong(shifted(square, 100, 0), 1.2), true},
+		{"no longer than the route", runAlong(square, 1), false},
+		{"twice as long", runAlong(square, 2), false},
+		{"20% long, a loop two blocks over", runAlong(shifted(square, 0, 250), 1.2), false},
+		{"20% long, the loop the other way round", runAlong(reversed(square), 1.2), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d, got := JitterOnRoute(BuildTrack(tt.run), route)
+			if got != tt.want {
+				t.Errorf("JitterOnRoute = %v (Fréchet %.1fm), want %v", got, d, tt.want)
+			}
+		})
+	}
+	if _, ok := SameRoute(route, BuildTrack(runAlong(shifted(square, 100, 0), 1.2))); ok {
+		t.Error("the drifting run shouldn't be one of the route's runs")
+	}
+}

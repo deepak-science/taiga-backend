@@ -258,3 +258,29 @@ func resample(points [][2]float64, n int) [][2]float64 {
 	}
 	return out
 }
+
+// Placing a jittery run on a route: its drift lengthens it and pushes it tens of metres off, so the checks are looser than SameRoute's, and only ever applied to runs already known to be jittery.
+const (
+	// JitterRouteShapeMeters bounds the Fréchet distance between a jittery run and the route's representative.
+	JitterRouteShapeMeters = 150
+	// JitterRouteShortest and JitterRouteLongest bound the route's length as a fraction of the jittery track's, since drift only ever adds length.
+	JitterRouteShortest = 0.70
+	JitterRouteLongest  = 0.95
+)
+
+// JitterOnRoute reports whether a jittery track follows the route a representative track stands for, with the Fréchet distance between them when it does.
+func JitterOnRoute(jittery, representative *Track) (float64, bool) {
+	if jittery == nil || representative == nil || len(jittery.Points) < 2 || len(representative.Points) < 2 {
+		return 0, false
+	}
+	if ratio := representative.Meters / jittery.Meters; ratio < JitterRouteShortest || ratio > JitterRouteLongest {
+		return 0, false
+	}
+	proj := newProjection(representative.Points[0][0])
+	pj, pr := proj.apply(jittery.Points), proj.apply(representative.Points)
+	if dist(pj[0], pr[0]) > RouteEndpointMeters || dist(pj[len(pj)-1], pr[len(pr)-1]) > RouteEndpointMeters {
+		return 0, false
+	}
+	d := frechet(pj, pr, endpointWindow(jittery), endpointWindow(representative), JitterRouteShapeMeters)
+	return d, d <= JitterRouteShapeMeters
+}
