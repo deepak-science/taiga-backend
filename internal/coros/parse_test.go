@@ -3,6 +3,7 @@ package coros
 import (
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -82,9 +83,13 @@ func TestBriefCutsBetweenCharacters(t *testing.T) {
 	// Two bytes each, and an odd one first so the cut would fall inside one.
 	cut := brief("a" + strings.Repeat("é", 300))
 	assert.True(t, utf8.ValidString(cut))
-	assert.True(t, strings.HasSuffix(cut, "…"))
+	assert.True(t, strings.HasSuffix(cut, `…"`))
 
 	assert.True(t, utf8.ValidString(brief("caf\xc3")), "what COROS sends broken is mended too")
+
+	unquoted, err := strconv.Unquote(brief(`Run "Lakeshore" 5.02 km`))
+	require.NoError(t, err, "always quoted, so the admin's views can leave it out")
+	assert.Equal(t, `Run "Lakeshore" 5.02 km`, unquoted)
 }
 
 func TestEveryEndpointHasToBeAsProtectedAsTheServer(t *testing.T) {
