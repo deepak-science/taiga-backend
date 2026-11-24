@@ -2,7 +2,7 @@
 
 A CLI such as `taco` signs in without ever seeing a password: it shows a short code, the user approves that code in a browser already signed in to taiga, and the CLI is given a session of its own.
 It works however the account signs in, a provider or a password, and whether or not `auth.password_login` is on.
-The shape is OAuth's device authorization grant (RFC 8628) with taiga as the authorization server; the design and its trade-offs are in ROADMAP M14.
+The shape is OAuth's device authorization grant (RFC 8628) with taiga as the authorization server; the design and its trade-offs are in M14 of [the roadmap archive](roadmap-archive.md).
 
 ## The flow
 

@@ -23,7 +23,7 @@ Every config field is bound, so a deployment can be configured by environment al
 ## More
 
 - [CLAUDE.md](CLAUDE.md): architecture, commands, configuration and the full API.
-- [ROADMAP.md](ROADMAP.md): what's done and what's next.
+- [ROADMAP.md](ROADMAP.md): what's next; [docs/roadmap-archive.md](docs/roadmap-archive.md): what's done, and the design notes behind it.
 
 ## Data
 

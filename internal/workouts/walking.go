@@ -2,7 +2,7 @@ package workouts
 
 import "math"
 
-// Telling walking from running within a run. Tuned on two years of COROS runs (ROADMAP M13).
+// Telling walking from running within a run. Tuned on two years of COROS runs (docs/roadmap-archive.md, M13).
 const (
 	// walkCadenceBelow is the dip between the walking mode (100–120 steps a minute) and the running one (130–150).
 	walkCadenceBelow = 125

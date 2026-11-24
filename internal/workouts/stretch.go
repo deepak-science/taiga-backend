@@ -6,7 +6,7 @@ import (
 	"math"
 )
 
-// Stretch matching. Tuned on ten years of runs over the same roads (ROADMAP M13).
+// Stretch matching. Tuned on ten years of runs over the same roads (docs/roadmap-archive.md, M13).
 const (
 	// StretchSpacingMeters is the step between a stretch's points.
 	// Stored stretches use it, so changing it means rebuilding them.

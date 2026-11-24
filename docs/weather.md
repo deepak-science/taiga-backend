@@ -39,7 +39,7 @@ There are two sources, and a workout keeps the reading from each:
 | `openmeteo-default` | whatever blend of models Open-Meteo's archive gives unasked | a day after the workout |
 
 The workout's weather is the reading from the first of these it has, so a new run shows the default blend's answer the next day and ERA5's a week later.
-The order is `weather.Sources`; ROADMAP M15 has the comparison against weather stations behind it.
+The order is `weather.Sources`; M15 in [the roadmap archive](roadmap-archive.md) has the comparison against weather stations behind it.
 
 An hourly sweep queues a `fetch_weather` job for each workout that some source should have by now and doesn't, a hundred workouts per source at a time, newest first, so workouts from before weather was turned on fill in over a few hours.
 A source that has nothing for those hours yet is asked again on a later sweep.

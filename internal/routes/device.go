@@ -14,7 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// Signing in from a CLI (ROADMAP M14): the CLI starts a sign-in and polls, a signed-in user approves its code from the frontend's #/device page, and the session it gets is kept alive with a refresh token.
+// Signing in from a CLI (docs/roadmap-archive.md, M14): the CLI starts a sign-in and polls, a signed-in user approves its code from the frontend's #/device page, and the session it gets is kept alive with a refresh token.
 
 // mountDeviceSignIn adds the endpoints a CLI calls with no token yet.
 func mountDeviceSignIn(router chi.Router, m models.Model, tok tokens.Toker, o options) {

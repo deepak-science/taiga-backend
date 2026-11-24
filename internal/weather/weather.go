@@ -1,4 +1,4 @@
-// Package weather looks up what the weather was where and when a workout was run (ROADMAP M15).
+// Package weather looks up what the weather was where and when a workout was run (docs/roadmap-archive.md, M15).
 package weather
 
 import (
@@ -43,7 +43,7 @@ const (
 )
 
 // Sources, best first: a workout's weather is its reading from the first of these it has.
-// ERA5 was closer to stations on temperature at home and away (ROADMAP M15), but runs about five days behind.
+// ERA5 was closer to stations on temperature at home and away (docs/roadmap-archive.md, M15), but runs about five days behind.
 var Sources = []Source{
 	{Name: SourceERA5, MinAge: 7 * 24 * time.Hour},
 	{Name: SourceDefault, MinAge: 24 * time.Hour},
