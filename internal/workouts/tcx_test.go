@@ -146,6 +146,7 @@ func TestReadTCXFlagsJitteryTracks(t *testing.T) {
 		reason string
 	}{
 		"4% over the track":   {1.04, workouts.ExcludedJitteryTrack},
+		"3.3% over the track": {1.033, workouts.ExcludedJitteryTrack}, // the least jittery run seen
 		"1.5% over the track": {1.015, ""},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -157,7 +158,26 @@ func TestReadTCXFlagsJitteryTracks(t *testing.T) {
 			assert.Equal(t, tc.reason, run.Summary.ExcludedReason)
 			assert.Equal(t, tc.reason == "", run.Summary.Scored())
 			assert.Len(t, run.Records, 301, "the track is still drawn")
-			assert.InEpsilon(t, 3000*tc.over/1609.344, run.Summary.DistanceMiles, 0.005, "the stated total stays")
+		})
+	}
+}
+
+// Dense fixes only cut corners, so the track is the most a run can have covered: a longer total gives way to it, a shorter one stays.
+func TestReadTCXDistanceIsTheShorterOfTotalAndTrack(t *testing.T) {
+	splits := []testsupport.Split{{Meters: 3000, Seconds: 900}}
+	for name, tc := range map[string]struct{ scale, want float64 }{
+		"total over the track":  {1.015, 3000},
+		"total under the track": {0.97, 2910},
+		"jittery":               {1.06, 3000},
+	} {
+		t.Run(name, func(t *testing.T) {
+			x := testsupport.NewTCX(tcxStart, splits, "Running")
+			for i := range x.Points {
+				x.Points[i].Meters *= tc.scale
+			}
+			s := readTCX(t, x).Summary
+			assert.InEpsilon(t, tc.want/1609.344, s.DistanceMiles, 0.005)
+			assert.InEpsilon(t, 900*1609.344/tc.want/60, s.PaceMinPerMile, 0.005, "pace follows the distance")
 		})
 	}
 }
