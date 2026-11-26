@@ -80,6 +80,9 @@ Multiple accounts exist only so more than one person can use the same deployment
 - [x] Deduplicate uploads: the same file (same content hash, already computed) for the same user returns the existing workout instead of creating a second one.
 - [x] Backfill segments for workouts created before `workout_segments` existed. (First as `POST /segments/recompute`; M5 replaced it with reprocessing, which backfills on its own.)
 - [ ] Frontend and `taco`: say "already uploaded" on a `200` re-upload, offer a backfill action, and list files that failed to parse.
+  - [x] Frontend (taiga-frontend#43): a re-upload whose workout is already there says "already uploaded", and an unreadable file says why (the 422's reason). Under the upload form, folded away, are the files with no workout, each with "Try again" (and "Try them all again", the backfill), "Download" and "Delete". The reason a file failed isn't stored, so reading it again is how to see it.
+  - [ ] Not handled: **stale refreshes** of that list and of the workout list. A refresh that answers after a newer one (an upload batch ending while a retry's refresh is still waiting on the server) puts its older answer over the newer one, until the next refresh or reload. Reads or deletes made on the page can't come back that way (they're filtered out); only an otherwise stale list can. A sequence number per refresh, with all but the latest dropped, would close it. Left on Copilot's review as not worth more passes for now.
+  - [ ] `taco`: the same "already uploaded", and listing and retrying the files with no workout.
 
 ## M3 — Deploy
 
@@ -121,7 +124,7 @@ The FIT file is the source of truth; everything taiga computes from it (summary,
   - Leases (5 min) so a crashed worker's job is claimed again; exponential backoff from 30s; dead after 5 attempts, or at once for errors a retry can't fix.
   - On boot the worker queues `process_workout` for every stale workout. `POST /workouts/reprocess` queues all of a user's; `GET /jobs`, `POST /jobs/{id}/retry` to watch and retry.
 - [x] Standard distances gained `3k` and `2mi`; existing workouts pick them up through the above.
-- [ ] Client side: a reprocess action and dead jobs, as part of the admin panel (M18).
+- [x] Client side: a reprocess action and dead jobs, as part of the admin panel (M18; taiga-frontend#35): Reprocess per account or for every account, and the jobs across accounts, dead ones first, with Retry and Drop.
 
 **Deferred:**
 - **Async uploads.** Parsing takes milliseconds, so `202` plus polling in both clients isn't worth it yet. Uploads that genuinely run in the background arrive with M8's `sync_source` jobs.
@@ -341,7 +344,8 @@ This began as exploration; the three looks at the data below are what the first 
 - [ ] **Places walked versus run.** Across runs, the same ground walked again and again is a pattern: a hill that's always walked, a warm-up block. Bin the ground into cells along the tracks and compare how often each is walked or run, drawn on a map. Those places are also candidate stretches, found without drawing them; so are the shared pieces of overlapping routes.
 - [ ] **Suggested stretches**: the candidates of the second look (shared pieces of routes, climbs) offered for naming. Not built; they repeat each other too much yet.
 - [x] **Frontend, first part** (taiga-frontend#21): "Save a stretch" on a workout's graph (a name and a from and to in miles, filled in from the split or best effort selected, shown on the graph and map as they change), a stretches list, and a stretch page with its line on the map, its efforts, and time over the date coloured by walked share.
-  - [ ] Still to do: stretches and walking breaks on the workout page itself, cadence as a line on its graph, and picking a range by dragging on the graph, which still zooms.
+  - [x] Stretches on the workout page (taiga-frontend#31, below), cadence as a line on its graph (in the legend, from taiga-frontend#30), and the run's walking (taiga-frontend#45): its breaks, warm-up and cool-down shaded behind the graph's lines under a "Walking" toggle whose tooltip sums them up, and named when hovering the map.
+  - [ ] Still to do: picking a range by dragging on the graph, which still zooms.
 - [x] **Stretches where the runs are** (feedback 2026-11-21). A stretch had its own page, but nothing showed it from the run or the route it's part of.
   - On the workout page: the passes `GET /workouts/{id}/stretches` lists, as rows above the best efforts and as outlined lanes under the graph, each highlighting its piece of the map and graph the way a split does, with its time against the stretch's best and where it stands among every effort (`best_seconds`, `rank`, `effort_count`).
   - On the route page: the stretches its runs pass (`GET /routes/{id}/stretches`), in the order the route comes to them, with how many of the route's runs made each one and the runs that missed.
@@ -496,7 +500,7 @@ The backend half is built (`docs/weather.md`): the lookups, the rows and `GET /w
 - [x] **What leaves the server.** Each lookup tells a third party where and when the user ran. Round the coordinates first (0.1° is about 10km, finer than the weather model's own grid), send the days and not the time, and say in the docs that turning weather on does this.
 - [ ] **Showing it**: on the workout page and as an optional column in the list and `taco workouts`; a wind arrow on the map, since direction only means something against the route. The arrow takes the mean speed and the mean direction as a vector, and shows how steady the wind was (steadiness, or constancy: the vector mean speed over the plain mean speed, 1 for a wind that held and near 0 for one that swung round) by how wide it fans, so a wind that turned from north to south doesn't read as calm or as one direction.
   - [x] First pass (taiga-frontend#28): a Weather row in the workout page's summary, the start and end conditions written out as one line of text.
-  - [ ] **Fields and values, not a sentence** (feedback 2026-11-21). The line reads as prose and has to be parsed by eye. Show the reading as labelled figures instead, the way the rest of the summary is laid out: temperature, dew point, humidity, wind (speed and direction), cloud cover and precipitation each under its own heading, start and end side by side where they differ, and the source named.
+  - [x] **Fields and values, not a sentence** (feedback 2026-11-21; taiga-frontend#42, in the card under the dashboard beside what the file states, with start and end side by side where they differ by more than 1.5°C, 5 points or 2 mph). The line reads as prose and has to be parsed by eye. Show the reading as labelled figures instead, the way the rest of the summary is laid out: temperature, dew point, humidity, wind (speed and direction), cloud cover and precipitation each under its own heading, start and end side by side where they differ, and the source named.
 - [ ] **Using it**, which is the point:
   - Filter and group by conditions: best 5k above 25°C, this route on cold days.
   - Headwind and tailwind along the track: the wind against each piece of the run's heading, which matters for an out-and-back and for a stretch run one way.
@@ -610,7 +614,7 @@ One COROS PACE 4 run's FIT file, and one call each to COROS's activity detail, f
 
 ### The screens
 
-- [ ] **Frontend `#/admin`**, shown only to admins: accounts, jobs, sources and the deployment page above. This is the "Admin panel" that M5's client-side item waits on.
+- [x] **Frontend `#/admin`** (taiga-frontend#35), shown only to admins: accounts, jobs, sources and the deployment page above. This is the "Admin panel" that M5's client-side item waited on.
 - [ ] **`taco admin ...`** for the same calls, so the runbook's `kubectl exec` lines go away.
 - [x] The figures on these pages and the ones M17 exports should come from the same queries, so Grafana and the admin page never disagree.
 
@@ -642,7 +646,9 @@ The files are the source of truth, and the rest of a workout (summary, segments,
 - [x] **Export:** `GET /export` streams the signed-in user's archive (`docs/backup.md`), `?fetched=false` without weather and COROS's figures.
   - [x] `taco export > taiga.tar`, or `-o taiga.tar` (taiga-cliclient#46).
 - [x] **Import:** `POST /import` streams a user's export into the signed-in account (`docs/backup.md`), with a 2GB limit of its own. It's idempotent: files dedupe by hash as uploads do, state is matched by file hash, and hand-entered workouts by start time, sport, distance and duration. Workouts are made in the request, as a restore makes them, and route detection is queued.
-  - [ ] `taco import`, and the frontend proxy's body limit and read timeout for `/api/import`.
+  - [x] The frontend proxy's body limit and read timeout for `/api/import` (taiga-frontend#34).
+  - [x] On the account page (taiga-frontend#44): "Download a backup" (optionally without weather and COROS's figures) and "Import a backup into this account", which says what the import did.
+  - [ ] `taco import`.
 - [x] Conflicts: the archive wins over what the user set (corrections, route names and placements, stretch points, file timestamps), what only accumulates is merged, and nothing only the account has is removed.
 
 ### The whole deployment
